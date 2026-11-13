@@ -397,6 +397,13 @@ var cluster_words u32[>..] = [];
 var light_buf gfx::Buffer;
 var cluster_buf gfx::Buffer;
 var light_cap = 0;
+let CAST_REC = 4096;
+var cast_want = 0;
+var cast_at = 0;
+var cast_room = 0;
+var cast_frame = -9;
+var cast_gen = 0;
+fn cast_live() f32 { if cast_at > 0 && frames - cast_frame <= 1 { cast_at as f32 } else { 0.0 } }
 var cluster_cap = 0;
 var ext_size = 1024;
 var ext_arr gfx::Texture[2] = [gfx::Texture { 0 }, gfx::Texture { 0 }];
@@ -2367,8 +2374,8 @@ fn gi_pass() {
 }
 fn signed_range(l Light) f32 { if l.falloff == 1 { -max(l.range, 0.01) } else { max(l.range, 0.01) } }
 fn light_upload() {
-	frame_u.decal = f4(0.0, 0.0, 0.0, 0.0);
-	if lights.len == 0 && decals.len == 0 && cluster_cap > 0 && cluster_words.len == 0 { return; }
+	frame_u.decal = f4(0.0, 0.0, 0.0, cast_live());
+	if lights.len == 0 && decals.len == 0 && cluster_cap > 0 && cluster_words.len == 0 && cast_room == cast_want { return; }
 	light_data.clear();
 	light_xr.clear();
 	for l, k in lights {
@@ -2400,12 +2407,19 @@ fn light_upload() {
 	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
 	clusters::build(view_mat, ty * width as f32 / height as f32, ty, view.near, view.far, light_xr[..], cluster_words);
 	let lb = bytes_of(light_data);
-	if lb.len > light_cap {
+	var rec = CAST_REC * 16;
+	while rec < lb.len { rec = rec * 2; }
+	if lb.len > light_cap || cast_room != cast_want || (cast_want > 0 && cast_at * 16 != rec) {
 		if light_cap > 0 { gfx::release(light_buf); }
-		light_cap = lb.len * 2;
-		light_buf = gfx::buffer(gfx::BUFFER_STORAGE, light_cap, []);
+		light_cap = if cast_want > 0 { rec + cast_want } else { lb.len * 2 };
+		light_buf = gfx::buffer(gfx::BUFFER_STORAGE | gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE, light_cap, []);
+		cast_at = if cast_want > 0 { rec / 16 } else { 0 };
+		cast_room = cast_want;
+		cast_frame = -9;
+		cast_gen += 1;
 	}
 	gfx::update_buffer(light_buf, lb[..]);
+	frame_u.decal.w = cast_live();
 	let cb = bytes_of(cluster_words);
 	if cb.len > cluster_cap {
 		if cluster_cap > 0 { gfx::release(cluster_buf); }

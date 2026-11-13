@@ -8594,7 +8594,27 @@ fn hr_more() bool {
 	let _ = codec_png::write(path(OUT_DIR[..], "hair_back.png")[..], 1280, 720, 4, bb[..]);
 	let h21 = ob >= 0.1 * of && oo < 0.1 * of;
 	print("gpu: hair H21 back lamp: outline brightness ", r3(ob), " lamp behind, ", r3(of), " in front, ratio ", r3(ob / max(of, 0.001)), " (bar >= 0.1); control lamp off ", r3(oo / max(of, 0.001)), " (bar below 0.1)", hr_pass(h21));
-	h10 && h11 && h16 && h17 && h18 && h8 && h20 && h21
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let cg = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	for _ in 3 { let _ = hr_frame(0.0); }
+	let c1 = hr_shot();
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_cast.png")[..], 1280, 720, 4, c1[..]);
+	hair::grooms[cg].look.cast = 0.0;
+	let c0 = hr_shot();
+	hair::grooms[cg].show = false;
+	let cn = hr_shot();
+	var dk = 0;
+	var br = 0;
+	var far = 0;
+	for i in 1280 * 720 {
+		let d = vc_l8(c1[..], i) - vc_l8(c0[..], i);
+		if d < -3.0 { dk += 1; if sk_d(c0[..], cn[..], i) > 8 { far += 1; } }
+		if d > 3.0 { br += 1; }
+	}
+	let h22 = dk as real / hr_disc() >= 0.02 && br == 0;
+	print("gpu: hair H22 shade on meshes: ", r3(dk as real / hr_disc()), " of the head's disc is darker with look.cast 1 than 0 (bar >= 0.02), ", br, " pixels brighter (bar 0), ", far, " of the darker ones under hair", hr_pass(h22));
+	h10 && h11 && h16 && h17 && h18 && h8 && h20 && h21 && h22
 }
 fn ml_world(eye float3, target float3, sky bool) {
 	reset_scene();

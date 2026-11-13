@@ -350,6 +350,38 @@ float sun_pcss(vec2 uv, float zd, int c, float row0, vec3 n) {
 	}
 	return mix(1.0, lit / 28.0, clamp(nb, 0.0, 1.0));
 }
+float cast_vis(vec3 p, int s) {
+	int b = int(decal.w);
+	if (b <= 0) return 1.0;
+	int n = int(lrec[b].x);
+	float t = 1.0;
+	for (int g = 0; g < n; g++) {
+		int h = b + 1 + g * 26;
+		vec4 gi = lrec[h];
+		if (s >= int(gi.x)) continue;
+		int o = h + 1 + s * 5;
+		vec4 c = mat4(lrec[o], lrec[o + 1], lrec[o + 2], lrec[o + 3]) * vec4(p, 1.0);
+		if (c.w < 0.02) continue;
+		int sz = int(gi.z);
+		vec2 q = vec2(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5) * gi.z - 0.5;
+		if (q.x < -1.0 || q.y < -1.0 || q.x >= gi.z || q.y >= gi.z) continue;
+		ivec2 i0 = ivec2(floor(q));
+		vec2 f = q - floor(q);
+		int base = b + int(gi.y) + s * sz * sz;
+		float inv = lrec[o + 4].x;
+		float tv = 0.0;
+		for (int k = 0; k < 4; k++) {
+			ivec2 tx = i0 + ivec2(k & 1, k >> 1);
+			float w = ((k & 1) == 1 ? f.x : 1.0 - f.x) * ((k >> 1) == 1 ? f.y : 1.0 - f.y);
+			if (tx.x < 0 || tx.y < 0 || tx.x >= sz || tx.y >= sz) { tv += w; continue; }
+			vec4 e = lrec[base + tx.y * sz + tx.x];
+			float x = (c.w - e.x) * inv - 0.5;
+			tv += w * exp(-(e.y * clamp(x, 0.0, 1.0) + e.z * clamp(x - 1.0, 0.0, 1.0) + e.w * clamp((x - 2.0) * 0.5, 0.0, 1.0)) * gi.w);
+		}
+		t *= tv;
+	}
+	return t;
+}
 float local_visibility(vec4 sh, vec3 lp, vec3 ldir, vec3 p, vec3 n) {
 	if (sh.x < 0.0) return 1.0;
 	vec3 d = p - lp;
@@ -1164,7 +1196,7 @@ void main() {
 	vec3 gn = normalize(in_nrm);
 	if (!gl_FrontFacing && alpha.z > 0.5) gn = -gn;
 	vec3 rp = in_world + gn * 2e-3;
-	rgb += mat_term(n, v, l, sun_rgb.rgb * sun_under(in_world), albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? ((model == 5 || dot(gn, l) > 0.0) && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, model == 5 && dot(gn, l) < 0.0 ? -gn : gn)) * cst, q, x);
+	rgb += mat_term(n, v, l, sun_rgb.rgb * sun_under(in_world), albedo, f0_spec, rough, ms, kd, (gi.y > 0.5 && to_sun.w > 0.5 ? ((model == 5 || dot(gn, l) > 0.0) && gi_visible(rp, l, 1e4) ? 1.0 : 0.0) : sun_visibility(in_world, model == 5 && dot(gn, l) < 0.0 ? -gn : gn)) * cst * cast_vis(in_world, 0), q, x);
 	if (screen.z > 0.5) {
 		int cx = clamp(int(gl_FragCoord.x * screen.x * cluster.x), 0, int(cluster.x) - 1);
 		int cy = clamp(int(gl_FragCoord.y * screen.y * cluster.y), 0, int(cluster.y) - 1);
@@ -1190,7 +1222,7 @@ void main() {
 			bool rect = la.z > 0.0 && la.w > 0.0;
 			if (rect && dot(d, lx.xyz) >= 0.0) continue;
 			float fall = rect ? fq * fq / (la.z * la.w) : (la.x > 0.0 ? fq * fq / (dist * dist + la.x * la.x) : range_falloff(dist, lp.w));
-			vec3 le = lc.rgb * fall * spot_cone(lc.w, lx.w, lx.xyz, ld) * local_visibility(lrec[i + 3], lp.xyz, lx.xyz, in_world, gn);
+			vec3 le = lc.rgb * fall * spot_cone(lc.w, lx.w, lx.xyz, ld) * local_visibility(lrec[i + 3], lp.xyz, lx.xyz, in_world, gn) * cast_vis(in_world, i / 6 + 1);
 			if (rect) {
 				vec4 rd;
 				vec3 rs;

@@ -1,7 +1,7 @@
 use std
 into hair.amni
 
-Namespace `hair`, importing os, binary, gfx, math, gfx.linalg, gfx.gltf, gfx.motion, gfx.scene3d and gfx.shapes. Constants `SIM = 120`, `PARTS = 8`, `BONES = 64`, `LIGHT = 512`. Shared conventions:
+Namespace `hair`, importing os, binary, gfx, math, gfx.linalg, gfx.gltf, gfx.motion, gfx.scene3d and gfx.shapes. Constants `SIM = 120`, `PARTS = 8`, `BONES = 64`, `LIGHT = 512`, `CAST = 128` (the side of the smoothed light maps meshes read). Shared conventions:
 - Vectors are f32 float3 or float4, and matrices are gfx::mat4 with columns c0 to c3.
 - "a times b" for matrices or a matrix and a vector is `gfx::mul`. `inverse`, `unit3`, `dot3`, `cross3`, `point`, `qaxis`, `qmatrix` and `f` are linalg's.
 - A u32 at offset x of a byte slice is `binary::gather(data, x, 4)`. An f32 at x is that value's bits through `binary::f32_from_bits`.
@@ -18,7 +18,7 @@ Namespace `hair`, importing os, binary, gfx, math, gfx.linalg, gfx.gltf, gfx.mot
 `Look` has these fields and defaults:
 - `color` (0.58, 0.38, 0.14), `roughness` 0.42, `spread` 0.3, `width` 0.00007, `slab` 0.004, `clump` 0.004
 - `gain` 1.7, `exposure` 1.0, `scatter` 0.7, `density` 1.0, `shade` 1.0
-- `ambient` (0.22, 0.22, 0.22), `falloff` 40.0, `part` 0.0, `frizz` 0.0, `dye` 0.0
+- `ambient` (0.22, 0.22, 0.22), `falloff` 40.0, `part` 0.0, `frizz` 0.0, `dye` 0.0, `cast` 1.0 (how strongly the hair shades the meshes around it; 0 turns that off)
 
 `Physics` has these fields and defaults:
 - `gravity` (0, -9.81, 0), `styled` 1.0, `tip` 0.012, `root` 0.35, `bone_tip` 0.08, `bone_root` 0.5
@@ -26,15 +26,16 @@ Namespace `hair`, importing os, binary, gfx, math, gfx.linalg, gfx.gltf, gfx.mot
 
 `Groom` has these fields in order:
 - `on`, `show`, `look`, `phys`, `model`, `prev`, `item`, `anchor`, `anchor_inv`
-- `top` (f32), `center`, `core`, `head` (f32), `lslices` (int), `radius`
+- `top` (f32), `center`, `core`, `head` (f32), `lslices` (int), `radius`, `side` (f32)
 - ints `guides`, `parts`, `cells`; bools `sdf_done`, `reset`, `ask`; ints `strands`, `points`, `segments`, `bones`
 - gfx::Buffers `tgt`, `st`, `gd`, `simb`, `sdfb`, `trib`, `statb`, `pts`, `rest`, `skin`, `matsb`, `segs`, `lfront`, `lacc`
+- ints `turn` (starts 0: whose turn it is among the local-light maps), `drawn` (starts 0: bit k is set when light map slice k was drawn this frame) and `filled` (starts -1: the `s3d::cast_gen` value of the mesh-shadow block this groom last wrote all of its slices into)
 
 Module vars, each groom owning a slice of every per-groom array:
-- `grooms` and the per-groom arrays: `simv` (float4, SIM per groom), `part_node` (int, PARTS per groom), `part_ib` (mat4, PARTS per groom), `bone_node` (int, BONES per groom), `bone_rest` and `mats` (mat4, BONES per groom), `probe_v` (f32, 8 per groom)
-- screen size `w` and `h` (int 0), `made` false
-- buffers `front` and `acc`, texture `hairt`, sampler `smp`, pipeline `comp`
-- compute pipelines `clear_p`, `raster_p`, `resolve_p`, `skin_p`, `sim_p` and `sdf_p`, all default
+- `grooms` and the per-groom arrays: `simv` (float4, SIM per groom), `part_node` (int, PARTS per groom), `part_ib` (mat4, PARTS per groom), `bone_node` (int, BONES per groom), `bone_rest` and `mats` (mat4, BONES per groom), `probe_v` (f32, 8 per groom), `kept_vp` (mat4, 4 per groom) and `kept_x` (float4, 4 per groom): the view-projection and extras each local-light map was last drawn with
+- screen size `w` and `h` (int 0), `made` false, and the f32 knobs `detail` 2.0 and `light_detail` 1.0: how many strands a pass draws per pixel of a guide's strand spread, on screen and in the light maps (0 or less draws every strand); and the bool knob `light_turns` true: the local-light maps are redrawn one per frame in turn instead of all every frame
+- buffers `front` and `acc`, texture `hairt`, sampler `smp`, and `comp` of type `gfx::Pipeline`
+- `clear_p`, `raster_p`, `resolve_p`, `skin_p`, `sim_p`, `sdf_p` and `cast_p`, each of type `gfx::ComputePipeline`, all default
 - the growable `raw` bytes and `us` (HairU), reused every frame
 
 `mel_of(c, bn)` gives a float2 of melanin values, computed in real:
@@ -45,7 +46,7 @@ Module vars, each groom owning a slice of every per-groom array:
 - If e is negative, e becomes 0 and p becomes max(r2/a22, 0). Otherwise, if p is negative, p becomes 0 and e becomes max(r1/a11, 0).
 - The result is (e, p) as f32.
 
-`ready()` runs once, guarded by `made`. It sets `smp` to `gfx::sampler(gfx::NEAREST, gfx::CLAMP)` and `comp` to `gfx::pipeline` of `embed_shader("shaders/strand_comp.vert")` and "shaders/strand_comp.frag" with blend `gfx::BLEND_PREMULTIPLIED`. It then sets each compute pipeline from `embed_shader` of "shaders/strand_X.comp", where X is clear, raster, resolve, skin, sim and sdf in that order.
+`ready()` runs once, guarded by `made`. It sets `smp` to `gfx::sampler(gfx::NEAREST, gfx::CLAMP)` and `comp` to `gfx::pipeline(vs, fs, desc)`, a call with exactly three arguments: `embed_shader("shaders/strand_comp.vert")`, `embed_shader("shaders/strand_comp.frag")`, and a `gfx::PipelineDesc` whose only field given is blend `gfx::BLEND_PREMULTIPLIED` (the shaders are never fields of the desc). It then sets each compute pipeline directly to `gfx::compute_pipeline` of `embed_shader` of "shaders/strand_X.comp", where X is clear, raster, resolve, skin, sim, sdf and cast in that order (cast_p from "shaders/strand_cast.comp").
 This block defines no helper that creates buffers.
 
 `size(nw, nh)`: when `w` is positive, it first releases `front`, `acc` and `hairt`. It then sets `w` and `h` and creates:
@@ -71,12 +72,12 @@ Otherwise it does the following, creating buffers in exactly this order:
 1. Call `ready()`, take g as the current `grooms` length, and set `s3d::depth_wanted`.
 2. Make a groom: on and show set; default look and phys; model, prev and anchor_inv identity; item and anchor -1; reset set; strands as given; points np, segments ns, bones nb.
 3. Create `pts` and `tgt` as rw buffers of np*48 bytes holding the point bytes, `st` as rw np*32, and `segs` as a read buffer of ns*16 holding the segment bytes.
-4. Append the groom's slices: BONES entries of `bone_node` (the i-th bone id while i is below nb, else -1) with identity `bone_rest` and `mats`; PARTS entries of `part_node` -1 with identity `part_ib`; SIM zero float4s to `simv`; 8 zeros to `probe_v`.
+4. Append the groom's slices: BONES entries of `bone_node` (the i-th bone id while i is below nb, else -1) with identity `bone_rest` and `mats`; PARTS entries of `part_node` -1 with identity `part_ib`; SIM zero float4s to `simv`; 8 zeros to `probe_v`; 4 identity matrices to `kept_vp`; 4 zero float4s to `kept_x`.
 5. If nb is positive, create `rest` as a read buffer of np*48 point bytes, `skin` as a read buffer of np*16 skin bytes, and `matsb` as a read buffer of nb*64.
-6. Compute the bounds from the point positions (the f32s at point offsets 0, 4 and 8). `top` is their max y, starting from -1e9. `center` is c = sum*(1/np). `radius` is max(f(sqrt of the largest dot3(d,d) as real), 0.01), where d is each point minus c.
+6. Compute the bounds from the point positions (the f32s at point offsets 0, 4 and 8). `top` is their max y, starting from -1e9. `center` is c = sum*(1/np). `radius` is max(f(sqrt of the largest dot3(d,d) as real), 0.01), where d is each point minus c. `side` is the mean length of the points' side vectors (the f32s at point offsets 16, 20 and 24), summed in real.
 7. Build the guide table from the segments, each holding a point index pi (u32 at +0) and a group (u32 at +4). The first segment, and any whose group differs from the previous segment's, starts a row (pi, 2, 0, 0) and adds point pi's position to the core sum. Any other segment adds 1 to the current row's second entry. `core` = sum*(1/rows). Then fit a sphere to the row roots (each row's first point), 24 rounds: with c the core before the round, `head` = the mean of length3(root minus c), and `core` = (the sum of the roots minus head times the sum of unit3(root minus c))*(1/rows).
 8. A row's third entry becomes 1 when nb is positive and any point q from its first entry to first plus count, exclusive, has f32 at k+16q+8 plus f32 at k+16q+12 above 0.001.
-9. Set `guides` to the row count. Create `gd` as a read buffer of rows*16 holding the table as i32s, `statb` as rw rows*16, `simb` as read SIM*16, `sdfb` as rw 16, `trib` as rw 16, `lfront` as rw LIGHT*LIGHT*4 and `lacc` as rw LIGHT*LIGHT*64, both passing an empty slice `[]` as the starting bytes (never a zero-filled array), and set `lslices` to 1. The zero-filled scratch array `z` this function uses for its other buffers is sized `max(65536, max(np*32, ns*16 + 64))`.
+9. Set `guides` to the row count. Create `gd` as a read buffer of rows*16 holding the table as i32s, `statb` as rw rows*16, `simb` as read SIM*16, `sdfb` as rw 16, `trib` as rw 16, `lfront` as rw LIGHT*LIGHT*4 and `lacc` as rw LIGHT*LIGHT*16, both passing an empty slice `[]` as the starting bytes (never a zero-filled array), and set `lslices` to 1. The zero-filled scratch array `z` this function uses for its other buffers is sized `max(65536, max(np*32, ns*16 + 64))`.
 10. Push the groom and return g.
 Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte size, then the starting bytes.
 
@@ -166,13 +167,15 @@ Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte
 
 `live(g)` is the groom's on and show both being set.
 
+`lod_of(g, ppm, per)` gives the share of the groom's strands a pass draws, an f32, from ppm pixels per meter: 1.0 when per is at most 0 or strands is below 2, else per*2.8*side*ppm/strands (side being the groom's own `side` field) clamped to 1.0/strands..1.0.
+
 `uniforms_of(g)` builds the groom's HairU (default otherwise), with im the inverse of the model and sc = f(sqrt(dot3 of model.c0's xyz as real)). `put_uniform(u)` puts u in a one-element HairU array x and calls `gfx::push_uniforms(gfx::COMPUTE, 0, bytes_of(x))`; never `gfx::uniforms`, which applies bytes_of itself.
 - `view_proj` is `s3d::view_proj_nj` times the model, `view` is `s3d::view_mat` times the model, and `proj` is `s3d::proj_mat`.
 - `size` = (w, h, strands, segments).
 - `cam` = (point(im, `s3d::view.eye`), sc).
 - ld = unit3 of the xyz of im times (`s3d::sun.to_sun`, 0). `to_sun` = (ld, 1 if `s3d::sun.shadows` else 0).
 - `sun_rgb` = (sun rgb, look frizz), and `hair` = (look color, roughness).
-- dy = look dye clamped to 0..1, m = mel_of(color, spread) times (1 - dy), and nl = min(lights count, 4). `mel` = (m.x, m.y, spread, nl). `ext` is the dyed part of the color, which natural pigment cannot make: with x = spread as real and d = 5.969 - 0.215*x + 2.532*x*x - 10.73*x*x*x + 5.574*x*x*x*x + 0.245*x*x*x*x*x, each of its first three components is dy times the square of log(max(that color channel, 0.001))/d, and its w is 0.
+- dy = look dye clamped to 0..1, m = mel_of(look color, look spread) times (1 - dy), and nl = min(lights count, 4). `mel` = (m.x, m.y, look spread, nl). `ext` is the dyed part of the color, which natural pigment cannot make: with x = look spread as real and d = 5.969 - 0.215*x + 2.532*x*x - 10.73*x*x*x + 5.574*x*x*x*x + 0.245*x*x*x*x*x, each of its first three components is dy times the square of log(max(that color channel, 0.001))/d, and its w is the share of strands drawn on screen: lod_of(g, `s3d::proj_mat`.c1.y*h*0.5/max(length3(cam's xyz minus center) - 0.5*radius, 0.05), `detail`).
 - For each of the first nl entries i of `s3d::lights`, pl[2i] = (point(im, pos), range/sc) and pl[2i+1] = (rgb, 0). Each such light also gets a hair shadow view: dv = that point minus center, rc = radius*1.3, dist = max(length3(dv), rc*1.05) and tn = rc/dist; pp is `gfx::perspective(0.24, 1.0, max(dist-rc, dist*0.05), dist+rc)` with pp.c0.x and pp.c1.y each multiplied by f(tan(0.12))/tn; plvp[i] = pp times `gfx::look_at(center+unit3(dv)*dist, center, up)`, up being (1, 0, 0) when the absolute value of unit3(dv).y exceeds 0.95, else (0, 1, 0); plx[i] = (256/tn, f(sqrt of (0.25*(width squared + height squared + length squared) + radius squared) as real)/sc, 0, 0).
 - am = (sky zenith + horizon)*(0.5*sky ambient). `sky` = (look ambient times am per component, falloff).
 - `params` = (slab, gain, clump, width), `look` = (exposure, density, 0, scatter), `shape` = (top, center.z, part, 0) and `core` = (core, head).
@@ -180,15 +183,15 @@ Every `gfx::buffer(usage, size, data)` call takes the usage first, then the byte
 - `light` = (LIGHT, LIGHT, shade, f(256.0/tan(0.12))).
 - `shadow_vp` is `s3d::cascade_vp[0]` times the model.
 
-`light_slices(g, n)`: when the groom's lslices differs from n, release its lfront and lacc, create `lfront` as rw LIGHT*LIGHT*4*n and `lacc` as rw LIGHT*LIGHT*64*n, both passing an empty slice `[]` as the starting bytes with no scratch array at all (the clear pass zeroes them), and set lslices to n.
+`light_slices(g, n)`: when the groom's lslices differs from n, release its lfront and lacc, create `lfront` as rw LIGHT*LIGHT*4*n and `lacc` as rw LIGHT*LIGHT*16*n, both passing an empty slice `[]` as the starting bytes with no scratch array at all (the clear pass zeroes them), and set lslices to n.
 
-Clear pass (mode, buffers a and b, count n): a copy of the uniforms with look.z set to mode and shape.w set to n/(LIGHT*LIGHT) when mode is above 1, else 0, writing a and b, using `clear_p`, dispatched ceil(n/64)×1×1. The two buffers reach the shader only through the write list of `gfx::begin_compute([a, b])`; this pass makes no `gfx::bind_storage_buffer` call at all.
+Clear pass (mode, buffers a and b, count n, first slice s): a copy of the uniforms with look.z set to mode, ext.w set to s as f32, and shape.w set to n/(LIGHT*LIGHT) when mode is above 1, else 0, writing a and b, using `clear_p`, dispatched ceil(n/64)×1×1. The two buffers reach the shader only through the write list of `gfx::begin_compute([a, b])`; this pass makes no `gfx::bind_storage_buffer` call at all.
 
-Raster pass (mode, slice k): lit is mode above 1. It uses a copy of the groom's uniforms with look.z set to mode; when lit and k is above 0, `light_vp` becomes plvp[k-1] and light.w becomes plx[k-1].x; shape.w is k when lit, else 0. It runs `raster_p`.
+Raster pass (mode, slice k): lit is mode above 1. It uses a copy of the groom's uniforms with look.z set to mode; when lit and k is above 0, `light_vp` becomes plvp[k-1] and light.w becomes plx[k-1].x; shape.w is k when lit, else 0; when lit, ext.w becomes lod_of(g, 256.0/(1.3*radius), `light_detail`). It runs `raster_p`.
 - It writes the groom's lfront and lacc when lit, else `front` and `acc`.
 - Compute textures are slot 0 `s3d::nd_target()` and slot 1 `s3d::shadow_map`, both with smp.
 - Storage is 0 pts, 1 segs, 2 `front` if lit else lfront, 3 `acc` if lit else lacc.
-- It is dispatched ceil(segments/64)×strands×1.
+- It is dispatched ceil(segments/64) × max(1, ceil of strands times that copy's ext.w) × 1.
 
 Tracking a groom that follows an item:
 1. Call `s3d::pose(item)`; n0 is the item asset's first node.
@@ -230,12 +233,25 @@ Simulating groom g with dt, using a copy of the groom taken at the start and o =
    3. With gn = max(guides, 1), set probe_v entries 0 to 4 to s0, s1, s2/gn/1000, mx/1000 and s3/gn/1000. Add 1 to entry 5, set entry 6 to guides, and clear ask.
 
 `draw(dt)`:
-1. Every groom that is on but not shown gets reset. first is the first live groom; return if there is none.
+1. Every groom that is on but not shown gets reset and its `filled` set to -1. first is the first live groom; when there is none, set `s3d::cast_want` to 0 and return.
 2. Call `size` when w or h differs from `s3d::width` or `s3d::height`.
 3. Clear `us`. For each groom, if live: track it when its item is at least 0, then simulate. Push its uniforms if live, else a default HairU.
 4. Set `s3d::depth_wanted`, and return unless `s3d::nd_ran`.
-5. Clear pass mode 0 on `front` and `acc` with us[first] and w*h.
-6. For each live groom: light_slices(g, 1 + min(lights count, 4)), a clear pass mode 2 on its lfront and lacc with LIGHT*LIGHT*lslices, then for each slice k below lslices raster mode 2 and then raster mode 3, both with k.
+5. Clear pass mode 0 on `front` and `acc` with us[first], w*h and first slice 0.
+6. For each live groom g, with n = 1 + min(lights count, 4): all is true when its lslices differs from n or `light_turns` is false; then light_slices(g, n), and set its `drawn` to 0. For each slice k below n:
+   - Slice 0 (the sun's map) is due only when the sun gives light: us[g].sun_rgb has an x, y or z above 0 (a sun that is off costs no map). A slice k above 0 is due when all is true or k equals 1 + (turn modulo (n - 1)).
+   - When due: if k is above 0, kept_vp[4g+k-1] takes us[g].plvp[k-1] and kept_x[4g+k-1] takes us[g].plx[k-1]. Then a clear pass mode 2 on its lfront and lacc with us[g], count LIGHT*LIGHT and first slice k, then raster mode 2 and then raster mode 3, both with k and us[g], and bit k of `drawn` is set. When all is true, also set the groom's `filled` to -1.
+   - When not due (k is above 0 here): us[g].plvp[k-1] takes kept_vp[4g+k-1] and us[g].plx[k-1] takes kept_x[4g+k-1], so every later pass this frame reads the map with the view it was drawn with.
+   After the slices, add 1 to the groom's turn.
+6b. `cast_all()`, a separate function taking nothing, called here: shadows of the hair on meshes.
+   1. cs is the list of live grooms whose look `cast` is above 0, in order, at most 4. total is the sum of their lslices.
+   2. Set `s3d::cast_want` to 0 when cs is empty, else (128 + CAST*CAST*total)*16. Return when cs is empty, or `s3d::cast_at` is not above 0, or `s3d::cast_room` differs from `s3d::cast_want`.
+   3. Build a float4 list hd of 1 + 26*(cs count) zero entries; hd[0].x is the cs count. off starts at 128. For the c-th groom g of cs, with u = us[g], im = the inverse of its model (`linalg::inverse`), and b = 1 + 26*c:
+      - hd[b] = (lslices, off, CAST, u.light.z times look cast), all f32.
+      - For each slice k below lslices: m = (u.light_vp when k is 0, else u.plvp[k-1]) times im (`gfx::mul`, the light matrix on the left); hd[b+1+5k], hd[b+2+5k], hd[b+3+5k] and hd[b+4+5k] are m.c0, m.c1, m.c2 and m.c3, and hd[b+5+5k] = (1/u.params.x, 0, 0, 0).
+      - whole is true when the groom's `filled` differs from `s3d::cast_gen`. For each slice k below lslices, when whole is true or bit k of `drawn` is set: a cast pass (g, k, `s3d::cast_at` + off + k*CAST*CAST). Then set `filled` to `s3d::cast_gen` and add CAST*CAST*lslices to off.
+   4. Upload the header: `gfx::update_buffer(s3d::light_buf, s3d::cast_at*16, bytes_of(hd))`, with the three arguments in that order (buffer, byte offset, bytes), then set `s3d::cast_frame` to `s3d::frames`.
+   Cast pass (g, k, at): a copy of us[g] with shape.x set to at as f32 and shape.w set to k as f32. `gfx::begin_compute([s3d::light_buf])`, bind `cast_p`, put_uniform of the copy, `gfx::bind_storage_buffer(gfx::COMPUTE, 0, lfront)` and slot 1 lacc of that groom, dispatched CAST*CAST/64 × 1 × 1, `gfx::end_compute()`.
 7. Raster mode 0 with slice 0 for all live grooms, then mode 1 with slice 0 for all.
 8. Resolve: `gfx::begin_compute` with no buffers and `[hairt]`, `resolve_p`, uniforms us[first], storage 0 `acc`, dispatched (w+7)/8 × (h+7)/8 × 1.
 9. If `gfx::begin_pass` succeeds with color `[s3d::hdr_target()` and three `gfx::Texture{0}]` and clear_color false: bind comp, bind `hairt` with smp at `gfx::FRAGMENT` slot 0, `gfx::draw(3)`, end the pass.

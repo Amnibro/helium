@@ -1167,6 +1167,7 @@ is shown again. `hair::grooms[g].look` (`hair::Look`) holds the appearance:
 | `falloff` | 40 | how fast that sky light fades with depth into the hair, per meter |
 | `frizz` | 0 | stray single hairs: at 1, about one strand in seven leaves the surface in an arc that reaches about 1.5 cm at the tip, which catches back light the way real flyaways do |
 | `dye` | 0 | 0 colors the hair with natural pigment, which suits blacks, browns, reds, blondes and grays; 1 absorbs light by `color` directly, for dyed colors such as blue, green or pink |
+| `cast` | 1 | how strongly the hair shades the meshes around it (face, shoulders, floor) from the sun and the first four lamps; 0 turns that off |
 
 `hair::grooms[g].phys` (`hair::Physics`) holds the motion: `gravity`; `styled` (1 cancels
 gravity so the styled shape is the rest shape, 0 lets the hair hang); `root` and `tip`
@@ -1180,9 +1181,26 @@ the internal bounce) plus scattered light from the strands in front; the hair's 
 comes from a 512 x 512 map of four depth layers drawn from the sun for each groom, and the
 scene's shadow map shadows the hair too. Up to four lamps from `s3d::lights` light it the
 same way, each with its own map of four depth layers drawn from the lamp (made when the
-first lamp appears, about 18 MB a lamp), and a sphere fitted to the strand roots stands in
+first lamp appears, about 5 MB a lamp), and a sphere fitted to the strand roots stands in
 for the head, so a lamp behind the head lights the outline and not the hair in front. A
 rect, sphere or tube lamp widens the highlights by its size as seen from the strand.
+
+The same maps shade the scene's meshes: each frame a smoothed 128 x 128 copy of every map
+goes to the surface shader, which dims the sun and the first four lamps where hair stands
+in the way, so a fringe shades the forehead and long hair shades the shoulders. The shade
+follows the hair one frame late. Up to four grooms cast this way.
+
+Three module knobs trade detail for speed:
+
+| Knob | Default | Meaning |
+| --- | --- | --- |
+| `hair::detail` | 2 | strands drawn on screen per pixel of a guide's strand spread; far hair draws fewer, each covering more, and fills the same area. 0 draws every strand |
+| `hair::light_detail` | 1 | the same for the light maps |
+| `hair::light_turns` | true | the lamps' maps are redrawn one per frame in turn instead of all every frame; a map stays valid while the head moves because it is kept in the hair's own space. A sun that is off draws no map |
+
+On a Radeon RX 9060 XT at 900 x 1100 with five rect lamps, a long wavy style of 3,260
+guides takes about 10 ms a frame with these defaults and 26 ms with every strand and every
+map drawn every frame; the two detail knobs change the picture by 0.3% RMS.
 
 ### Default hairstyles
 
@@ -3162,6 +3180,7 @@ no pixel differs by more than 2 / 255. `GFX_ONLY=hair` runs only these checks.
 | H20 lamps shadow the hair | the H8 scene with the sun off and a lamp 1 m from the head toward (1, 0.3, 0.2): mean brightness of the hair pixels at `shade` 1 relative to `shade` 0 | at most 0.92 |
 | H21 a lamp behind the head lights the outline | black sky, sun off, a lamp 1 m from the head away from the camera (toward 0, 0.3, -1): mean brightness of the hair pixels outside the head's disc relative to the same lamp in front (toward 0, 0.3, 1) | at least 0.1 |
 | H21 control, lamp off | the same with the lamp's color 0 | below 0.1 |
+| H22 hair shades meshes (added 2026-11-13, before its first run) | the H1 scene: share of the head's disc that is darker by more than 3 of 255 with `cast` 1 than with `cast` 0, and pixels brighter by more than 3 | at least 0.02 darker, 0 brighter |
 
 ### Fabric weave bars (E13, registered before the first GPU run)
 

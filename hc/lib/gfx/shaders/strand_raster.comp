@@ -16,7 +16,7 @@ float lightTx(ivec2 q, float w, uint s) {
 	if (q.x < 0 || q.y < 0 || q.x >= int(light.x) || q.y >= int(light.y)) return 0.0;
 	uint li = s * uint(light.x) * uint(light.y) + uint(q.y) * uint(light.x) + uint(q.x);
 	float x = (w - uintBitsToFloat(lfront[li])) / params.x - 0.5, d = 0.0;
-	for (uint k = 0u; k < 4u; k++) d += float(lacc[(li * 4u + k) * 4u + 3u]) / 4096.0 * clamp(x - float(k), 0.0, 1.0);
+	for (uint k = 0u; k < 4u; k++) d += float(lacc[li * 4u + k]) / 4096.0 * clamp(x - float(k), 0.0, 1.0);
 	return d;
 }
 float bodyT(vec3 P) {
@@ -74,16 +74,16 @@ void main() {
 	uint p = sg.x, g = sg.y, kz = sg.z & 255u, kg = (sg.z >> 8) & 255u, kw = (sg.z >> 16) & 255u;
 	seg_g = kg > 0u ? float(kg) / 64.0 : 1.0;
 	seg_w = kw > 0u ? float(kw) / 64.0 : 1.0;
-	float sc = kz > 0u ? min(float(kz), size.z) : size.z;
-	if (float(j) >= sc) return;
-	float h0 = hsh(g, j * 4u), h1 = hsh(g, j * 4u + 1u), h2 = hsh(g, j * 4u + 2u), h3 = hsh(g, j * 4u + 3u);
+	float sc = kz > 0u ? min(float(kz), size.z) : size.z, lk = pts[p * 3u + 2u].w, sn = lk > 0.5 ? sc * 0.45 : sc, sx = max(sn * (ext.w > 0.0 ? min(ext.w, 1.0) : 1.0), min(sn, 1.0));
+	if (float(j) >= sx) return;
+	float cvs = sn / sx * min(sx - float(j), 1.0);
+	float h1 = hsh(g, j * 4u + 1u), h2 = hsh(g, j * 4u + 2u), h3 = hsh(g, j * 4u + 3u);
 	float t0 = pts[p * 3u + 1u].w, t1 = pts[p * 3u + 4u].w;
 	float tend = 1.0 - 0.32 * h2 * h2;
 	if (t0 >= tend) return;
-	float lk = pts[p * 3u + 2u].w, fly = step(0.965 - 0.1 * sun_rgb.w, hsh(g, j * 4u + 31u));
-	if (lk > 0.5 && float(j) >= sc * 0.45) return;
+	float fly = step(0.965 - 0.1 * sun_rgb.w, hsh(g, j * 4u + 31u));
 	float nc = 3.0 + floor(hsh(g, 999u) * 5.0), cl = floor(h3 * nc), cc = (hsh(g, 1000u + uint(cl)) * 2.0 - 1.0) * 1.2, cz = (hsh(g, 2000u + uint(cl)) - 0.5) * params.z;
-	float u0 = (((float(j) + h0) / (lk > 0.5 ? sc * 0.45 : sc)) * 2.0 - 1.0) * 1.4, cs = (lk > 0.5 ? 0.18 : 0.62) + 0.25 * hsh(g, j * 4u + 77u) - fly * 0.4;
+	float u0 = (fract(hsh(g, 7u) + float(j) * 0.6180339887) * 2.0 - 1.0) * 1.4, cs = (lk > 0.5 ? 0.18 : 0.62) + 0.25 * hsh(g, j * 4u + 77u) - fly * 0.4;
 	float ua = mix(u0, cc, min(cs + 0.3 * t0, 0.97)), ub = mix(u0, cc, min(cs + 0.3 * t1, 0.97));
 	float dz = mix((h1 - 0.5) * params.z, cz, lk > 0.5 ? 0.3 : 0.75) * (lk > 0.5 ? 2.2 : 1.0), wob = (0.0007 + fly * (0.0047 + 0.004 * sun_rgb.w) + lk * 0.0011) * hsh(g, j + 500u), ph = 6.2831 * h3, fo = fly * sun_rgb.w * 0.012 * (0.3 + hsh(g, j * 4u + 41u));
 	vec3 A = strandPos(p, ua, dz, wob, ph, fo) + partShift(p, ua), B = strandPos(p + 1u, ub, dz, wob, ph, fo) + partShift(p + 1u, ub);
@@ -120,7 +120,7 @@ void main() {
 		vec2 q = mix(sa, sb, f);
 		float vz = mix(ca.w, cb.w, f);
 		float wpx = mix(wa, wb, f) * fpx / vz;
-		float cov = min(wpx * len / float(n), 1.0);
+		float cov = min(wpx * cvs * len / float(n), 1.0);
 		float mn = xm ? q.y - 0.5 : q.x - 0.5;
 		float m0 = floor(mn), fr = mn - m0;
 		for (int k = 0; k < 2; k++) {
@@ -134,7 +134,7 @@ void main() {
 			float fd = uintBitsToFloat(front[pi]);
 			int sl = clamp(int((vz - fd) / (params.x * ws)), 0, 3);
 			uint o = (pi * 4u + uint(sl)) * 4u;
-			if (lit) { atomicAdd(acc[o + 3u], uint(cov * w * 4096.0)); continue; }
+			if (lit) { atomicAdd(acc[pi * 4u + uint(sl)], uint(cov * w * 4096.0)); continue; }
 			float ao = mix(1.0, mix(occ0, occ1, f), 0.35) * exp(-(vz - fd) * sky.w / ws);
 			vec3 col = mix(colA, colB, f) * ao * look.x;
 			float cw = cov * w;

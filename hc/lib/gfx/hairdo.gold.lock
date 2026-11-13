@@ -136,40 +136,43 @@ fn radius(d float3) f32 {
 }
 === 740aec165ee8b494
 fn skin(d float3) float3 { ctr + d * radius(d) }
-=== 7c1e465016a423fa
+=== 6720e56a24322fb5
 fn keep(p float3, gap f32) float3 {
-	var r = p;
-	let d = r - ctr;
+	var q = p;
+	let d = q - ctr;
 	let l = length3(d);
 	if l > 0.000001 && d.y / l > -0.8 {
 		let R = radius(d * (1.0 / l)) + gap;
-		if l < R { r = ctr + d * (R / l); }
+		if l < R { q = ctr + d * (R / l); }
 	}
 	for i in sol.len / 2 {
 		let s = sol[2 * i];
-		let rr = sol[2 * i + 1];
-		let ra = float3 { rr.x + gap, rr.y + gap, rr.z + gap };
-		var q = float3 { (r.x - s.x) / ra.x, (r.y - s.y) / ra.y, (r.z - s.z) / ra.z };
-		let m = length3(q);
+		let r = sol[2 * i + 1] + float3 { gap, gap, gap };
+		var qq = float3 { (q.x - s.x) / r.x, (q.y - s.y) / r.y, (q.z - s.z) / r.z };
+		if i > 0 { qq.x = qq.x * qq.x * qq.x; }
+		let m = length3(qq);
 		if m < 1.0 && m > 0.000001 {
 			if i == 0 {
-				let u = q * (1.0 / m);
-				r = float3 { s.x + u.x * ra.x, s.y + u.y * ra.y, s.z + u.z * ra.z };
+				q = s + float3 { qq.x / m * r.x, qq.y / m * r.y, qq.z / m * r.z };
 			} else {
-				let mv = 0.3 * ra.z * (1.0 - m);
-				if r.z >= s.z { r.z += mv; } else { r.z -= mv; }
-				q = float3 { (r.x - s.x) / ra.x, (r.y - s.y) / ra.y, (r.z - s.z) / ra.z };
-				let yz = q.y * q.y + q.z * q.z;
-				if yz > 0.000001 {
-					let t = hsqrt(max(1.0 - q.x * q.x, 0.0) / yz);
-					r = float3 { s.x + q.x * ra.x, s.y + q.y * t * ra.y, s.z + q.z * t * ra.z };
+				if q.z >= s.z {
+					q.z = q.z + 0.3 * r.z * (1.0 - m);
 				} else {
-					r = float3 { s.x + q.x * ra.x, s.y + hsqrt(max(1.0 - q.x * q.x, 0.0)) * ra.y, s.z };
+					q.z = q.z - 0.3 * r.z * (1.0 - m);
+				}
+				qq = float3 { (q.x - s.x) / r.x, (q.y - s.y) / r.y, (q.z - s.z) / r.z };
+				qq.x = qq.x * qq.x * qq.x;
+				let yz = qq.y * qq.y + qq.z * qq.z;
+				if yz > 0.000001 {
+					let t = hsqrt(max(1.0 - qq.x * qq.x, 0.0) / yz);
+					q = float3 { q.x, s.y + qq.y * t * r.y, s.z + qq.z * t * r.z };
+				} else {
+					q = float3 { q.x, s.y + hsqrt(max(1.0 - qq.x * qq.x, 0.0)) * r.y, s.z };
 				}
 			}
 		}
 	}
-	return r;
+	return q;
 }
 === 5335b4c97aa1507b
 fn line(d float3) f32 {
@@ -252,179 +255,173 @@ fn fill_map() {
 	}
 	map = copy(cp2);
 }
-=== -647bc35cce8dc864
-fn visible(ni int, meshes const byte[][:]) bool {
-	let nd = gltf::nodes[ni];
-	if nd.mesh < 0 { return false; }
-	if meshes.len == 0 { return true; }
-	return hair::listed(meshes, gltf::text_of(gltf::meshes[nd.mesh].name));
-}
-fn band(pts const float3[:], cx f32, ylo f32, yhi f32) bool, f32, f32, f32 {
-	var found = false;
-	var half f32 = 0.0;
-	var zlo f32 = 1.0e30;
-	var zhi f32 = -1.0e30;
-	for p in pts {
-		if p.y >= ylo && p.y <= yhi {
-			found = true;
-			half = max(half, abs(p.x - cx));
-			zlo = min(zlo, p.z);
-			zhi = max(zhi, p.z);
-		}
-	}
-	return found, half, zlo, zhi;
-}
+=== -6b6a23861c12619f
 fn measure(asset int, joint const byte[:], meshes const byte[][:]) bool {
 	ok = false;
 	map.clear();
 	sol.clear();
 	let hn = gltf::find_node(asset, joint);
-	let ast = gltf::assets[asset];
-	let z = float3 { 0.0, 0.0, 0.0 };
+	let zero = float3 { 0.0, 0.0, 0.0 };
+	let a = gltf::assets[asset];
 	var total = 0;
-	for q in ast.nodes.count {
-		let ni = ast.nodes.first + q;
-		if !visible(ni, meshes) { continue; }
-		let mesh = gltf::meshes[gltf::nodes[ni].mesh];
-		for pi in mesh.prims.count {
-			total += gltf::prims[mesh.prims.first + pi].icount;
-		}
-	}
-	var hp float3[>..] = [];
-	hp.resize(total, z);
-	hp.clear();
-	var bp float3[>..] = [];
-	bp.resize(total, z);
-	bp.clear();
-	for q in ast.nodes.count {
-		let ni = ast.nodes.first + q;
-		if !visible(ni, meshes) { continue; }
-		let nd = gltf::nodes[ni];
-		if nd.skin < 0 && hn >= 0 { continue; }
-		let mesh = gltf::meshes[nd.mesh];
-		for pi in mesh.prims.count {
-			let pr = gltf::prims[mesh.prims.first + pi];
-			for t in pr.icount / 3 {
-				let v0 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t] as int);
-				let v1 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t + 1] as int);
-				let v2 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t + 2] as int);
-				var is_head = true;
-				if nd.skin >= 0 {
-					let sk = gltf::skins[nd.skin];
-					let jn = gltf::ints[sk.joints.first + hair::tri_owner(v0, v1, v2)];
-					is_head = under(jn, hn);
+	var head float3[>..] = [];
+	var body float3[>..] = [];
+	fn walk(fill bool) {
+		for ni in a.nodes.count {
+			let nd = gltf::nodes[a.nodes.first + ni];
+			if nd.mesh < 0 { continue; }
+			let ms = gltf::meshes[nd.mesh];
+			if meshes.len > 0 && !hair::listed(meshes, gltf::text_of(ms.name)) { continue; }
+			if nd.skin < 0 && hn >= 0 { continue; }
+			for pi in ms.prims.count {
+				let pr = gltf::prims[ms.prims.first + pi];
+				if !fill {
+					total += pr.icount;
+					continue;
 				}
-				let b0 = v0 * gltf::VERTEX_FLOATS + gltf::AT_POS;
-				let b1 = v1 * gltf::VERTEX_FLOATS + gltf::AT_POS;
-				let b2 = v2 * gltf::VERTEX_FLOATS + gltf::AT_POS;
-				let p0 = float3 { gltf::verts[b0], gltf::verts[b0 + 1], gltf::verts[b0 + 2] };
-				let p1 = float3 { gltf::verts[b1], gltf::verts[b1 + 1], gltf::verts[b1 + 2] };
-				let p2 = float3 { gltf::verts[b2], gltf::verts[b2 + 1], gltf::verts[b2 + 2] };
-				if is_head {
-					hp.push(p0);
-					hp.push(p1);
-					hp.push(p2);
-				} else {
-					bp.push(p0);
-					bp.push(p1);
-					bp.push(p2);
+				for t in pr.icount / 3 {
+					let v0 = pr.vfirst + (gltf::indices[pr.ifirst + t * 3] as int);
+					let v1 = pr.vfirst + (gltf::indices[pr.ifirst + t * 3 + 1] as int);
+					let v2 = pr.vfirst + (gltf::indices[pr.ifirst + t * 3 + 2] as int);
+					let b0 = v0 * gltf::VERTEX_FLOATS + gltf::AT_POS;
+					let b1 = v1 * gltf::VERTEX_FLOATS + gltf::AT_POS;
+					let b2 = v2 * gltf::VERTEX_FLOATS + gltf::AT_POS;
+					let p0 = float3 { gltf::verts[b0], gltf::verts[b0 + 1], gltf::verts[b0 + 2] };
+					let p1 = float3 { gltf::verts[b1], gltf::verts[b1 + 1], gltf::verts[b1 + 2] };
+					let p2 = float3 { gltf::verts[b2], gltf::verts[b2 + 1], gltf::verts[b2 + 2] };
+					var is_head = true;
+					if nd.skin >= 0 {
+						let sk = gltf::skins[nd.skin];
+						is_head = under(gltf::ints[sk.joints.first + hair::tri_owner(v0, v1, v2)], hn);
+					}
+					if is_head {
+						head.push(p0);
+						head.push(p1);
+						head.push(p2);
+					} else {
+						body.push(p0);
+						body.push(p1);
+						body.push(p2);
+					}
 				}
 			}
 		}
 	}
-	if hp.len < 3 { return false; }
-	var ymax f32 = -1.0e30;
-	var xlo f32 = 1.0e30;
-	var xhi f32 = -1.0e30;
-	for p in hp {
-		ymax = max(ymax, p.y);
-		xlo = min(xlo, p.x);
-		xhi = max(xhi, p.x);
+	walk(false);
+	head.resize(total, zero);
+	head.clear();
+	body.resize(total, zero);
+	body.clear();
+	walk(true);
+	if head.len < 3 { return false; }
+	var ymax f32 = head[0].y;
+	var xlo f32 = head[0].x;
+	var xhi f32 = head[0].x;
+	for i in head.len {
+		ymax = max(ymax, head[i].y);
+		xlo = min(xlo, head[i].x);
+		xhi = max(xhi, head[i].x);
 	}
+	top = ymax;
 	let cx = (xlo + xhi) / 2.0;
 	let W = xhi - xlo;
 	var hw f32 = 0.0;
 	var zlo f32 = 1.0e30;
 	var zhi f32 = -1.0e30;
-	var any_top = false;
-	for p in hp {
-		if p.y > ymax - 0.42 * W {
-			any_top = true;
-			hw = max(hw, abs(p.x - cx));
-			zlo = min(zlo, p.z);
-			zhi = max(zhi, p.z);
+	for i in head.len {
+		if head[i].y > top - 0.42 * W {
+			hw = max(hw, abs(head[i].x - cx));
+			zlo = min(zlo, head[i].z);
+			zhi = max(zhi, head[i].z);
 		}
 	}
-	if !any_top {
-		zlo = 0.0;
-		zhi = 0.0;
-	}
-	top = ymax;
 	unit = max(1.33 * hw, 0.02);
 	ctr = float3 { cx, top - unit, (zlo + zhi) / 2.0 };
 	map.clear();
 	map.resize(MW * MH, 0.0);
-	for t in hp.len / 3 {
-		let a = hp[3 * t];
-		let b = hp[3 * t + 1];
-		let c = hp[3 * t + 2];
-		let longest = max(length3(b - a), max(length3(c - b), length3(a - c)));
-		let n = clamp(ceil_i(longest / (0.04 * unit)), 1, 24);
+	for t in head.len / 3 {
+		let pa = head[t * 3];
+		let pb = head[t * 3 + 1];
+		let pc = head[t * 3 + 2];
+		let le = max(length3(pb - pa), max(length3(pc - pb), length3(pa - pc)));
+		let n = clamp(ceil_i(le / (0.04 * unit)), 1, 24);
 		for i in 0..n + 1 {
 			for j in 0..n - i + 1 {
-				let s = a + (b - a) * ((i as f32) / (n as f32)) + (c - a) * ((j as f32) / (n as f32));
-				let d = s - ctr;
+				let sm = pa + (pb - pa) * ((i as f32) / (n as f32)) + (pc - pa) * ((j as f32) / (n as f32));
+				let d = sm - ctr;
 				let r = length3(d);
 				if r > 0.00001 {
-					let col = (floor((atan2(d.x as real, d.z as real) / 6.2831853 + 0.5) * MW) as int) % MW;
-					let row = clamp(floor((asin_r((d.y / r) as real) / 3.14159265 + 0.5) * MH) as int, 0, MH - 1);
+					let col = ((floor((atan2(d.x as real, d.z as real) / 6.2831853 + 0.5) * MW)) as int) % MW;
+					let row = clamp((floor((asin_r((d.y / r) as real) / 3.14159265 + 0.5) * MH)) as int, 0, MH - 1);
 					map[row * MW + col] = max(map[row * MW + col], r);
 				}
 			}
 		}
 	}
 	fill_map();
-	if bp.len > 0 {
-		var bs float3[>..] = [];
-		bs.resize(bp.len, z);
-		bs.clear();
-		for p in bp {
-			if abs(p.x - cx) < 2.6 * unit { bs.push(p); }
+	if body.len > 0 {
+		var sub float3[>..] = [];
+		sub.resize(body.len, zero);
+		sub.clear();
+		for i in body.len {
+			if abs(body[i].x - cx) < 2.6 * unit { sub.push(body[i]); }
 		}
 		var sy = top - 3.0 * unit;
-		var have_sy = false;
-		for p in bs {
-			let ax = abs(p.x - cx);
+		var found_sy = false;
+		for i in sub.len {
+			let ax = abs(sub[i].x - cx);
 			if ax >= 1.3 * unit && ax <= 1.8 * unit {
-				if !have_sy {
-					sy = p.y;
-					have_sy = true;
+				if !found_sy {
+					sy = sub[i].y;
+					found_sy = true;
 				} else {
-					sy = max(sy, p.y);
+					sy = max(sy, sub[i].y);
 				}
 			}
 		}
-		sol.resize(6, z);
-		sol.clear();
-		let f1, h1, a1, c1 = band(hp, cx, sy + 0.25 * unit, sy + 0.6 * unit);
-		let f2, h2, a2, c2 = band(bs, cx, sy + 0.25 * unit, sy + 0.6 * unit);
+		fn band(lo f32, hi f32, with_head bool) f32, f32, f32, bool {
+			var half f32 = 0.0;
+			var zl f32 = 1.0e30;
+			var zh f32 = -1.0e30;
+			var any = false;
+			if with_head {
+				for i in head.len {
+					if head[i].y >= lo && head[i].y <= hi {
+						any = true;
+						half = max(half, abs(head[i].x - cx));
+						zl = min(zl, head[i].z);
+						zh = max(zh, head[i].z);
+					}
+				}
+			}
+			for i in sub.len {
+				if sub[i].y >= lo && sub[i].y <= hi {
+					any = true;
+					half = max(half, abs(sub[i].x - cx));
+					zl = min(zl, sub[i].z);
+					zh = max(zh, sub[i].z);
+				}
+			}
+			return half, (zl + zh) / 2.0, (zh - zl) / 2.0, any;
+		}
+		let nh, nzm, nzr, nany = band(sy + 0.25 * unit, sy + 0.6 * unit, true);
 		var nr = 0.55 * unit;
 		var nz = ctr.z - 0.1 * unit;
-		if f1 || f2 {
-			nr = clamp(max(h1, h2), 0.4 * unit, 0.8 * unit);
-			nz = (min(a1, a2) + max(c1, c2)) / 2.0;
+		if nany {
+			nr = clamp(nh, 0.4 * unit, 0.8 * unit);
+			nz = nzm;
 		}
 		sol.push(float3 { cx, sy + 0.9 * unit, nz });
 		sol.push(float3 { nr, 1.5 * unit, nr });
-		let fs, hs1, zs0, zs1 = band(bs, cx, sy - 1.2 * unit, sy + 0.1 * unit);
-		if fs {
-			sol.push(float3 { cx, sy - 0.75 * unit, (zs0 + zs1) / 2.0 });
-			sol.push(float3 { hs1 + 0.15 * unit, 0.85 * unit, (zs1 - zs0) / 2.0 + 0.1 * unit });
+		let sh, szm, szr, sany = band(sy - 1.2 * unit, sy + 0.1 * unit, false);
+		if sany {
+			sol.push(float3 { cx, sy - 0.75 * unit, szm });
+			sol.push(float3 { sh + 0.15 * unit, 0.85 * unit, szr + 0.22 * unit });
 		}
-		let fc, hc, zc0, zc1 = band(bs, cx, sy - 4.0 * unit, sy - unit);
-		if fc {
-			sol.push(float3 { cx, sy - 2.8 * unit, (zc0 + zc1) / 2.0 });
-			sol.push(float3 { hc + 0.1 * unit, 2.6 * unit, (zc1 - zc0) / 2.0 + 0.1 * unit });
+		let ch, czm, czr, cany = band(sy - 4.0 * unit, sy - unit, false);
+		if cany {
+			sol.push(float3 { cx, sy - 2.8 * unit, czm });
+			sol.push(float3 { ch + 0.1 * unit, 2.6 * unit, czr + 0.1 * unit });
 		}
 	}
 	ok = true;
