@@ -78,6 +78,7 @@ import gfx.bc;
 import gfx.ktx2;
 import gfx.cloth;
 import gfx.hair;
+import gfx.hairdo;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -8779,6 +8780,103 @@ fn day_checks() bool {
 	gfx::release(IN_OUT);
 	d1 && d2 && d3 && d4 && d5 && d6 && d7
 }
+fn hd_p(d const byte[:], i int) float3 { float3 { hair::f32_at(d, 16 + i * 48), hair::f32_at(d, 20 + i * 48), hair::f32_at(d, 24 + i * 48) } }
+fn hd_grow(name const byte[:], seed int, d byte[>..]&) int, int {
+	d.clear();
+	let st = hairdo::style(name);
+	let n = hairdo::grow(st, seed, d);
+	return n, clamp(st.points, 4, 32);
+}
+// tips in front of the brow (kind 0) or gathered behind the head (kind 1), and the guide count
+fn hd_tips(name const byte[:], kind int) int, int {
+	var d byte[>..] = [];
+	let n, k = hd_grow(name, 7, d);
+	let u = hairdo::unit;
+	var c = 0;
+	for i in n {
+		let t = hd_p(d[..], i * k + k - 1) - hairdo::ctr;
+		if kind == 0 && t.z > 0.7 * u && t.y > -0.1 * u && t.y < 0.35 * u && abs(t.x) < 0.75 * u { c += 1; }
+		if kind == 1 && t.z < -0.6 * u && abs(t.x) < 0.5 * u { c += 1; }
+	}
+	return c, n;
+}
+fn hd_rb(px const byte[:], a const byte[:], b const byte[:]) int, real, real {
+	var n = 0; var r = 0.0; var bl = 0.0;
+	for i in 1280 * 720 { if sk_d(a, b, i) > 8 { n += 1; r += px[i * 4] as real; bl += px[i * 4 + 2] as real; } }
+	return n, r / max(n, 1) as real, bl / max(n, 1) as real;
+}
+// GFX_ONLY=hairdo: the default hairstyles (gfx.hairdo) on a plain ball head
+fn hairdo_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	hairdo::ball(float3 { 0.0, 0.0, 0.0 }, 0.1);
+	let u = hairdo::unit as real;
+	var d byte[>..] = [];
+	var grown = 0; var least = 1.0e9; var inside = 1.0e9; var near = 0;
+	for i in hairdo::count() {
+		let st = hairdo::style(hairdo::name_of(i));
+		let n, k = hd_grow(hairdo::name_of(i), 7, d);
+		if n > 0 && d.len == 16 + n * k * 48 + n * (k - 1) * 16 { grown += 1; }
+		least = min(least, n as real / max(st.guides, 1) as real);
+		for j in n * k {
+			let v = hd_p(d[..], j) - hairdo::ctr;
+			let l = linalg::length3(v) as real;
+			if l > 0.0 && v.y as real / l > -0.8 { inside = min(inside, l / u); if l < 1.05 * u { near += 1; } }
+		}
+	}
+	let p1 = hairdo::count() >= 30 && grown == hairdo::count() && least >= 0.7 && hairdo::tones() >= 22;
+	print("gpu: hairdo HD1 every default grows: ", grown, " of ", hairdo::count(), " styles, fewest guides ", r3(least), " of the asked count (bar >= 0.7), ", hairdo::tones(), " shades", if p1 { " PASS" } else { " FAIL" });
+	let p2 = inside >= 0.999 && near > 1000;
+	print("gpu: hairdo HD2 no point inside the head: nearest ", r3(inside), " head radii from the center (bar >= 0.999), ", near, " points within 5% of the skin (control, bar > 1000)", if p2 { " PASS" } else { " FAIL" });
+	var a byte[>..] = []; var b byte[>..] = []; var c byte[>..] = [];
+	let _, _ = hd_grow("wavy", 7, a);
+	let _, _ = hd_grow("wavy", 7, b);
+	let _, _ = hd_grow("wavy", 8, c);
+	let p3 = a.len > 16 && a[..] == b[..] && !(a[..] == c[..]);
+	print("gpu: hairdo HD3 the same seed gives the same bytes (", a[..] == b[..], "), another seed does not (", !(a[..] == c[..]), ")", if p3 { " PASS" } else { " FAIL" });
+	let cut = hairdo::style("bob").cut as real;
+	var low = 1.0e9; var at = 0; var far = 1.0e9;
+	let nb, kb = hd_grow("bob", 7, d);
+	for i in nb * kb { low = min(low, (hd_p(d[..], i) - hairdo::ctr).y as real / u); }
+	for i in nb { let t = (hd_p(d[..], i * kb + kb - 1) - hairdo::ctr).y as real / u; if t < 0.1 - cut && t > -0.15 - cut { at += 1; } }
+	let nl, kl = hd_grow("long straight", 7, d);
+	for i in nl * kl { far = min(far, (hd_p(d[..], i) - hairdo::ctr).y as real / u); }
+	let p4 = low >= -cut - 0.15 && at as real >= 0.3 * nb as real && far < -3.0;
+	print("gpu: hairdo HD4 blunt cut: bob ends ", r3(-low), " head units below the center (cut ", r3(cut), ", bar <= cut + 0.15), ", at, " of ", nb, " tips at the cut (bar >= 30%), long straight reaches ", r3(-far), " (control, bar > 3)", if p4 { " PASS" } else { " FAIL" });
+	let f1, _ = hd_tips("bob bangs", 0);
+	let f0, _ = hd_tips("bob", 0);
+	let p5 = f1 >= 40 && f0 <= 5;
+	print("gpu: hairdo HD5 fringe: ", f1, " tips in front of the brow with bangs (bar >= 40), ", f0, " without (control, bar <= 5)", if p5 { " PASS" } else { " FAIL" });
+	let t1, n1 = hd_tips("ponytail", 1);
+	let t0, n0 = hd_tips("long straight", 1);
+	let tf = t1 as real / max(n1, 1) as real;
+	let lf = t0 as real / max(n0, 1) as real;
+	let p6 = tf >= 0.8 && lf <= 0.6;
+	print("gpu: hairdo HD6 ponytail: ", r3(tf), " of the tips end in the tail behind the head (bar >= 0.8), ", r3(lf), " for loose long hair (control, bar <= 0.6)", if p6 { " PASS" } else { " FAIL" });
+	let it, _ = hr_head(HR_AT, 1.0);
+	let _, _ = hd_grow("bob", 7, d);
+	let g = hair::load(d[..], hairdo::style("bob").strands);
+	hair::follow(g, it, -1);
+	let sh = hairdo::tone("blue");
+	hair::grooms[g].look.color = float3 { sh.r, sh.g, sh.b };
+	hair::grooms[g].look.gain = sh.gain;
+	hair::grooms[g].look.dye = sh.dye;
+	let a1, b1 = hr_pair(g);
+	let _ = codec_png::write(path(OUT_DIR[..], "hairdo.png")[..], 1280, 720, 4, a1[..]);
+	hair::grooms[g].look.dye = 0.0;
+	let a2, b2 = hr_pair(g);
+	let n7, r1, bl1 = hd_rb(a1[..], a1[..], b1[..]);
+	let _, r0, bl0 = hd_rb(a2[..], a2[..], b2[..]);
+	let p7 = n7 as real > 0.8 * hr_disc();
+	print("gpu: hairdo HD7 a default draws: ", n7, " pixels of bob on the ball (bar > ", round(0.8 * hr_disc()), ")", if p7 { " PASS" } else { " FAIL" });
+	let p8 = bl1 > 1.3 * r1 && bl1 / max(r1, 1.0) > 1.03 * bl0 / max(r0, 1.0);
+	print("gpu: hairdo HD8 dye: the blue shade draws ", r2(bl1 / max(r1, 1.0)), " times more blue than red (bar > 1.3), ", r2(bl0 / max(r0, 1.0)), " times as natural pigment of the same color (control, bar: at least 3% less)", if p8 { " PASS" } else { " FAIL" });
+	for q in hair::grooms.len { hair::unload(q); }
+	p1 && p2 && p3 && p4 && p5 && p6 && p7 && p8
+}
 fn hair_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
@@ -8836,7 +8934,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "updo" { updo_checks() } else if only[..] == "tails" { tail_checks() } else if only[..] == "drape" { drape_checks() } else if only[..] == "rise" { rise_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "hairdo" { hairdo_checks() } else if only[..] == "updo" { updo_checks() } else if only[..] == "tails" { tail_checks() } else if only[..] == "drape" { drape_checks() } else if only[..] == "rise" { rise_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -9026,6 +9124,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("skin", skin_checks()) { good = false; }
 	if !mark("cloth", cloth_checks()) { good = false; }
 	if !mark("hair", hair_checks()) { good = false; }
+	if !mark("hairdo", hairdo_checks()) { good = false; }
 	if !mark("cloud", cloud_checks()) { good = false; }
 	if !mark("vfog", fog_checks()) { good = false; }
 	if !mark("sea", sea_checks()) { good = false; }

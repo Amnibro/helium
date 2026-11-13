@@ -1166,6 +1166,7 @@ is shown again. `hair::grooms[g].look` (`hair::Look`) holds the appearance:
 | `ambient` | 0.22, 0.22, 0.22 | share of the scene's sky light (the mean of zenith and horizon times `sky.ambient`) the hair picks up |
 | `falloff` | 40 | how fast that sky light fades with depth into the hair, per meter |
 | `frizz` | 0 | stray single hairs: at 1, about one strand in seven leaves the surface in an arc that reaches about 1.5 cm at the tip, which catches back light the way real flyaways do |
+| `dye` | 0 | 0 colors the hair with natural pigment, which suits blacks, browns, reds, blondes and grays; 1 absorbs light by `color` directly, for dyed colors such as blue, green or pink |
 
 `hair::grooms[g].phys` (`hair::Physics`) holds the motion: `gravity`; `styled` (1 cancels
 gravity so the styled shape is the rest shape, 0 lets the hair hang); `root` and `tip`
@@ -1182,6 +1183,49 @@ same way, each with its own map of four depth layers drawn from the lamp (made w
 first lamp appears, about 18 MB a lamp), and a sphere fitted to the strand roots stands in
 for the head, so a lamp behind the head lights the outline and not the hair in front. A
 rect, sphere or tube lamp widens the highlights by its size as seen from the strand.
+
+### Default hairstyles
+
+`import gfx.hairdo;` puts a ready-made hairstyle on any character, with no groom file and
+no fitting by hand:
+
+```
+let g = hairdo::wear(item, "head", ["skin", "face"], "long waves", "auburn", 7);
+```
+
+`item` is the scene item of a skinned character, `"head"` the name of its head joint and
+the list names the meshes of its bare body (an empty list takes every mesh). The call
+measures the head, grows the style on it, loads it as a groom that follows the head joint
+and returns the groom's index, or -1 when it finds no head. The last number is a seed: the
+same seed gives the same hair. Hide the character's own hair meshes first.
+
+The 30 styles: `buzz`, `crew`, `crop`, `side part`, `slick back`, `spiky`, `curly top`,
+`afro`, `pixie`, `bowl`, `bob`, `bob bangs`, `lob`, `shag`, `wavy`, `curly`,
+`long straight`, `long side part`, `long layers`, `long waves`, `long curls`, `long bangs`,
+`ponytail`, `low ponytail`, `ponytail bangs`, `top bun`, `low bun`, `twin tails`,
+`pigtails`, `space buns`.
+
+The 22 shades: `black`, `soft black`, `dark brown`, `brown`, `chestnut`, `auburn`,
+`copper`, `strawberry`, `dark blonde`, `blonde`, `golden`, `platinum`, `gray`, `silver`,
+`white`, and the dyed `pink`, `red`, `blue`, `teal`, `green`, `purple`, `lavender`.
+
+| Call | What it does |
+| --- | --- |
+| `hairdo::count()`, `hairdo::name_of(i)` | the number of styles and the name of style `i`, for a picker |
+| `hairdo::tones()`, `hairdo::tone_name(i)` | the same for the shades |
+| `hairdo::style(name)`, `hairdo::tone(name)` | one style (`hairdo::Do`) or shade (`hairdo::Shade`) to read or change before growing it |
+| `hairdo::measure(asset, joint, meshes)` | measures the head: its center, its size (`hairdo::unit`, about 0.1 m on an adult) and its shape in every direction, plus stand-ins for the neck, shoulders and chest that long hair falls around |
+| `hairdo::ball(center, r)` | a plain ball as the head, for heads without a mesh |
+| `hairdo::grow(style, seed, data)` | grows the style on the measured head and writes the groom's bytes for `hair::load`; returns the guide count |
+| `hairdo::wear(item, joint, meshes, style, shade, seed)` | all of it in one call |
+
+A style is a row of numbers, in head units so it fits a small or a large head alike:
+`length`, `cut` (a blunt cut that many units below the head's center), `part`, `fringe`,
+`comb` (falling from the part, back, forward, standing out, gathered, or falling all
+around), `curl` and `wave`, `tie` (one or two tails or buns, with their place and length),
+`frizz` and more; the rows are the table at the top of `hairdo.gold`. Hair grows above a
+hairline fitted to adult heads, lies flat on the scalp, stays outside the head, the neck
+and the shoulders, and its roots are drawn thicker so the scalp does not show through.
 
 ### Foliage
 
@@ -2518,6 +2562,26 @@ Results (2026-11-11, CPU):
 | TT7 control, at the tie | 1.065 | below 1.15 | fails as it should |
 | TT8 inner pulls in the head side | 0.2 | at most 0.3 | PASS |
 | TT8 control, the outer side | 1.0 | above 0.3 | fails as it should |
+
+### Default hairstyle bars and results (2026-11-13, RX 9060 XT, RADV; `GFX_ONLY=hairdo`)
+
+Every check grows the styles on a ball of 0.1 m with seed 7.
+
+| Check | Measured | Bar | Result |
+| --- | --- | --- | --- |
+| HD1 every default grows | 30 of 30 styles give a well-formed groom; the fewest guides are 1.006 x the asked count; 22 shades | all styles, at least 0.7 x | PASS |
+| HD2 no point inside the head | nearest point of any style is 1.0 radii from the center | at least 0.999 | PASS |
+| HD2 control, hair on the skin | 293,590 points lie within 5% of the skin | above 1,000 | PASS |
+| HD3 the same seed gives the same bytes | equal for seed 7 twice, different for seed 8 | equal, then different | PASS |
+| HD4 blunt cut | the bob ends 1.331 units below the center (cut 1.25); 3,251 of 3,260 tips are at the cut | at most cut + 0.15; at least 30% | PASS |
+| HD4 control, long straight | reaches 6.546 units below | above 3 | PASS |
+| HD5 fringe | 209 tips in front of the brow with `bob bangs` | at least 40 | PASS |
+| HD5 control, `bob` | 0 | at most 5 | PASS |
+| HD6 ponytail | 1.0 of the tips end in the tail behind the head | at least 0.8 | PASS |
+| HD6 control, loose long hair | 0.0 | at most 0.6 | PASS |
+| HD7 a default draws | 23,197 pixels of bob on the ball at 1280 x 720 | above 15,419 | PASS |
+| HD8 dye | the blue shade draws 1.88 x more blue than red | above 1.3 | PASS |
+| HD8 control, natural pigment | 1.76 x with `dye` 0 | at least 3% less | PASS |
 
 ### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
 

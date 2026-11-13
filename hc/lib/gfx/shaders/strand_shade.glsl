@@ -18,7 +18,7 @@ float hFr(float ci, float eta) {
 	float rpa = (eta * ci - ct) / (eta * ci + ct), rpe = (ci - eta * ct) / (ci + eta * ct);
 	return st >= 1.0 ? 1.0 : 0.5 * (rpa * rpa + rpe * rpe);
 }
-vec3 hSigma(vec2 m) { return m.x * vec3(0.419, 0.697, 1.37) + m.y * vec3(0.187, 0.4, 1.05); }
+vec3 hSigma(vec2 m) { return m.x * vec3(0.419, 0.697, 1.37) + m.y * vec3(0.187, 0.4, 1.05) + ext.xyz; }
 vec3 chiang(vec3 T, vec3 L, vec3 V, vec3 sig, float h, float bm, float bn, float al, float ex, out vec3 af, out vec3 ab) {
 	float sto = clamp(dot(V, T), -0.9999, 0.9999), cto = sqrt(1.0 - sto * sto), sti = clamp(dot(L, T), -0.9999, 0.9999), cti = sqrt(1.0 - sti * sti);
 	vec3 n0 = abs(T.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), X = normalize(n0 - T * dot(n0, T)), Y = cross(T, X);

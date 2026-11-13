@@ -1,0 +1,874 @@
+import math;
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.scene3d;
+import gfx.hair;
+namespace hairdo;
+let MW = 64;
+let MH = 32;
+struct Do {
+	name const byte[:],
+	guides int,
+	strands int,
+	points int,
+	width f32,
+	comb int,
+	part f32,
+	length f32,
+	sides f32,
+	cut f32,
+	vary f32,
+	fringe f32,
+	sweep f32,
+	lift f32,
+	curl f32,
+	turns f32,
+	wave f32,
+	waves f32,
+	clump f32,
+	locks int,
+	tie int,
+	tie_y f32,
+	tie_az f32,
+	tail f32,
+	fan f32,
+	frizz f32,
+	rough f32,
+	stiff f32,
+	face f32
+}
+
+fn STYLES() Do[>..] {
+	var r Do[>..] = [];
+	r.push(Do{"buzz", 3600, 14, 4, 2.5, 3, 0, 0.07, 0.6, 0, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 180, 0, 0, 0, 0.5, 1, 0});
+	r.push(Do{"crew", 3600, 14, 6, 2.5, 3, 0, 0.3, 0.3, 0, 0.25, 0, 0, 0, 0, 0, 0, 0, 0.3, 400, 0, 0, 180, 0, 0, 0, 0.5, 0.92, 0});
+	r.push(Do{"crop", 3200, 16, 8, 3, 2, 0, 0.6, 0.35, 0, 0.3, 0, 0.3, 0.12, 0, 0, 0.02, 1.5, 0.5, 320, 0, 0, 180, 0, 0, 0.2, 0.45, 0.3, 0});
+	r.push(Do{"side part", 3200, 16, 10, 3, 0, -0.35, 0.95, 0.3, 0, 0.2, 0, 0, 0.1, 0, 0, 0.015, 1.2, 0.4, 300, 0, 0, 180, 0, 0, 0.1, 0.4, 0.3, 0.8});
+	r.push(Do{"slick back", 3200, 16, 12, 3, 1, 0, 1.1, 0.4, 0, 0.2, 0, 0, 0.06, 0, 0, 0, 0, 0.5, 220, 0, 0, 180, 0, 0, 0, 0.3, 0.3, 0.8});
+	r.push(Do{"spiky", 2800, 14, 6, 3, 3, 0, 0.5, 0.5, 0, 0.35, 0, 0, 0, 0, 0, 0, 0, 0.9, 160, 0, 0, 180, 0, 0, 0.2, 0.45, 1, 0});
+	r.push(Do{"curly top", 3000, 16, 12, 3, 3, 0, 0.75, 0.3, 0, 0.3, 0, 0, 0, 0.07, 3.5, 0, 0, 0.6, 380, 0, 0, 180, 0, 0, 0.8, 0.55, 0.85, 0});
+	r.push(Do{"afro", 3400, 16, 20, 3, 3, 0, 1.3, 0.9, 0, 0.2, 0, 0, 0, 0.05, 6, 0, 0, 0.5, 520, 0, 0, 180, 0, 0, 1.5, 0.6, 1, 0});
+	r.push(Do{"pixie", 3200, 16, 10, 3, 0, -0.25, 0.8, 0.45, 0, 0.25, 0.42, 0.6, 0.1, 0, 0, 0.015, 1.2, 0.45, 300, 0, 0, 180, 0, 0, 0.2, 0.42, 0.3, 0.7});
+	r.push(Do{"bowl", 3200, 18, 14, 3, 5, 0, 2, 1, 0.01, 0.05, 0, 0, 0.08, 0, 0, 0, 0, 0.3, 260, 0, 0, 180, 0, 0, 0.1, 0.4, 0.2, 0});
+	r.push(Do{"bob", 3200, 20, 20, 3, 0, 0, 3, 1, 1.25, 0.05, 0, 0, 0.1, 0, 0, 0.01, 0.6, 0.4, 260, 0, 0, 180, 0, 0, 0.2, 0.4, 0.15, 0.62});
+	r.push(Do{"bob bangs", 3200, 20, 20, 3, 0, 0, 3, 1, 1.25, 0.05, 0.5, 0, 0.1, 0, 0, 0.01, 0.6, 0.4, 260, 0, 0, 180, 0, 0, 0.2, 0.4, 0.15, 0.62});
+	r.push(Do{"lob", 3200, 20, 24, 3, 0, 0.3, 4, 1, 1.8, 0.07, 0, 0, 0.1, 0, 0, 0.03, 0.5, 0.45, 240, 0, 0, 180, 0, 0, 0.3, 0.4, 0.15, 0.62});
+	r.push(Do{"shag", 3200, 20, 24, 3, 0, 0, 2.7, 1, 0, 0.5, 0.5, 0, 0.2, 0, 0, 0.05, 0.6, 0.6, 300, 0, 0, 180, 0, 0, 0.6, 0.45, 0.2, 0.62});
+	r.push(Do{"wavy", 3200, 20, 28, 3, 0, 0.25, 3.2, 1, 0, 0.15, 0, 0, 0.14, 0, 0, 0.16, 0.9, 0.55, 260, 0, 0, 180, 0, 0, 0.4, 0.42, 0.15, 0.62});
+	r.push(Do{"curly", 3200, 20, 28, 3, 0, 0.25, 3, 1, 0, 0.2, 0, 0, 0.2, 0.09, 1.6, 0, 0, 0.7, 260, 0, 0, 180, 0, 0, 0.8, 0.5, 0.2, 0.62});
+	r.push(Do{"long straight", 3200, 22, 28, 3, 0, 0, 6, 1, 0, 0.2, 0, 0, 0.08, 0, 0, 0.008, 0.4, 0.4, 220, 0, 0, 180, 0, 0, 0.2, 0.38, 0.1, 0.62});
+	r.push(Do{"long side part", 3200, 22, 28, 3, 0, 0.32, 6, 1, 0, 0.2, 0, 0, 0.1, 0, 0, 0.01, 0.4, 0.4, 220, 0, 0, 180, 0, 0, 0.2, 0.38, 0.1, 0.62});
+	r.push(Do{"long layers", 3200, 22, 28, 3, 0, 0.2, 6, 1, 0, 0.45, 0, 0, 0.12, 0, 0, 0.04, 0.4, 0.5, 240, 0, 0, 180, 0, 0, 0.3, 0.4, 0.1, 0.62});
+	r.push(Do{"long waves", 3200, 22, 32, 3, 0, 0.25, 6, 1, 0, 0.15, 0, 0, 0.14, 0, 0, 0.22, 0.8, 0.6, 220, 0, 0, 180, 0, 0, 0.4, 0.42, 0.1, 0.62});
+	r.push(Do{"long curls", 3200, 22, 32, 3, 0, 0.25, 6, 1, 0, 0.15, 0, 0, 0.16, 0.11, 1.1, 0, 0, 0.75, 180, 0, 0, 180, 0, 0, 0.6, 0.48, 0.15, 0.62});
+	r.push(Do{"long bangs", 3200, 22, 28, 3, 0, 0, 6, 1, 0, 0.2, 0.5, 0, 0.08, 0, 0, 0.008, 0.4, 0.4, 220, 0, 0, 180, 0, 0, 0.2, 0.38, 0.1, 0.62});
+	r.push(Do{"ponytail", 3200, 20, 28, 3, 4, 0, 1, 1, 0, 0.2, 0, 0, 0.03, 0, 0, 0.02, 0.4, 0.3, 160, 1, 0.35, 180, 4, 0.5, 0.3, 0.4, 0.3, 0});
+	r.push(Do{"low ponytail", 3200, 20, 28, 3, 4, 0, 1, 1, 0, 0.2, 0, 0, 0.03, 0, 0, 0.02, 0.4, 0.3, 160, 1, -0.35, 180, 4, 0.4, 0.3, 0.4, 0.1, 0});
+	r.push(Do{"ponytail bangs", 3200, 20, 28, 3, 4, 0, 1, 1, 0, 0.2, 0.5, 0, 0.03, 0, 0, 0.02, 0.4, 0.3, 160, 1, 0.35, 180, 4, 0.5, 0.3, 0.4, 0.3, 0});
+	r.push(Do{"top bun", 3200, 20, 24, 3, 4, 0, 1, 1, 0, 0.2, 0, 0, 0.03, 0, 0, 0, 0, 0.3, 160, 3, 0.8, 180, 0.45, 0, 0.3, 0.4, 0.3, 0});
+	r.push(Do{"low bun", 3200, 20, 24, 3, 4, 0, 1, 1, 0, 0.2, 0, 0, 0.03, 0, 0, 0, 0, 0.3, 160, 3, -0.3, 180, 0.45, 0, 0.3, 0.4, 0.3, 0});
+	r.push(Do{"twin tails", 3200, 20, 28, 3, 4, 0, 1, 1, 0, 0.2, 0.5, 0, 0.03, 0, 0, 0.03, 0.4, 0.3, 200, 2, 0.45, 115, 5, 0.8, 0.3, 0.4, 0.35, 0});
+	r.push(Do{"pigtails", 3200, 20, 24, 3, 4, 0, 1, 1, 0, 0.2, 0, 0, 0.03, 0, 0, 0.02, 0.4, 0.3, 200, 2, -0.25, 125, 2.5, 0.5, 0.3, 0.4, 0.1, 0});
+	r.push(Do{"space buns", 3200, 20, 24, 3, 4, 0, 1, 1, 0, 0.2, 0.5, 0, 0.03, 0, 0, 0, 0, 0.3, 200, 4, 0.62, 140, 0.36, 0, 0.3, 0.4, 0.3, 0});
+	r
+}
+struct Shade {
+	name const byte[:],
+	r f32,
+	g f32,
+	b f32,
+	gain f32,
+	dye f32
+}
+
+fn SHADES() Shade[>..] {
+	var r Shade[>..] = [];
+	r.push(Shade{"black", 0.03, 0.022, 0.018, 0.45, 0});
+	r.push(Shade{"soft black", 0.06, 0.04, 0.03, 0.7, 0});
+	r.push(Shade{"dark brown", 0.12, 0.07, 0.04, 1, 0});
+	r.push(Shade{"brown", 0.22, 0.13, 0.07, 1.2, 0});
+	r.push(Shade{"chestnut", 0.3, 0.15, 0.07, 1.3, 0});
+	r.push(Shade{"auburn", 0.36, 0.13, 0.06, 1.4, 0});
+	r.push(Shade{"copper", 0.55, 0.22, 0.07, 1.6, 0});
+	r.push(Shade{"strawberry", 0.5, 0.36, 0.2, 1.7, 0});
+	r.push(Shade{"dark blonde", 0.42, 0.28, 0.14, 1.5, 0});
+	r.push(Shade{"blonde", 0.63, 0.41, 0.2, 1.8, 0});
+	r.push(Shade{"golden", 0.72, 0.5, 0.2, 1.8, 0});
+	r.push(Shade{"platinum", 0.82, 0.72, 0.55, 1.9, 0});
+	r.push(Shade{"gray", 0.42, 0.42, 0.42, 1.4, 0});
+	r.push(Shade{"silver", 0.7, 0.71, 0.73, 1.7, 0});
+	r.push(Shade{"white", 0.9, 0.9, 0.88, 1.9, 0});
+	r.push(Shade{"pink", 0.85, 0.35, 0.55, 1.4, 1});
+	r.push(Shade{"red", 0.7, 0.05, 0.06, 1.1, 1});
+	r.push(Shade{"blue", 0.1, 0.25, 0.75, 1.1, 1});
+	r.push(Shade{"teal", 0.08, 0.55, 0.5, 1.2, 1});
+	r.push(Shade{"green", 0.15, 0.6, 0.2, 1.1, 1});
+	r.push(Shade{"purple", 0.4, 0.15, 0.65, 1.1, 1});
+	r.push(Shade{"lavender", 0.65, 0.55, 0.85, 1.5, 1});
+	r
+}
+var ok bool = false;
+var ctr float3 = float3 { 0.0, 0.0, 0.0 };
+var unit f32 = 0.1;
+var top f32 = 0.0;
+var map f32[>..];
+var sol float3[>..];
+fn count() int { STYLES().len }
+fn tones() int { SHADES().len }
+fn name_of(i int) const byte[:] {
+	let t = STYLES();
+	if i < 0 || i >= t.len { return ""; }
+	return t[i].name;
+}
+fn tone_name(i int) const byte[:] {
+	let t = SHADES();
+	if i < 0 || i >= t.len { return ""; }
+	return t[i].name;
+}
+fn find(name const byte[:]) int {
+	let t = STYLES();
+	for i in t.len {
+		if t[i].name == name { return i; }
+	}
+	return -1;
+}
+fn style(name const byte[:]) Do {
+	let t = STYLES();
+	let i = find(name);
+	if i < 0 { return t[0]; }
+	return t[i];
+}
+fn tone(name const byte[:]) Shade {
+	let t = SHADES();
+	var br = 0;
+	for i in t.len {
+		if t[i].name == "brown" { br = i; }
+	}
+	for i in t.len {
+		if t[i].name == name { return t[i]; }
+	}
+	return t[br];
+}
+fn length3(v float3) f32 { linalg::length3(v) }
+fn unit3(v float3) float3 { linalg::unit3(v) }
+fn dot3(a float3, b float3) f32 { linalg::dot3(a, b) }
+fn cross3(a float3, b float3) float3 { linalg::cross3(a, b) }
+fn ss(a f32, b f32, x f32) f32 {
+	let t f32 = clamp((x - a) / (b - a), 0.0, 1.0);
+	t * t * (3.0 - 2.0 * t)
+}
+fn mix(a f32, b f32, t f32) f32 { a * (1.0 - t) + b * t }
+fn hsqrt(x f32) f32 { sqrt(x as real) as f32 }
+fn hsin(x f32) f32 { sin(x as real) as f32 }
+fn hcos(x f32) f32 { cos(x as real) as f32 }
+fn asin_r(x real) real { atan2(x, sqrt(max(1.0 - x * x, 0.0))) }
+fn hacos(x f32) f32 {
+	let y = x as real;
+	atan2(sqrt(max(1.0 - y * y, 0.0)), y) as f32
+}
+fn ceil_i(x f32) int { ceil(x as real) as int }
+fn floor_i(x f32) int { floor(x as real) as int }
+fn radius(d float3) f32 {
+	if map.len < MW * MH { return unit; }
+	let fx = (atan2(d.x as real, d.z as real) / 6.2831853 + 0.5) * MW - 0.5;
+	let fy = (asin_r(clamp(d.y, -1.0, 1.0) as real) / 3.14159265 + 0.5) * MH - 0.5;
+	let x0 = floor(fx);
+	let y0 = floor(fy);
+	let tx = (fx - x0) as f32;
+	let ty = (fy - y0) as f32;
+	let xa = ((x0 as int) % MW + MW) % MW;
+	let xb = ((x0 as int) + 1 + MW) % MW;
+	let ya = clamp(y0 as int, 0, MH - 1);
+	let yb = clamp((y0 as int) + 1, 0, MH - 1);
+	let top_row = mix(map[ya * MW + xa], map[ya * MW + xb], tx);
+	let bot_row = mix(map[yb * MW + xa], map[yb * MW + xb], tx);
+	mix(top_row, bot_row, ty)
+}
+fn skin(d float3) float3 { ctr + d * radius(d) }
+fn keep(p float3, gap f32) float3 {
+	var r = p;
+	let d = r - ctr;
+	let l = length3(d);
+	if l > 0.000001 && d.y / l > -0.8 {
+		let R = radius(d * (1.0 / l)) + gap;
+		if l < R { r = ctr + d * (R / l); }
+	}
+	for i in sol.len / 2 {
+		let s = sol[2 * i];
+		let rr = sol[2 * i + 1];
+		let ra = float3 { rr.x + gap, rr.y + gap, rr.z + gap };
+		var q = float3 { (r.x - s.x) / ra.x, (r.y - s.y) / ra.y, (r.z - s.z) / ra.z };
+		let m = length3(q);
+		if m < 1.0 && m > 0.000001 {
+			if i == 0 {
+				let u = q * (1.0 / m);
+				r = float3 { s.x + u.x * ra.x, s.y + u.y * ra.y, s.z + u.z * ra.z };
+			} else {
+				let mv = 0.3 * ra.z * (1.0 - m);
+				if r.z >= s.z { r.z += mv; } else { r.z -= mv; }
+				q = float3 { (r.x - s.x) / ra.x, (r.y - s.y) / ra.y, (r.z - s.z) / ra.z };
+				let yz = q.y * q.y + q.z * q.z;
+				if yz > 0.000001 {
+					let t = hsqrt(max(1.0 - q.x * q.x, 0.0) / yz);
+					r = float3 { s.x + q.x * ra.x, s.y + q.y * t * ra.y, s.z + q.z * t * ra.z };
+				} else {
+					r = float3 { s.x + q.x * ra.x, s.y + hsqrt(max(1.0 - q.x * q.x, 0.0)) * ra.y, s.z };
+				}
+			}
+		}
+	}
+	return r;
+}
+fn line(d float3) f32 {
+	let cz = d.z / (hsqrt(d.x * d.x + d.z * d.z) + 0.0001);
+	let kz f32[16] = [-1.0, -0.6, -0.45, -0.35, -0.25, -0.15, 0.0, 0.06, 0.12, 0.2, 0.35, 0.45, 0.55, 0.7, 0.85, 1.0];
+	let kv f32[16] = [-0.75, -0.56, -0.3, -0.02, 0.24, 0.36, 0.38, 0.12, -0.05, 0.03, 0.14, 0.26, 0.4, 0.5, 0.58, 0.62];
+	if cz <= kz[0] { return -0.75; }
+	if cz >= kz[15] { return 0.62; }
+	for i in 15 {
+		if cz <= kz[i + 1] {
+			let t = (cz - kz[i]) / (kz[i + 1] - kz[i]);
+			return kv[i] + (kv[i + 1] - kv[i]) * t;
+		}
+	}
+	return 0.62;
+}
+fn scalp(d float3) f32 {
+	let t = line(d);
+	ss(t - 0.02, t + 0.03, d.y)
+}
+fn under(node int, head int) bool {
+	if head < 0 || node == head { return true; }
+	if node < 0 { return false; }
+	var x = node;
+	for i in 32 {
+		x = gltf::nodes[x].parent;
+		if x < 0 { return false; }
+		if x == head { return true; }
+	}
+	return false;
+}
+fn fill_map() {
+	for pass in 8 {
+		var cp f32[>..] = [];
+		for r in MH {
+			for c in MW {
+				let v = map[r * MW + c];
+				if v != 0.0 {
+					cp.push(v);
+					continue;
+				}
+				var sum f32 = 0.0;
+				var n = 0;
+				let lf = map[r * MW + (c + MW - 1) % MW];
+				if lf != 0.0 { sum += lf; n += 1; }
+				let rt = map[r * MW + (c + 1) % MW];
+				if rt != 0.0 { sum += rt; n += 1; }
+				if r > 0 {
+					let up = map[(r - 1) * MW + c];
+					if up != 0.0 { sum += up; n += 1; }
+				}
+				if r < MH - 1 {
+					let dn = map[(r + 1) * MW + c];
+					if dn != 0.0 { sum += dn; n += 1; }
+				}
+				if n > 0 { cp.push(sum / (n as f32)); } else { cp.push(0.0); }
+			}
+		}
+		map = copy(cp);
+	}
+	for i in map.len {
+		if map[i] == 0.0 { map[i] = unit; }
+	}
+	var cp2 f32[>..] = [];
+	for r in MH {
+		for c in MW {
+			var sum f32 = 0.0;
+			for dr in -1..2 {
+				let rr = clamp(r + dr, 0, MH - 1);
+				for dc in -1..2 {
+					let cc = (c + dc + MW) % MW;
+					sum += map[rr * MW + cc];
+				}
+			}
+			cp2.push(max(map[r * MW + c], sum / 9.0));
+		}
+	}
+	map = copy(cp2);
+}
+fn vpos(v int) float3 {
+	let b = v * gltf::VERTEX_FLOATS + gltf::AT_POS;
+	float3 { gltf::verts[b], gltf::verts[b + 1], gltf::verts[b + 2] }
+}
+fn measure(asset int, joint const byte[:], meshes const byte[][:]) bool {
+	ok = false;
+	map.clear();
+	sol.clear();
+	let hn = gltf::find_node(asset, joint);
+	let asd = gltf::assets[asset];
+	var hp float3[>..] = [];
+	var bp float3[>..] = [];
+	for ni in asd.nodes.first..asd.nodes.first + asd.nodes.count {
+		let nd = gltf::nodes[ni];
+		if nd.mesh < 0 { continue; }
+		let ms = gltf::meshes[nd.mesh];
+		let nm const byte[:] = gltf::text_of(ms.name);
+		if meshes.len > 0 && !hair::listed(meshes, nm) { continue; }
+		if nd.skin < 0 && hn >= 0 { continue; }
+		for pi in ms.prims.first..ms.prims.first + ms.prims.count {
+			let pr = gltf::prims[pi];
+			for t in pr.icount / 3 {
+				let v0 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t] as int);
+				let v1 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t + 1] as int);
+				let v2 = pr.vfirst + (gltf::indices[pr.ifirst + 3 * t + 2] as int);
+				var is_head = true;
+				if nd.skin >= 0 {
+					let sk = gltf::skins[nd.skin];
+					is_head = under(gltf::ints[sk.joints.first + hair::tri_owner(v0, v1, v2)], hn);
+				}
+				let p0 = vpos(v0);
+				let p1 = vpos(v1);
+				let p2 = vpos(v2);
+				if is_head {
+					hp.push(p0);
+					hp.push(p1);
+					hp.push(p2);
+				} else {
+					bp.push(p0);
+					bp.push(p1);
+					bp.push(p2);
+				}
+			}
+		}
+	}
+	if hp.len < 3 { return false; }
+	top = hp[0].y;
+	var xlo f32 = hp[0].x;
+	var xhi f32 = hp[0].x;
+	for p in hp {
+		top = max(top, p.y);
+		xlo = min(xlo, p.x);
+		xhi = max(xhi, p.x);
+	}
+	let cx = (xlo + xhi) / 2.0;
+	let W = xhi - xlo;
+	var hw f32 = 0.0;
+	var zlo f32 = 1.0e30;
+	var zhi f32 = -1.0e30;
+	for p in hp {
+		if p.y > top - 0.42 * W {
+			hw = max(hw, abs(p.x - cx));
+			zlo = min(zlo, p.z);
+			zhi = max(zhi, p.z);
+		}
+	}
+	unit = max(1.33 * hw, 0.02);
+	ctr = float3 { cx, top - unit, (zlo + zhi) / 2.0 };
+	map.resize(MW * MH, 0.0);
+	for t in hp.len / 3 {
+		let a = hp[3 * t];
+		let b = hp[3 * t + 1];
+		let c = hp[3 * t + 2];
+		let le = max(length3(b - a), max(length3(c - b), length3(a - c)));
+		let n = clamp(ceil_i(le / (0.04 * unit)), 1, 24);
+		for i in 0..n + 1 {
+			for j in 0..n - i + 1 {
+				let s = a + (b - a) * ((i as f32) / (n as f32)) + (c - a) * ((j as f32) / (n as f32));
+				let d = s - ctr;
+				let r = length3(d);
+				if r > 0.00001 {
+					let col = ((floor((atan2(d.x as real, d.z as real) / 6.2831853 + 0.5) * MW) as int) % MW + MW) % MW;
+					let row = clamp(floor((asin_r((d.y / r) as real) / 3.14159265 + 0.5) * MH) as int, 0, MH - 1);
+					let at = row * MW + col;
+					map[at] = max(map[at], r);
+				}
+			}
+		}
+	}
+	fill_map();
+	if bp.len > 0 {
+		var bf float3[>..] = [];
+		for p in bp {
+			if abs(p.x - cx) < 2.6 * unit { bf.push(p); }
+		}
+		var sy f32 = top - 3.0 * unit;
+		var found = false;
+		for p in bf {
+			let ax = abs(p.x - cx);
+			if ax >= 1.3 * unit && ax <= 1.8 * unit {
+				if !found || p.y > sy {
+					sy = p.y;
+					found = true;
+				}
+			}
+		}
+		var cnt = 0;
+		var half f32 = 0.0;
+		var z0 f32 = 0.0;
+		var z1 f32 = 0.0;
+		fn add(p float3, y0 f32, y1 f32) {
+			if p.y >= y0 && p.y <= y1 {
+				if cnt == 0 {
+					z0 = p.z;
+					z1 = p.z;
+				} else {
+					z0 = min(z0, p.z);
+					z1 = max(z1, p.z);
+				}
+				half = max(half, abs(p.x - cx));
+				cnt += 1;
+			}
+		}
+		for p in hp { add(p, sy + 0.25 * unit, sy + 0.6 * unit); }
+		for p in bf { add(p, sy + 0.25 * unit, sy + 0.6 * unit); }
+		var nr f32 = 0.55 * unit;
+		var nz f32 = ctr.z - 0.1 * unit;
+		if cnt > 0 {
+			nr = clamp(half, 0.4 * unit, 0.8 * unit);
+			nz = (z0 + z1) / 2.0;
+		}
+		sol.push(float3 { cx, sy + 0.9 * unit, nz });
+		sol.push(float3 { nr, 1.5 * unit, nr });
+		cnt = 0;
+		half = 0.0;
+		for p in bf { add(p, sy - 1.2 * unit, sy + 0.1 * unit); }
+		if cnt > 0 {
+			sol.push(float3 { cx, sy - 0.75 * unit, (z0 + z1) / 2.0 });
+			sol.push(float3 { half + 0.15 * unit, 0.85 * unit, (z1 - z0) / 2.0 + 0.1 * unit });
+		}
+		cnt = 0;
+		half = 0.0;
+		for p in bf { add(p, sy - 4.0 * unit, sy - unit); }
+		if cnt > 0 {
+			sol.push(float3 { cx, sy - 2.8 * unit, (z0 + z1) / 2.0 });
+			sol.push(float3 { half + 0.1 * unit, 2.6 * unit, (z1 - z0) / 2.0 + 0.1 * unit });
+		}
+	}
+	ok = true;
+	return true;
+}
+fn ball(center float3, r f32) {
+	ctr = center;
+	unit = r;
+	top = center.y + r;
+	map.clear();
+	map.resize(MW * MH, r);
+	sol.clear();
+	ok = true;
+}
+fn hs(a int, b int, c int, s int) f32 {
+	let x = sin((a as real) * 127.1 + (b as real) * 311.7 + (c as real) * 74.7 + (s as real) * 19.19) * 43758.5453;
+	(x - floor(x)) as f32
+}
+fn vn(p float3, s int) f32 {
+	let fx = floor(p.x as real);
+	let fy = floor(p.y as real);
+	let fz = floor(p.z as real);
+	let ix = fx as int;
+	let iy = fy as int;
+	let iz = fz as int;
+	let tx f32 = (p.x as real - fx) as f32;
+	let ty f32 = (p.y as real - fy) as f32;
+	let tz f32 = (p.z as real - fz) as f32;
+	let sx f32 = tx * tx * (3.0 - 2.0 * tx);
+	let sy f32 = ty * ty * (3.0 - 2.0 * ty);
+	let sz f32 = tz * tz * (3.0 - 2.0 * tz);
+	let c00 = mix(hs(ix, iy, iz, s), hs(ix + 1, iy, iz, s), sx);
+	let c10 = mix(hs(ix, iy + 1, iz, s), hs(ix + 1, iy + 1, iz, s), sx);
+	let c01 = mix(hs(ix, iy, iz + 1, s), hs(ix + 1, iy, iz + 1, s), sx);
+	let c11 = mix(hs(ix, iy + 1, iz + 1, s), hs(ix + 1, iy + 1, iz + 1, s), sx);
+	mix(mix(c00, c10, sy), mix(c01, c11, sy), sz)
+}
+fn resample(path const float3[:], k int, out float3[>..]&) {
+	var total f32 = 0.0;
+	for i in path.len - 1 { total += length3(path[i + 1] - path[i]); }
+	if total <= 0.0 {
+		for e in k { out.push(path[0]); }
+		return;
+	}
+	var seg = 0;
+	var acc f32 = 0.0;
+	for e in k {
+		if e == k - 1 {
+			out.push(path[path.len - 1]);
+			continue;
+		}
+		let target = total * (e as f32) / ((k - 1) as f32);
+		while seg < path.len - 2 && acc + length3(path[seg + 1] - path[seg]) < target {
+			acc += length3(path[seg + 1] - path[seg]);
+			seg += 1;
+		}
+		let sl = length3(path[seg + 1] - path[seg]);
+		var t f32 = 0.0;
+		if sl > 0.0 { t = clamp((target - acc) / sl, 0.0, 1.0); }
+		out.push(path[seg] + (path[seg + 1] - path[seg]) * t);
+	}
+}
+fn tie_dir(st Do, x f32) float3 {
+	let gy = st.tie_y;
+	var sg f32 = 1.0;
+	if (st.tie == 2 || st.tie == 4) && x < 0.0 { sg = -1.0; }
+	let a f32 = st.tie_az * 3.14159265 / 180.0 * sg;
+	let h = hsqrt(max(1.0 - gy * gy, 0.0));
+	float3 { hsin(a) * h, gy, hcos(a) * h }
+}
+fn tie_at(st Do, x f32) float3 {
+	let g = tie_dir(st, x);
+	skin(g) + g * (0.22 * unit)
+}
+fn tail_line(st Do, x f32, out float3[>..]&) {
+	out.clear();
+	let g = tie_dir(st, x);
+	var p = tie_at(st, x);
+	var dir = unit3(g + float3 { 0.0, 0.6 * st.stiff + 0.15, 0.0 });
+	let n = clamp(ceil_i(st.tail / 0.06), 0, 400);
+	out.push(p);
+	for i in n {
+		dir = unit3(dir * (0.82 + 0.15 * st.stiff) + float3 { 0.0, -1.0, 0.0 } * (0.18 - 0.15 * st.stiff));
+		p = keep(p + dir * (0.06 * unit), 0.2 * unit);
+		out.push(p);
+	}
+}
+fn comb_dir(cm int, st Do, e float3, s f32) float3 {
+	var w = float3 { e.x, -0.6, e.z };
+	if cm == 0 {
+		let a2 = (0.3 + 1.7 * clamp(e.y * 1.6, 0.0, 1.0)) * ss(-0.55, 0.25, e.z);
+		w = float3 { s * a2, -1.0, -0.15 };
+	} else if cm == 1 {
+		w = float3 { 0.15 * s, -0.25, -1.0 };
+	} else if cm == 2 {
+		w = float3 { st.sweep * 0.8, -0.35, 1.0 };
+	}
+	let r = w - e * dot3(w, e);
+	if length3(r) < 0.00001 { return float3 { 0.0, -1.0, 0.0 }; }
+	return unit3(r);
+}
+fn loose(st Do, d float3, fr bool, s f32, lay f32, lv f32, path float3[>..]&) f32 {
+	path.clear();
+	var cm = st.comb;
+	if fr { cm = 2; }
+	var L f32 = 0.0;
+	if fr {
+		L = st.fringe * 2.0;
+	} else {
+		L = st.length * mix(st.sides, 1.0, ss(-0.2, 0.55, d.y)) * (1.0 - st.vary * lv);
+	}
+	let n = clamp(ceil_i(L / 0.06), 2, 400);
+	let h = 0.06 * unit;
+	var p = skin(d);
+	var dir = d;
+	path.push(p);
+	for i in 1..n + 1 {
+		let e = unit3(p - ctr);
+		let ln = line(e);
+		let o = ss(ln - 0.25, ln + 0.05, e.y);
+		var q = p;
+		if cm == 3 {
+			dir = unit3(dir * 0.7 + unit3(e * st.stiff + float3 { 0.0, -1.0, 0.0 } * (1.0 - st.stiff)) * 0.3);
+			q = p + dir * h;
+		} else {
+			let tg = unit3(comb_dir(cm, st, e, s) * o + float3 { 0.0, -1.0, 0.0 } * (1.0 - o));
+			if i == 1 { dir = unit3(d * (0.15 + 2.0 * st.lift) + tg); }
+			let kk = mix(0.55 + 0.4 * st.stiff, 0.6, o);
+			dir = unit3(dir * kk + tg * (1.0 - kk));
+			q = p + dir * h;
+			if (cm == 0 || cm == 1 || cm == 5) && st.face > 0.0 && q.z > ctr.z + 0.1 * unit && q.y > ctr.y - 1.6 * unit && q.y < ctr.y + 0.1 * unit {
+				let dx = q.x - ctr.x;
+				let ax = abs(dx);
+				let lim = st.face * unit;
+				if ax < lim {
+					var sg f32 = s;
+					if dx > 0.0 { sg = 1.0; } else if dx < 0.0 { sg = -1.0; }
+					q.x = ctr.x + sg * (ax + (lim - ax) * 0.5);
+				}
+			}
+			let fi = i as f32;
+			q = keep(q, unit * (0.012 + st.lift * (0.3 + 0.7 * lay) * min(fi / 5.0, 1.0) + 0.02 * min(fi * 0.03, 1.0)));
+			if length3(q - p) > 0.000001 { dir = unit3(q - p); }
+		}
+		p = q;
+		path.push(p);
+		if st.cut > 0.0 && !fr && p.y < ctr.y - st.cut * unit * (1.0 + 0.04 * (lv - 0.5)) { break; }
+		if fr && p.y < ctr.y + (0.6 - st.fringe + 0.08 * st.vary * (lv - 0.5)) * unit { break; }
+	}
+	if path.len > 5 {
+		for pass in 2 {
+			let cp = copy(path);
+			for i in 3..path.len - 1 {
+				var np = (cp[i - 1] + cp[i] * 2.0 + cp[i + 1]) * 0.25;
+				if cm != 3 { np = keep(np, unit * (0.012 + st.lift * (0.3 + 0.7 * lay))); }
+				path[i] = np;
+			}
+		}
+	}
+	var total f32 = 0.0;
+	for i in path.len - 1 { total += length3(path[i + 1] - path[i]); }
+	return total / unit;
+}
+fn tied(st Do, d float3, lay f32, lv f32, ph f32, line_pts const float3[:], path float3[>..]&) f32, f32 {
+	path.clear();
+	let g = tie_dir(st, d.x);
+	let T = tie_at(st, d.x);
+	let ang = hacos(clamp(dot3(d, g), -1.0, 1.0));
+	let na = clamp(ceil_i(ang / 0.06), 2, 80);
+	for i in 0..na + 1 {
+		let t = (i as f32) / (na as f32);
+		var m = g;
+		if ang >= 0.01 { m = unit3(d * hsin((1.0 - t) * ang) + g * hsin(t * ang)); }
+		let surf = ctr + m * (radius(m) + unit * (0.012 + st.lift * lay * hsin(3.14159265 * t)));
+		var w = ss(0.6, 1.0, t);
+		w = w * w;
+		path.push(surf * (1.0 - w) + T * w);
+	}
+	var a0 f32 = 0.0;
+	for i in path.len - 1 { a0 += length3(path[i + 1] - path[i]); }
+	a0 = a0 / unit;
+	if st.tie == 3 || st.tie == 4 {
+		var h2 = float3 { 1.0, 0.0, 0.0 };
+		if abs(g.y) < 0.9 { h2 = float3 { 0.0, 1.0, 0.0 }; }
+		let u2 = unit3(cross3(g, h2));
+		let v2 = cross3(g, u2);
+		let rb = st.tail * unit;
+		let B = T + g * (rb * 0.6);
+		for j in 1..25 {
+			let tt = (j as f32) / 24.0;
+			let an = ph + 6.2831853 * 2.2 * tt;
+			path.push(B + (u2 * hcos(an) + v2 * hsin(an)) * (rb * (0.55 + 0.45 * lv) * (1.0 - 0.5 * tt)) + g * (rb * (0.6 * tt - 0.2)));
+		}
+		return a0 + st.tail * 4.0, a0 + st.tail * 4.0;
+	}
+	var nt = floor_i((line_pts.len - 1) as f32 * (1.0 - st.vary * lv));
+	if line_pts.len >= 2 { nt = max(nt, 1); }
+	let off = float3 { hcos(ph), 0.0, hsin(ph) } * (0.17 * unit * hsqrt(lay));
+	for i in 1..nt + 1 {
+		let tt = (i as f32) / ((line_pts.len - 1) as f32);
+		path.push(keep(line_pts[i] + off * (0.35 + 0.65 * min((i as f32) / 6.0, 1.0) + 2.0 * st.fan * tt), 0.01 * unit));
+	}
+	return a0 + (nt as f32) * 0.06, a0;
+}
+
+fn dir_at(az f32, y f32) float3 {
+	let r = hsqrt(max(1.0 - y * y, 0.0));
+	float3 { hsin(az) * r, y, hcos(az) * r }
+}
+fn make_roots(st Do, out float3[>..]&) {
+	out.clear();
+	var fsum f32 = 0.0;
+	for i in 2048 {
+		let fr = (i as real) * 0.61803398875;
+		let az = (6.2831853 * (fr - floor(fr))) as f32;
+		let y = (-0.7 + 1.7 * ((i as real) + 0.5) / 2048.0) as f32;
+		fsum += scalp(dir_at(az, y));
+	}
+	let M = (st.guides as f32) / max(fsum / 2048.0, 0.02);
+	let cols = max(ceil_i(hsqrt(M * 3.7)), 1);
+	let rows = max(ceil_i(M / (cols as f32)), 1);
+	for j in rows {
+		for i in cols {
+			let a = hair::rnd() as f32;
+			let b = hair::rnd() as f32;
+			let c = hair::rnd() as f32;
+			let az = ((i as f32) + a) / (cols as f32) * 6.2831853 - 3.14159265;
+			let y = -0.7 + ((j as f32) + b) * 1.7 / (rows as f32);
+			let dir = dir_at(az, y);
+			if c < scalp(dir) { out.push(dir); }
+		}
+	}
+}
+var s_axes float3[>..];
+var s_root float3[>..];
+var s_whole f32[>..];
+var s_head f32[>..];
+var s_grp int[>..];
+var s_lay f32[>..];
+var s_pts float3[>..];
+fn make_strands(st Do, roots const float3[:], k int) {
+	s_axes.clear();
+	s_root.clear();
+	s_whole.clear();
+	s_head.clear();
+	s_grp.clear();
+	s_lay.clear();
+	s_pts.clear();
+	var tl1 float3[>..] = [];
+	var tl2 float3[>..] = [];
+	if st.tie == 1 || st.tie == 2 {
+		tail_line(st, 1.0, tl1);
+		tail_line(st, -1.0, tl2);
+	}
+	var path float3[>..] = [];
+	for ri in roots.len {
+		let d = roots[ri];
+		let lay = hair::rnd() as f32;
+		let lv = hair::rnd() as f32;
+		let pr = hair::rnd() as f32;
+		let ph = (hair::rnd() as f32) * 6.2831853;
+		var s f32 = -1.0;
+		if (skin(d).x - ctr.x) / unit > st.part + 0.06 * (pr - 0.5) { s = 1.0; }
+		let fringe = st.fringe > 0.0 && d.z > 0.3 && abs(d.x) < 0.7 && d.y < line(d) + 0.22 + 0.08 * (lay - 0.5);
+		var whole f32 = 0.0;
+		var head f32 = 0.0;
+		var grp = 0;
+		if st.tie > 0 && !fringe {
+			if d.x < 0.0 {
+				let a, b = tied(st, d, lay, lv, ph, tl2, path);
+				whole = a;
+				head = b;
+				grp = 0;
+			} else {
+				let a, b = tied(st, d, lay, lv, ph, tl1, path);
+				whole = a;
+				head = b;
+				grp = 1;
+			}
+		} else {
+			whole = loose(st, d, fringe, s, lay, lv, path);
+			head = 0.0;
+			if fringe { grp = 2; } else if s < 0.0 { grp = 0; } else { grp = 1; }
+		}
+		resample(path, k, s_pts);
+		s_axes.push(d);
+		s_root.push(path[0]);
+		s_whole.push(whole);
+		s_head.push(head);
+		s_grp.push(grp);
+		s_lay.push(lay);
+	}
+}
+var s_lead int[>..];
+fn make_leaders(st Do) {
+	s_lead.clear();
+	let n = s_grp.len;
+	let nc = min(st.locks, n);
+	for i in n {
+		var best = i;
+		var bd f32 = 1.0e30;
+		for j in nc {
+			let l = j * n / nc;
+			if s_grp[l] == s_grp[i] {
+				let dd = length3(s_root[l] - s_root[i]);
+				if dd < bd {
+					bd = dd;
+					best = l;
+				}
+			}
+		}
+		s_lead.push(best);
+	}
+}
+var s_out float3[>..];
+fn shape_all(st Do, k int) {
+	s_out.clear();
+	let n = s_grp.len;
+	for i in n {
+		let jit = (hair::rnd() as f32) - 0.5;
+		let lead = s_lead[i];
+		let r0 = s_root[lead] * (1.5 / unit);
+		let phw = 6.2831853 * 2.0 * vn(r0, 71);
+		let wamp = st.wave * unit * (0.7 + 0.6 * vn(r0, 75));
+		let wfq = st.waves * (0.85 + 0.3 * vn(r0, 72));
+		let ac = 6.2831853 * vn(r0, 73);
+		let phc = 6.2831853 * vn(r0 * 7.3, 91);
+		var hand f32 = -1.0;
+		if vn(r0 * 5.1, 93) > 0.5 { hand = 1.0; }
+		let base = i * k;
+		for e in k {
+			let ip = max(e - 1, 0);
+			let nx = min(e + 1, k - 1);
+			let tg = s_pts[base + nx] - s_pts[base + ip];
+			let sl = s_whole[i] * (e as f32) / ((k - 1) as f32);
+			let ramp = clamp((sl - s_head[i]) / (0.3 * (s_whole[i] - s_head[i]) + 0.15), 0.0, 1.0);
+			var c1 = cross3(tg, s_axes[i]);
+			if dot3(c1, c1) < 0.000000000001 { c1 = cross3(tg, float3 { 1.0, 0.0, 0.0 }); }
+			let b1 = unit3(c1);
+			let b2 = unit3(cross3(tg, b1));
+			let th = hand * 6.2831853 * st.turns * sl + phc + jit * 1.2;
+			s_out.push(s_pts[base + e] + (b1 * hcos(ac) + b2 * hsin(ac)) * (wamp * ramp * hsin(6.2831853 * wfq * sl + phw + jit * 0.3)) + (b1 * hcos(th) + b2 * hsin(th)) * (st.curl * unit * ramp * (0.75 + 0.5 * s_lay[i])));
+		}
+	}
+	let snap = copy(s_out);
+	for i in n {
+		let lead = s_lead[i];
+		if lead != i {
+			for e in k {
+				let w = st.clump * 0.85 * hsqrt((e as f32) / ((k - 1) as f32));
+				let p = s_out[i * k + e];
+				s_out[i * k + e] = p + (snap[lead * k + e] - p) * w;
+			}
+		}
+	}
+	if st.comb != 3 {
+		for i in n {
+			for e in 1..k {
+				s_out[i * k + e] = keep(s_out[i * k + e], 0.008 * unit);
+			}
+		}
+	}
+}
+fn grow(st Do, seed int, data byte[>..]&) int {
+	if !ok { return 0; }
+	hair::rs = seed;
+	var roots float3[>..] = [];
+	make_roots(st, roots);
+	if roots.len == 0 { return 0; }
+	let k = clamp(st.points, 4, 32);
+	make_strands(st, roots, k);
+	make_leaders(st);
+	shape_all(st, k);
+	let n = s_grp.len;
+	var sty = hair::Style { width: st.width * 0.001 * (unit / 0.1), .. };
+	var fl f32[>..] = [];
+	var rows i32[>..] = [];
+	hair::strand_out(s_out, s_axes, sty, k, fl, rows);
+	for i in n {
+		let e = unit3(s_root[i] - ctr);
+		let ln = line(e);
+		let w = ss(ln + 0.02, ln + 0.14, e.y);
+		let r0 = (64.0 + 191.0 * w) as real;
+		rows[4 * (i * (k - 1)) + 2] = (round(r0) as int * 65536) as i32;
+		if k > 4 {
+			let r1 = (64.0 + 80.0 * w) as real;
+			rows[4 * (i * (k - 1) + 1) + 2] = (round(r1) as int * 65536) as i32;
+		}
+		if s_grp[i] == 2 {
+			var first = 1;
+			if k > 4 { first = 2; }
+			for sg in first..k - 1 {
+				rows[4 * (i * (k - 1) + sg) + 2] = (150 * 65536) as i32;
+			}
+		}
+	}
+	data.append("HMG2");
+	hair::put_i32(data, n);
+	hair::put_i32(data, n * k);
+	hair::put_i32(data, n * (k - 1));
+	data.append(bytes_of(fl));
+	data.append(bytes_of(rows));
+	return n;
+}
+fn wear(item int, joint const byte[:], meshes const byte[][:], name const byte[:], shade const byte[:], seed int) int {
+	let a = s3d::items[item].asset;
+	if !measure(a, joint, meshes) { return -1; }
+	let st = style(name);
+	var data byte[>..] = [];
+	let made = grow(st, seed, data);
+	if made == 0 { return -1; }
+	let g = hair::load(data, st.strands);
+	if g < 0 { return -1; }
+	let sh = tone(shade);
+	hair::grooms[g].look.color = float3 { sh.r, sh.g, sh.b };
+	hair::grooms[g].look.gain = sh.gain;
+	hair::grooms[g].look.roughness = st.rough;
+	hair::grooms[g].look.frizz = st.frizz;
+	hair::grooms[g].look.dye = sh.dye;
+	hair::grooms[g].look.ambient = float3 { 1.2, 1.2, 1.2 };
+	if st.length < 1.2 && st.tie == 0 {
+		hair::grooms[g].phys.tip = 0.6;
+	} else {
+		hair::grooms[g].phys.tip = 0.1;
+	}
+	hair::grooms[g].phys.bend = 0.25 + 0.5 * st.stiff;
+	hair::follow(g, item, gltf::find_node(a, joint));
+	return g;
+}

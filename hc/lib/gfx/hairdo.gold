@@ -1,0 +1,180 @@
+use std
+into hairdo.amni
+
+Namespace `hairdo`, importing math, gfx, gfx.linalg, gfx.gltf, gfx.scene3d and gfx.hair. Constants `MW = 64` and `MH = 32`. Shared conventions:
+- Vectors are f32 float3. `unit3`, `dot3`, `cross3`, `length3` and `f` are linalg's. Model space has y up and the face toward +z.
+- `hair::rnd()` is the hair module's random number from 0 to 1, and `hair::rs` its seed.
+- "ss(a, b, x)" is the smooth step: t = (x-a)/(b-a) clamped to 0..1, then t*t*(3-2*t). "mix(a, b, t)" is a*(1-t)+b*t.
+- A length "in head units" is that many times `unit`, the measured head's unit in meters (about 0.1 for an adult).
+- glTF data lives in module lists of `gltf`: `verts` (f32, `gltf::VERTEX_FLOATS` a vertex, with position at `gltf::AT_POS`), `indices` (u32), `prims`, `meshes`, `nodes`, `skins`, `assets`, `ints`. A `gltf::Span` has exactly the fields `first` and `count`. A `gltf::Primitive` has `vfirst`, `vcount`, `ifirst`, `icount`; indices of a primitive are relative to its `vfirst`. A `gltf::Mesh` has `prims` (a Span into `gltf::prims`) and `name`. A `gltf::Node` has `parent`, `mesh`, `skin`. A `gltf::Skin` has `joints` (a Span into `gltf::ints` of absolute node indices). A `gltf::Asset` has `nodes` (a Span). `gltf::find_node(asset, name)` gives an absolute node index or -1, and `gltf::text_of(span)` gives a name's bytes.
+
+`Do` is one default hairstyle, with these fields in this order: `name` (text), ints `guides`, `strands` and `points`, f32 `width`, int `comb`, f32s `part`, `length`, `sides`, `cut`, `vary`, `fringe`, `sweep`, `lift`, `curl`, `turns`, `wave`, `waves`, `clump`, int `locks`, int `tie`, f32s `tie_y`, `tie_az`, `tail`, `fan`, `frizz`, `rough`, `stiff` and `face`.
+
+`STYLES` is the constant table of default hairstyles, in this order:
+```table STYLES Do
+buzz|3600|14|4|2.5|3|0|0.07|0.6|0|0.2|0|0|0|0|0|0|0|0|0|0|0|180|0|0|0|0.5|1|0
+crew|3600|14|6|2.5|3|0|0.3|0.3|0|0.25|0|0|0|0|0|0|0|0.3|400|0|0|180|0|0|0|0.5|0.92|0
+crop|3200|16|8|3|2|0|0.6|0.35|0|0.3|0|0.3|0.12|0|0|0.02|1.5|0.5|320|0|0|180|0|0|0.2|0.45|0.3|0
+side part|3200|16|10|3|0|-0.35|0.95|0.3|0|0.2|0|0|0.1|0|0|0.015|1.2|0.4|300|0|0|180|0|0|0.1|0.4|0.3|0.8
+slick back|3200|16|12|3|1|0|1.1|0.4|0|0.2|0|0|0.06|0|0|0|0|0.5|220|0|0|180|0|0|0|0.3|0.3|0.8
+spiky|2800|14|6|3|3|0|0.5|0.5|0|0.35|0|0|0|0|0|0|0|0.9|160|0|0|180|0|0|0.2|0.45|1|0
+curly top|3000|16|12|3|3|0|0.75|0.3|0|0.3|0|0|0|0.07|3.5|0|0|0.6|380|0|0|180|0|0|0.8|0.55|0.85|0
+afro|3400|16|20|3|3|0|1.3|0.9|0|0.2|0|0|0|0.05|6|0|0|0.5|520|0|0|180|0|0|1.5|0.6|1|0
+pixie|3200|16|10|3|0|-0.25|0.8|0.45|0|0.25|0.42|0.6|0.1|0|0|0.015|1.2|0.45|300|0|0|180|0|0|0.2|0.42|0.3|0.7
+bowl|3200|18|14|3|5|0|2|1|0.01|0.05|0|0|0.08|0|0|0|0|0.3|260|0|0|180|0|0|0.1|0.4|0.2|0
+bob|3200|20|20|3|0|0|3|1|1.25|0.05|0|0|0.1|0|0|0.01|0.6|0.4|260|0|0|180|0|0|0.2|0.4|0.15|0.62
+bob bangs|3200|20|20|3|0|0|3|1|1.25|0.05|0.5|0|0.1|0|0|0.01|0.6|0.4|260|0|0|180|0|0|0.2|0.4|0.15|0.62
+lob|3200|20|24|3|0|0.3|4|1|1.8|0.07|0|0|0.1|0|0|0.03|0.5|0.45|240|0|0|180|0|0|0.3|0.4|0.15|0.62
+shag|3200|20|24|3|0|0|2.7|1|0|0.5|0.5|0|0.2|0|0|0.05|0.6|0.6|300|0|0|180|0|0|0.6|0.45|0.2|0.62
+wavy|3200|20|28|3|0|0.25|3.2|1|0|0.15|0|0|0.14|0|0|0.16|0.9|0.55|260|0|0|180|0|0|0.4|0.42|0.15|0.62
+curly|3200|20|28|3|0|0.25|3|1|0|0.2|0|0|0.2|0.09|1.6|0|0|0.7|260|0|0|180|0|0|0.8|0.5|0.2|0.62
+long straight|3200|22|28|3|0|0|6|1|0|0.2|0|0|0.08|0|0|0.008|0.4|0.4|220|0|0|180|0|0|0.2|0.38|0.1|0.62
+long side part|3200|22|28|3|0|0.32|6|1|0|0.2|0|0|0.1|0|0|0.01|0.4|0.4|220|0|0|180|0|0|0.2|0.38|0.1|0.62
+long layers|3200|22|28|3|0|0.2|6|1|0|0.45|0|0|0.12|0|0|0.04|0.4|0.5|240|0|0|180|0|0|0.3|0.4|0.1|0.62
+long waves|3200|22|32|3|0|0.25|6|1|0|0.15|0|0|0.14|0|0|0.22|0.8|0.6|220|0|0|180|0|0|0.4|0.42|0.1|0.62
+long curls|3200|22|32|3|0|0.25|6|1|0|0.15|0|0|0.16|0.11|1.1|0|0|0.75|180|0|0|180|0|0|0.6|0.48|0.15|0.62
+long bangs|3200|22|28|3|0|0|6|1|0|0.2|0.5|0|0.08|0|0|0.008|0.4|0.4|220|0|0|180|0|0|0.2|0.38|0.1|0.62
+ponytail|3200|20|28|3|4|0|1|1|0|0.2|0|0|0.03|0|0|0.02|0.4|0.3|160|1|0.35|180|4|0.5|0.3|0.4|0.3|0
+low ponytail|3200|20|28|3|4|0|1|1|0|0.2|0|0|0.03|0|0|0.02|0.4|0.3|160|1|-0.35|180|4|0.4|0.3|0.4|0.1|0
+ponytail bangs|3200|20|28|3|4|0|1|1|0|0.2|0.5|0|0.03|0|0|0.02|0.4|0.3|160|1|0.35|180|4|0.5|0.3|0.4|0.3|0
+top bun|3200|20|24|3|4|0|1|1|0|0.2|0|0|0.03|0|0|0|0|0.3|160|3|0.8|180|0.45|0|0.3|0.4|0.3|0
+low bun|3200|20|24|3|4|0|1|1|0|0.2|0|0|0.03|0|0|0|0|0.3|160|3|-0.3|180|0.45|0|0.3|0.4|0.3|0
+twin tails|3200|20|28|3|4|0|1|1|0|0.2|0.5|0|0.03|0|0|0.03|0.4|0.3|200|2|0.45|115|5|0.8|0.3|0.4|0.35|0
+pigtails|3200|20|24|3|4|0|1|1|0|0.2|0|0|0.03|0|0|0.02|0.4|0.3|200|2|-0.25|125|2.5|0.5|0.3|0.4|0.1|0
+space buns|3200|20|24|3|4|0|1|1|0|0.2|0.5|0|0.03|0|0|0|0|0.3|200|4|0.62|140|0.36|0|0.3|0.4|0.3|0
+```
+
+`Shade` is one default hair color, with these fields in this order: `name` (text), f32s `r`, `g`, `b` (the linear color), `gain` and `dye` (1 for a color natural pigment cannot make).
+
+`SHADES` is the constant table of default hair colors, in this order:
+```table SHADES Shade
+black|0.03|0.022|0.018|0.45|0
+soft black|0.06|0.04|0.03|0.7|0
+dark brown|0.12|0.07|0.04|1|0
+brown|0.22|0.13|0.07|1.2|0
+chestnut|0.3|0.15|0.07|1.3|0
+auburn|0.36|0.13|0.06|1.4|0
+copper|0.55|0.22|0.07|1.6|0
+strawberry|0.5|0.36|0.2|1.7|0
+dark blonde|0.42|0.28|0.14|1.5|0
+blonde|0.63|0.41|0.2|1.8|0
+golden|0.72|0.5|0.2|1.8|0
+platinum|0.82|0.72|0.55|1.9|0
+gray|0.42|0.42|0.42|1.4|0
+silver|0.7|0.71|0.73|1.7|0
+white|0.9|0.9|0.88|1.9|0
+pink|0.85|0.35|0.55|1.4|1
+red|0.7|0.05|0.06|1.1|1
+blue|0.1|0.25|0.75|1.1|1
+teal|0.08|0.55|0.5|1.2|1
+green|0.15|0.6|0.2|1.1|1
+purple|0.4|0.15|0.65|1.1|1
+lavender|0.65|0.55|0.85|1.5|1
+```
+
+Module vars describing the measured head: `ok` false, `ctr` (float3, the center of the skull), `unit` (f32, 0.1), `top` (f32, the highest point's y), `map` (growable f32 list: MW columns by MH rows of the distance from `ctr` to the skin), and `sol` (growable float3 list: pairs of center and radii of the ellipsoids that stand in for the neck, shoulders and chest).
+
+`count()` is the number of styles and `tones()` the number of shades. `name_of(i)` is style i's name and `tone_name(i)` shade i's name, each empty when i is out of range. `find(name)` is the index of the style with that exact name, or -1. `style(name)` is that style, or the first one when the name is unknown. `tone(name)` is the shade with that exact name, or the shade named "brown" when the name is unknown.
+
+`ss(a, b, x)` is the smooth step and `mix(a, b, t)` the blend, both on f32, as the conventions define them.
+
+`radius(d)` is the skin's distance from `ctr` along the unit direction d, read from `map` with bilinear blending. It returns `unit` when the map has fewer than MW*MH entries.
+- fx = (atan2(d.x, d.z)/6.2831853 + 0.5)*MW - 0.5 and fy = (asin(d.y clamped to -1..1)/3.14159265 + 0.5)*MH - 0.5, computed in real.
+- x0 = floor(fx), y0 = floor(fy), tx = fx-x0 and ty = fy-y0. Columns x0 and x0+1 wrap around modulo MW (a column of -1 is MW-1). Rows y0 and y0+1 are clamped to 0..MH-1.
+- The result blends the four entries map[row*MW + column]: across columns by tx, then across rows by ty.
+
+`skin(d)` is `ctr` + d*radius(d).
+
+`keep(p, gap)` returns p moved out of the head and the body, staying gap away from them.
+1. With d = p - ctr and l = length3(d): when l is above 0.000001 and d.y/l is above -0.8, let R = radius(d*(1/l)) + gap; when l is below R, p becomes ctr + d*(R/l).
+2. For each pair i of `sol` (center s = sol[2i], radii r = sol[2i+1] with gap added to each): q = (p - s) divided componentwise by r and m = length3(q). When m is below 1 and above 0.000001: for the first pair (the neck), p becomes s + (q*(1/m)) times r componentwise; for every later pair the push stays in the plane of y and z so hair slides off the shoulders to the front or the back and not out over the arms: first p.z moves away from s.z by 0.3*r.z*(1 - m) (up in z when p.z is at or above s.z, else down) and q is taken again from the moved p; then with yz = q.y*q.y + q.z*q.z, when yz is above 0.000001, t = sqrt(max(1 - q.x*q.x, 0)/yz) and p becomes s + (q.x, q.y*t, q.z*t) times r componentwise; otherwise p becomes s + (q.x, sqrt(max(1 - q.x*q.x, 0)), 0) times r componentwise.
+3. Return p.
+
+`line(d)` is the hairline: the lowest d.y that still grows hair for the unit direction d. With cz = d.z/(sqrt(d.x*d.x + d.z*d.z) + 0.0001), it interpolates linearly between consecutive knots (cz, value): (-1, -0.75), (-0.6, -0.56), (-0.45, -0.3), (-0.35, -0.02), (-0.25, 0.24), (-0.15, 0.36), (0, 0.38), (0.06, 0.12), (0.12, -0.05), (0.2, 0.03), (0.35, 0.14), (0.45, 0.26), (0.55, 0.4), (0.7, 0.5), (0.85, 0.58), (1, 0.62). Below the first knot it is -0.75 and above the last 0.62.
+
+`scalp(d)` is how densely hair grows at the unit direction d, 0 to 1: ss(t-0.02, t+0.03, d.y) with t = line(d).
+
+`under(node, head)` is true when head is negative, or when node is head, or when following `gltf::nodes[x].parent` from node reaches head within 32 steps (stop at a negative parent).
+
+`fill_map()` finishes `map` after sampling: empty entries are those equal to 0.
+1. Eight times: build a copy in which every empty entry becomes the mean of its non-empty neighbors among left, right (columns wrap modulo MW), up and down (rows outside 0..MH-1 are skipped), staying empty when it has none; then the copy replaces the map.
+2. Every entry still empty becomes `unit`.
+3. Once: build a copy in which every entry becomes the larger of itself and the mean of the 3 by 3 block around it (columns wrap, rows clamp); the copy replaces the map.
+
+`measure(asset, joint, meshes)` measures a character's head for the styles and returns whether it found one. asset is the asset's index (an int, as `gltf::find_node` takes it; the asset itself is `gltf::assets[asset]`), joint is the head joint's name (a byte slice) and meshes the names of the meshes that make up the bare body (a slice of byte slices, the same type `hair::body` takes for its joints; an empty list means every mesh).
+1. Clear `ok`, `map` and `sol`. hn = `gltf::find_node(asset, joint)`.
+2. Collect two float3 lists, head points and body points, three per triangle. Go over the asset's nodes that have a mesh whose name is in meshes (use `hair::listed(meshes, name)`; every mesh when meshes is empty), every primitive and every triangle, with vertex v = vfirst + index and its position the three floats at `v*gltf::VERTEX_FLOATS + gltf::AT_POS`. A node without a skin counts as head only when hn is negative, and is skipped otherwise. For a node with skin sk, the triangle is head when `under(gltf::ints[the skin's joints first + hair::tri_owner(v0, v1, v2)], hn)`, else body.
+3. Return false when there are fewer than 3 head points.
+4. `top` is the largest y of the head points. With xlo and xhi their x range, cx = (xlo+xhi)/2 and W = xhi-xlo. Over the head points whose y is above top - 0.42*W: hw is the largest absolute x - cx and zlo, zhi their z range. `unit` = max(1.33*hw, 0.02) and `ctr` = (cx, top - unit, (zlo+zhi)/2).
+5. Set `map` to MW*MH zeros. For each head triangle a, b, c: n = the longest edge divided by (0.04*unit), rounded up and clamped to 1..24. For i from 0 to n and j from 0 to n-i, the sample is a + (b-a)*(i/n) + (c-a)*(j/n). With d = sample - ctr and r = length3(d) above 0.00001: column = floor((atan2(d.x, d.z)/6.2831853 + 0.5)*MW) modulo MW, row = floor((asin(d.y/r)/3.14159265 + 0.5)*MH) clamped to 0..MH-1, and that map entry becomes the larger of itself and r. Then call `fill_map()`.
+6. When there are body points, add three solids. Only body points with absolute x - cx below 2.6*unit count, and "half" below means the largest absolute x - cx.
+   - sy, the shoulder height, is the largest y of the body points whose absolute x - cx is between 1.3*unit and 1.8*unit, or top - 3*unit when there are none.
+   - Neck: over head and body points together with y between sy + 0.25*unit and sy + 0.6*unit, nr = half clamped to 0.4*unit..0.8*unit and nz the middle of their z range (nr = 0.55*unit and nz = ctr.z - 0.1*unit when there are none). Push center (cx, sy + 0.9*unit, nz) and radii (nr, 1.5*unit, nr).
+   - Shoulders: over body points with y between sy - 1.2*unit and sy + 0.1*unit, with their half, the middle zm and half-size zr of their z range. When there is at least one, push center (cx, sy - 0.75*unit, zm) and radii (half + 0.15*unit, 0.85*unit, zr + 0.1*unit).
+   - Chest: over body points with y between sy - 4*unit and sy - unit, the same three numbers. When there is at least one, push center (cx, sy - 2.8*unit, zm) and radii (half + 0.1*unit, 2.6*unit, zr + 0.1*unit).
+7. Set `ok` and return true.
+
+`ball(center, r)` measures a plain ball as the head, for tests and heads without a mesh: `ctr` = center, `unit` = r, `top` = center.y + r, `map` = MW*MH entries of r, `sol` empty, `ok` set.
+
+`hs(a, b, c, s)` is a hash from 0 to 1 of three ints and a seed: x = sin(a*127.1 + b*311.7 + c*74.7 + s*19.19)*43758.5453 in real, and the result is x minus its floor, as f32. `vn(p, s)` is smooth value noise from 0 to 1 at the point p: with the integer cell i = floor of each component and the fractions smoothed as t*t*(3-2*t), it blends `hs` of the eight cell corners (i.x or i.x+1, and so on) trilinearly.
+
+`resample(path, k, out)` appends k points spread evenly by length along the polyline path (which has at least 2 points) to out: the total length is the sum of the segment lengths; point e sits at distance total*e/(k-1) from the start, found by walking the segments and blending linearly inside one; the last point is the path's end. A path of zero total length gives k copies of its first point.
+
+`tie_dir(st, x)` is the unit direction from `ctr` to the tie that a root with side x belongs to: gy = st.tie_y, a = st.tie_az*3.14159265/180 times sg, where sg is -1 when st.tie is 2 or 4 and x is negative, else 1; the direction is (sin(a)*h, gy, cos(a)*h) with h = sqrt(max(1 - gy*gy, 0)).
+
+`tie_at(st, x)` is the tie's place: with g = tie_dir(st, x), it is skin(g) + g*(0.22*unit).
+
+`tail_line(st, x, out)` clears out and fills it with the center line of the tail hanging from that tie, as float3 points:
+1. g = tie_dir(st, x), p = tie_at(st, x), dir = unit3(g + (0, 0.6*st.stiff + 0.15, 0)), n = st.tail/0.06 rounded up and clamped to 0..400. Push p.
+2. n times: dir = unit3(dir*(0.82 + 0.15*st.stiff) + (0, -1, 0)*(0.18 - 0.15*st.stiff)); p = keep(p + dir*(0.06*unit), 0.2*unit); push p.
+
+`comb_dir(cm, st, e, s)` is the direction a comb pulls hair lying on the head at the unit direction e, for a strand on side s (1 or -1):
+- cm 0 (falling from the part): a2 = (0.3 + 1.7*(e.y*1.6 clamped to 0..1))*ss(-0.55, 0.25, e.z), so the back of the head falls straight down, and the pull is (s*a2, -1, -0.15).
+- cm 1 (back): (0.15*s, -0.25, -1).
+- cm 2 (forward): (st.sweep*0.8, -0.35, 1).
+- any other (falling all around from the crown): (e.x, -0.6, e.z).
+The pull then loses its part along e (w - e*dot3(w, e)) and is returned as a unit vector, or (0, -1, 0) when what is left is shorter than 0.00001.
+
+`loose(st, d, fr, s, lay, lv, path)` clears path and grows one untied strand into it from the root direction d. fr says it is a fringe strand, s is its side, lay its layer and lv its length variation (both 0 to 1).
+1. cm is 2 when fr, else st.comb. The length L in head units is st.fringe*2 when fr (a fringe is cut by height, below), else st.length*mix(st.sides, 1, ss(-0.2, 0.55, d.y))*(1 - st.vary*lv). n = L/0.06 rounded up and clamped to 2..400, and h = 0.06*unit.
+2. p = skin(d), dir = d. Push p. For i from 1 to n:
+   - e = unit3(p - ctr) and o = ss(line(e) - 0.25, line(e) + 0.05, e.y), how much the point still lies on the scalp.
+   - When cm is 3 (standing out): dir = unit3(dir*0.7 + unit3(e*st.stiff + (0, -1, 0)*(1 - st.stiff))*0.3) and q = p + dir*h.
+   - Otherwise: tg = unit3(comb_dir(cm, st, e, s)*o + (0, -1, 0)*(1 - o)); when i is 1 the strand leaves the scalp nearly flat, so dir is first set to unit3(d*(0.15 + 2*st.lift) + tg); then kk = mix(0.55 + 0.4*st.stiff, 0.6, o), dir = unit3(dir*kk + tg*(1 - kk)) and q = p + dir*h. When cm is 0, 1 or 5, st.face is positive, q.z is above ctr.z + 0.1*unit and q.y is between ctr.y - 1.6*unit and ctr.y + 0.1*unit: with ax the absolute q.x - ctr.x and lim = st.face*unit, when ax is below lim, q.x becomes ctr.x + sign*(ax + (lim - ax)*0.5), the sign being that of q.x - ctr.x, or s when that is 0. Then q = keep(q, unit*(0.012 + st.lift*(0.3 + 0.7*lay)*min(i/5, 1) + 0.02*min(i*0.03, 1))), and when length3(q - p) is above 0.000001, dir = unit3(q - p).
+   - p = q; push p. Stop when st.cut is positive, fr is false and p.y is below ctr.y - st.cut*unit*(1 + 0.04*(lv - 0.5)). Stop too when fr and p.y is below ctr.y + (0.6 - st.fringe + 0.08*st.vary*(lv - 0.5))*unit.
+3. Smooth the path twice when it has more than 5 points: working from a copy each time, every point from the fourth to the one before the last becomes (the one before + 2 times itself + the one after)/4, and then, unless cm is 3, keep(that point, unit*(0.012 + st.lift*(0.3 + 0.7*lay))).
+4. Return the path's summed length divided by unit, the strand's length in head units.
+
+`tied(st, d, lay, lv, ph, line_pts, path)` clears path and grows one tied strand into it: over the head from the root direction d to its tie, then into the tail or the bun. line_pts is the tail's center line from `tail_line` for the root's side. It returns two f32s: the strand's whole length in head units and the length of its part on the head.
+1. g = tie_dir(st, d.x), T = tie_at(st, d.x), ang = acos(dot3(d, g) clamped to -1..1) and na = ang/0.06 rounded up and clamped to 2..80.
+2. For i from 0 to na, with t = i/na: m = unit3(d*sin((1-t)*ang) + g*sin(t*ang)) (m = g when ang is below 0.01); surf = ctr + m*(radius(m) + unit*(0.012 + st.lift*lay*sin(3.14159265*t))); w = ss(0.6, 1, t) squared; push surf*(1-w) + T*w.
+3. The head part's length a0 is the summed length of those points divided by unit.
+4. When st.tie is 3 or 4 (a bun): h2 = (0, 1, 0) when the absolute g.y is below 0.9, else (1, 0, 0); u2 = unit3(cross3(g, h2)); v2 = cross3(g, u2); rb = st.tail*unit and B = T + g*(rb*0.6). For j from 1 to 24, with tt = j/24 and an = ph + 6.2831853*2.2*tt: push B + (u2*cos(an) + v2*sin(an))*(rb*(0.55 + 0.45*lv)*(1 - 0.5*tt)) + g*(rb*(0.6*tt - 0.2)). Return (a0 + st.tail*4, a0 + st.tail*4).
+5. Otherwise (a tail): nt = (line_pts.len - 1)*(1 - st.vary*lv) rounded down, at least 1 when the line has 2 or more points; off = (cos(ph), 0, sin(ph))*(0.17*unit*sqrt(lay)). For i from 1 to nt, with tt = i/(line_pts.len - 1): push keep(line_pts[i] + off*(0.35 + 0.65*min(i/6, 1) + 2*st.fan*tt), 0.01*unit). Return (a0 + nt*0.06, a0).
+
+`grow(st, seed, data)` grows the style on the measured head and appends the strand file `hair::load` reads to data. It returns the number of guides, or 0 when no head is measured.
+
+Roots, with `hair::rs` set to seed first:
+1. fsum is the sum of scalp(dir) over 2048 directions, the i-th being az = 6.2831853*(the fraction of i*0.61803398875), y = -0.7 + 1.7*(i+0.5)/2048, dir = (sin(az)*r, y, cos(az)*r) with r = sqrt(1 - y*y). M = st.guides/max(fsum/2048, 0.02), cols = sqrt(M*3.7) rounded up, rows = M/cols rounded up.
+2. For each row j, then each column i, taking three random numbers a, b, c in that order every time: az = (i + a)/cols*6.2831853 - 3.14159265, y = -0.7 + (j + b)*1.7/rows, dir as above. The direction is a root when c is below scalp(dir).
+
+Strands, for each root d in order, with k = st.points clamped to 4..32:
+1. Take random numbers lay, lv, pr and ph (ph times 6.2831853) in that order. The side s is 1 when (skin(d).x - ctr.x)/unit is above st.part + 0.06*(pr - 0.5), else -1.
+2. It is a fringe strand when st.fringe is positive, d.z is above 0.3, the absolute d.x is below 0.7 and d.y is below line(d) + 0.22 + 0.08*(lay - 0.5).
+3. When st.tie is positive and it is not a fringe strand, grow it with `tied`, using the tail line of its side (the two lines, for x = 1 and x = -1, are made once with `tail_line` before the loop when st.tie is 1 or 2); its group is 0 when d.x is negative, else 1. Otherwise grow it with `loose`, whose head part is 0; its group is 2 when fringe, else 0 when s is negative, else 1.
+4. Resample the path to k points onto the point list. Record per strand: the axis d, the root (its first point), the whole length, the head part, the group and lay.
+
+Locks, with n strands and nc = min(st.locks, n): the leader of lock j is strand j*n/nc. Each strand's leader is the leader in its own group nearest to its root (itself when its group has none or nc is 0).
+
+Shaping, into a second point list, for each strand i with leader L, taking one random number jit (minus 0.5) per strand in order:
+- r0 = the leader's root*(1.5/unit). phw = 6.2831853*2*vn(r0, 71), wamp = st.wave*unit*(0.7 + 0.6*vn(r0, 75)), wfq = st.waves*(0.85 + 0.3*vn(r0, 72)), ac = 6.2831853*vn(r0, 73), phc = 6.2831853*vn(r0*7.3, 91), and hand is 1 when vn(r0*5.1, 93) is above 0.5, else -1.
+- For each point e, with sl = the strand's whole length*e/(k-1) and ramp = ((sl - head part)/(0.3*(whole length - head part) + 0.15)) clamped to 0..1: tg = the next point minus the previous one (indices clamped to the strand), b1 = unit3(cross3(tg, axis)) (unit3(cross3(tg, (1, 0, 0))) when that cross product's squared length is below 0.000000000001), b2 = unit3(cross3(tg, b1)), th = hand*6.2831853*st.turns*sl + phc + jit*1.2. The new point is the old one + (b1*cos(ac) + b2*sin(ac))*(wamp*ramp*sin(6.2831853*wfq*sl + phw + jit*0.3)) + (b1*cos(th) + b2*sin(th))*(st.curl*unit*ramp*(0.75 + 0.5*lay)).
+Then every strand whose leader is another strand moves each point e toward the leader's shaped point e by st.clump*0.85*sqrt(e/(k-1)), reading the leaders' points from the list as it was before this pulling. Then, unless st.comb is 3, every point but each strand's first becomes keep(point, 0.008*unit).
+
+Output: call `hair::strand_out(points, axes, sty, k, fl, rows)` with exactly those six arguments, where sty is a `hair::Style` with only its `width` set, to st.width*0.001*(unit/0.1) (a Style has no points field; k is passed on its own), fl is a growable f32 list and rows a growable i32 list. Then thicken the roots so the scalp does not show through where the hair lies flat on it: for every guide i, with e = unit3(its root point - ctr) and w = ss(line(e) + 0.02, line(e) + 0.14, e.y) (so the hairline's own edge stays fine), the row of its first segment (rows index 4*(i*(k-1)) + 2) becomes (64 + 191*w rounded to an int)*65536 and, when k is above 4, the row of its second segment (rows index 4*(i*(k-1) + 1) + 2) becomes (64 + 80*w rounded to an int)*65536. For a guide whose group is 2 (a fringe), every later segment of it gets 150*65536, so a fringe is not see-through. Then append "HMG2", `hair::put_i32` of n, n*k and n*(k-1), the floats' bytes and the rows' bytes. Return n.
+
+`wear(item, joint, meshes, name, shade, seed)` gives the scene item a default hairstyle and returns the groom's index, or -1. item and seed are ints, joint, name and shade byte slices, and meshes a slice of byte slices as in `measure`.
+1. a is the asset index (an int) of `s3d::items[item]`. Return -1 when `measure(a, joint, meshes)` fails.
+2. st = style(name). Grow it with the seed into a fresh byte list and return -1 when it made no guides. g = `hair::load(data, st.strands)`; return -1 when g is negative.
+3. With sh = tone(shade), set the groom's look: color (sh.r, sh.g, sh.b), gain sh.gain, roughness st.rough, frizz st.frizz, dye sh.dye and ambient (1.2, 1.2, 1.2). Set its phys: tip 0.6 when st.length is below 1.2 and st.tie is 0, else 0.1; bend 0.25 + 0.5*st.stiff.
+4. Call `hair::follow(g, item, gltf::find_node(a, joint))` and return g.
