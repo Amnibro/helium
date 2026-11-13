@@ -21,6 +21,7 @@ fn menu_n(g int) int {
 	if g == 14 { return 4; }
 	if g == 15 { return 4; }
 	if g == 16 { return 4; }
+	if g == 17 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -66,6 +67,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 17 {
+		if i == 0 { return "Begin"; }
+		if i == 1 { return "Continue"; }
+		if i == 2 { return "Lore"; }
 		return "Options";
 	}
 	if g == 16 {
@@ -2265,6 +2272,104 @@ fn stage_map_space(f int, mode int) {
 	let c = button(f, "Gate", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_fantasy(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var qy f32 = 160.0;
+	if mode == 1 { mx = 48.0; my = 760.0; }
+	else if mode == 2 { mx = 1600.0; my = 760.0; qy = 400.0; }
+	else if mode == 3 { mx = 1600.0; my = 400.0; qy = 360.0; }
+	else if mode == 4 { mx = 48.0; my = 400.0; }
+	let who = label(f, "Elowen", 1); place_at(who, 48.0, 36.0, 240.0, 40.0);
+	let gold = label(f, "Gold  86", 2); place_at(gold, 1560.0, 40.0, 240.0, 36.0);
+	let quest = label(f, "The Gate", 0); place_at(quest, 760.0, 36.0, 400.0, 48.0); mark_anchor(quest);
+	let step = label(f, "Find the key", 2); place_at(step, 48.0, qy, 280.0, 32.0);
+	let hp = health_bar(f, 0.66, 0); place_at(hp, 48.0, qy + 40.0, 320.0, 20.0);
+	let mp = mana_bar(f, 0.4, 0); place_at(mp, 48.0, qy + 68.0, 320.0, 16.0);
+	let a = icon_button(f, 0, 2); place_at(a, 640.0, 920.0, 64.0, 64.0);
+	let b = icon_button(f, 15, 2); place_at(b, 720.0, 920.0, 64.0, 64.0);
+	let c = icon_button(f, 1, 2); place_at(c, 800.0, 920.0, 64.0, 64.0);
+	let d = icon_button(f, 4, 2); place_at(d, 880.0, 920.0, 64.0, 64.0);
+	let e = icon_button(f, 14, 0); place_at(e, 960.0, 920.0, 64.0, 64.0);
+	let lvl = label(f, "Lv  8", 2); place_at(lvl, 48.0, qy + 96.0, 160.0, 32.0);
+	let mark = label(f, "North", 3); place_at(mark, 760.0, 100.0, 400.0, 32.0); mark_anchor(mark);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 17;
+}
+
+fn stage_pause_fantasy(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Journal", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Quests", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Party", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_fantasy(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Spellbook", 0); place_at(head, x, y, 400.0, 56.0);
+	let a = button(f, "Spark  20", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Mend  30", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Ward  25", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Learn", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_fantasy(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Done", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Elowen", 2); place_at(side, 80.0, 40.0, 240.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Now", "Quest");
+	table_set(tb, 0, 0, "XP"); table_set(tb, 0, 1, "240"); table_set(tb, 0, 2, "The Gate");
+	table_set(tb, 1, 0, "Gold"); table_set(tb, 1, 1, "40"); table_set(tb, 1, 2, "86");
+	table_set(tb, 2, 0, "Kills"); table_set(tb, 2, 1, "8"); table_set(tb, 2, 2, "8");
+	table_set(tb, 3, 0, "Spells"); table_set(tb, 3, 1, "Spark"); table_set(tb, 3, 2, "Mend");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "16:20"); table_set(tb, 4, 2, "16:20");
+	table_set(tb, 5, 0, "Level"); table_set(tb, 5, 1, "8"); table_set(tb, 5, 2, "9");
+	let again = button(f, "Onward", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_fantasy(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Tale", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Tutor", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.4, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Compass", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_fantasy(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 240.0, y, 1440.0, 760.0); N[map].i3 = 17;
+	if mode == 1 || mode == 4 { place_at(map, 240.0, 200.0, 1440.0, 720.0); }
+	let a = button(f, "Gate", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Wood", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Keep", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -2287,6 +2392,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 14 { stage_pause_city(frame, mode); }
 		else if g == 15 { stage_pause_horror(frame, mode); }
 		else if g == 16 { stage_pause_space(frame, mode); }
+		else if g == 17 { stage_pause_fantasy(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -2306,6 +2412,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 14 { stage_settings_city(frame, mode); }
 		else if g == 15 { stage_settings_horror(frame, mode); }
 		else if g == 16 { stage_settings_space(frame, mode); }
+		else if g == 17 { stage_settings_fantasy(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -2325,6 +2432,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 14 { stage_hud_city(frame, mode); }
 		else if g == 15 { stage_hud_horror(frame, mode); }
 		else if g == 16 { stage_hud_space(frame, mode); }
+		else if g == 17 { stage_hud_fantasy(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -2344,6 +2452,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 14 { stage_shop_city(frame, mode); }
 		else if g == 15 { stage_shop_horror(frame, mode); }
 		else if g == 16 { stage_shop_space(frame, mode); }
+		else if g == 17 { stage_shop_fantasy(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -2363,6 +2472,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 14 { stage_map_city(frame, mode); }
 		else if g == 15 { stage_map_horror(frame, mode); }
 		else if g == 16 { stage_map_space(frame, mode); }
+		else if g == 17 { stage_map_fantasy(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -2381,6 +2491,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 14 { stage_results_city(frame, mode); }
 	else if g == 15 { stage_results_horror(frame, mode); }
 	else if g == 16 { stage_results_space(frame, mode); }
+	else if g == 17 { stage_results_fantasy(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
