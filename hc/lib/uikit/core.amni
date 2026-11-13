@@ -355,6 +355,14 @@ fn overlap_count() int {
 	n
 }
 
+fn leaf_count() int {
+	var n = 0;
+	for i in N.len {
+		if shown(i) && KIDS[i].len == 0 && N[i].kind >= K_LABEL { n += 1; }
+	}
+	n
+}
+
 fn text_clip_count() int {
 	var n = 0;
 	for i in N.len {

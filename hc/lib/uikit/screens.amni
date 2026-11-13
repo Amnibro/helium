@@ -23,7 +23,230 @@ fn scr_lab(col int, text const byte[:]) int {
 fn scr_row(col int) int {
 	let r = flex(col, DIR_ROW);
 	set_gap(r, 8.0);
+	set_pad(r, 0.0);
 	r
+}
+
+fn kit_talk(g int) const byte[:] {
+	if g == 0 || g == 1 { return "Hold the gate."; }
+	if g == 2 { return "Baron in 20."; }
+	if g == 4 || g == 17 { return "The gate holds."; }
+	if g == 7 { return "Lap 2 of 3."; }
+	if g == 8 { return "Round 2."; }
+	if g == 12 { return "Intent: attack."; }
+	if g == 18 { return "Shop is open."; }
+	if g == 21 { return "Stay or go."; }
+	if g == 23 { return "Pity 12."; }
+	"Press on."
+}
+
+fn add_title(col int, g int, look int) {
+	let b = button(col, genre_name(g), look);
+	set_px(b, 224.0, 32.0);
+}
+fn add_boss(col int, g int) {
+	let b = boss_bar(col, 0.64);
+	set_text(b, boss_name(g));
+	set_px(b, 224.0, 24.0);
+}
+fn add_buff(col int, g int) {
+	let b = buff_row(col, g);
+	set_px(b, 224.0, 32.0);
+}
+fn add_bars(col int, look int) {
+	let hp = health_bar(col, 0.72, look % 6);
+	set_px(hp, 224.0, 16.0);
+	let mp = mana_bar(col, 0.4, look % 6);
+	set_px(mp, 224.0, 16.0);
+}
+fn add_mid(col int, g int, mode int) {
+	if mode == 3 {
+		let map = minimap(col, 0);
+		set_px(map, 224.0, 72.0);
+		N[map].i3 = g;
+		let inv = inventory(col, 4, 2, 0);
+		set_px(inv, 224.0, 64.0);
+		N[inv].i3 = g + 3;
+	} else {
+		let row = scr_row(col);
+		var mw = 104;
+		var iw = 112;
+		var mh = 96;
+		if mode == 1 { mw = 144; iw = 72; mh = 80; }
+		if mode == 2 { mw = 72; iw = 144; mh = 112; }
+		if mode == 4 { mw = 96; iw = 120; mh = 96; }
+		let map = minimap(row, 0);
+		set_px(map, mw as f32, mh as f32);
+		N[map].i3 = g;
+		let inv = inventory(row, if mode == 2 { 4 } else { 3 }, 2, 0);
+		set_px(inv, iw as f32, mh as f32);
+		N[inv].i3 = g + 3;
+	}
+}
+fn add_quest(col int, g int) {
+	let q = quest_log(col, g);
+	set_text(q, "Quests");
+	set_px(q, 224.0, 56.0);
+}
+fn add_cool(col int, g int) {
+	let c = cooldown_row(col, g);
+	set_px(c, 224.0, 48.0);
+}
+fn add_feature(col int, g int, mode int) {
+	let h = if mode == 1 { 64.0 } else if mode == 2 { 96.0 } else if mode == 3 { 72.0 } else if mode == 4 { 80.0 } else { 88.0 };
+	if g == 7 || g == 9 || g == 19 {
+		let ch = chart(col, g % 7, mode % 6);
+		set_px(ch, 224.0, h);
+	} else {
+		let rad = radial(col, 6, g % 6, mode % 6);
+		set_px(rad, 224.0, h);
+		N[rad].i3 = g;
+	}
+}
+fn add_talk(col int, g int, look int) {
+	let d = dialogue(col, kit_talk(g), 40, look % 6);
+	set_px(d, 224.0, 48.0);
+}
+fn add_nums(col int) {
+	let row = scr_row(col);
+	let a = damage_number(row, "128", 0); set_px(a, 64.0, 32.0);
+	let b = damage_number(row, "256", 1); set_px(b, 64.0, 32.0);
+	let c = damage_number(row, "+40", 2); set_px(c, 64.0, 32.0);
+}
+fn add_menu(col int) {
+	let row = scr_row(col);
+	let a = button(row, "Play", 0); set_px(a, 64.0, 32.0);
+	let b = button(row, "Map", 2); set_px(b, 64.0, 32.0);
+	let c = button(row, "Bag", 5); set_px(c, 64.0, 32.0);
+}
+fn add_flavor(col int, g int) {
+	if g == 0 || g == 1 {
+		let row = scr_row(col);
+		let a = button(row, "C", 0); set_px(a, 32.0, 32.0);
+		let b = button(row, "Q", 2); set_px(b, 32.0, 32.0);
+		let c = button(row, "E", 4); set_px(c, 32.0, 32.0);
+	} else if g == 2 {
+		let row = scr_row(col);
+		let a = button(row, "Q", 0); set_px(a, 32.0, 32.0);
+		let b = button(row, "W", 0); set_px(b, 32.0, 32.0);
+		let c = button(row, "E", 0); set_px(c, 32.0, 32.0);
+		let d = button(row, "R", 4); set_px(d, 32.0, 32.0);
+	} else if g == 8 {
+		let row = scr_row(col);
+		let a = button(row, "P1", 0); set_px(a, 64.0, 32.0);
+		let b = button(row, "P2", 1); set_px(b, 64.0, 32.0);
+	} else if g == 12 {
+		let a = button(col, "Strike", 0); set_px(a, 224.0, 32.0);
+		let b = button(col, "Block", 2); set_px(b, 224.0, 32.0);
+	} else if g == 18 {
+		let a = button(col, "Seeds", 0); set_px(a, 224.0, 32.0);
+	} else if g == 23 {
+		let a = button(col, "Pull", 0); set_px(a, 224.0, 32.0);
+	}
+}
+
+fn rich_column(parent int, g int, mode int) int {
+	let col = flex(parent, DIR_COL);
+	set_w(col, 240.0);
+	set_gap(col, 8.0);
+	set_pad(col, 8.0);
+	let look = mode % 6;
+	if mode == 0 {
+		add_title(col, g, look); add_boss(col, g); add_buff(col, g); add_bars(col, look);
+		add_mid(col, g, mode); add_quest(col, g); add_cool(col, g); add_feature(col, g, mode);
+		add_talk(col, g, look); add_nums(col); add_menu(col); add_flavor(col, g);
+	} else if mode == 1 {
+		add_title(col, g, 5); add_mid(col, g, mode); add_boss(col, g); add_bars(col, 5);
+		add_feature(col, g, mode); add_cool(col, g); add_quest(col, g); add_talk(col, g, 5);
+		add_flavor(col, g); add_nums(col); add_menu(col); add_buff(col, g);
+	} else if mode == 2 {
+		add_menu(col); add_talk(col, g, 6); add_quest(col, g); add_mid(col, g, mode);
+		add_title(col, g, 6); add_boss(col, g); add_bars(col, 0); add_cool(col, g);
+		add_feature(col, g, mode); add_nums(col); add_buff(col, g); add_flavor(col, g);
+	} else if mode == 3 {
+		add_boss(col, g); add_bars(col, 2); add_cool(col, g); add_feature(col, g, mode);
+		add_mid(col, g, mode); add_quest(col, g); add_talk(col, g, 2); add_nums(col);
+		add_menu(col); add_title(col, g, 2); add_buff(col, g); add_flavor(col, g);
+	} else {
+		add_feature(col, g, mode); add_mid(col, g, mode); add_title(col, g, 4);
+		add_talk(col, g, 4); add_quest(col, g); add_boss(col, g); add_bars(col, 4);
+		add_buff(col, g); add_cool(col, g); add_nums(col); add_menu(col); add_flavor(col, g);
+	}
+	col
+}
+
+fn rich_app(parent int, g int, mode int) int {
+	let col = flex(parent, DIR_COL);
+	set_w(col, 480.0);
+	set_gap(col, 8.0);
+	set_pad(col, 8.0);
+	let title = button(col, genre_name(g), mode % 6);
+	set_px(title, 464.0, 32.0);
+	if g == 33 {
+		let a = text_field(col, "Email", 2); set_px(a, 464.0, 32.0);
+		let b = text_field(col, "Password", 2); set_px(b, 464.0, 32.0);
+		let c = button(col, "Sign in", 0); set_px(c, 200.0, 32.0);
+	} else if g == 31 {
+		let a = toggle(col, "Dark", 1, 0); set_px(a, 240.0, 32.0);
+		let b = toggle(col, "Motion", 0, 2); set_px(b, 240.0, 32.0);
+		let cp = color_picker(col, 0x3B6FE2, 2); set_px(cp, 280.0, 120.0);
+		N[cp].i1 = 200; N[cp].val = 0.75; N[cp].val2 = 0.9;
+	} else if g == 28 {
+		let a = message_bar(col, "On my way", 2); set_px(a, 280.0, 32.0);
+		let b = message_bar(col, "See you", 0); set_px(b, 220.0, 32.0);
+		let f = text_field(col, "Message", 2); set_px(f, 464.0, 32.0);
+	} else if g == 36 {
+		let row = scr_row(col);
+		let a = button(row, "M", 0); set_px(a, 32.0, 32.0);
+		let b = button(row, "T", 2); set_px(b, 32.0, 32.0);
+		let c = button(row, "W", 2); set_px(c, 32.0, 32.0);
+		let d = button(row, "T", 2); set_px(d, 32.0, 32.0);
+		let e = button(row, "F", 2); set_px(e, 32.0, 32.0);
+	} else if g == 38 {
+		let map = minimap(col, 0); set_px(map, 464.0, 160.0); N[map].i3 = 4;
+		let f = text_field(col, "Search", 2); set_px(f, 464.0, 32.0);
+	} else if g == 37 {
+		let row = scr_row(col);
+		let a = card(row, "To", 2); set_px(a, 144.0, 80.0);
+		let b = card(row, "Now", 0); set_px(b, 144.0, 80.0);
+		let c = card(row, "End", 1); set_px(c, 144.0, 80.0);
+	} else {
+		if mode == 1 {
+			let tb = table(col, 4, 2, 0); set_px(tb, 464.0, 128.0);
+			table_set(tb, 0, 0, "Ada"); table_set(tb, 0, 1, "12");
+			table_set(tb, 1, 0, "Bea"); table_set(tb, 1, 1, "9");
+			table_set(tb, 2, 0, "Cal"); table_set(tb, 2, 1, "4");
+			table_set(tb, 3, 0, "Dee"); table_set(tb, 3, 1, "7");
+			table_filter(tb, "a"); table_pin(tb, 1); table_resize(tb, 0, 160.0);
+			let ch = chart(col, g % 7, 0); set_px(ch, 464.0, 112.0);
+		} else if mode == 2 {
+			let row = scr_row(col);
+			let a = card(row, "One", 0); set_px(a, 144.0, 64.0);
+			let b = card(row, "Two", 2); set_px(b, 144.0, 64.0);
+			let c = card(row, "Net", 4); set_px(c, 144.0, 64.0);
+			let ch = chart(col, 0, 0); set_px(ch, 464.0, 112.0);
+			let tb = table(col, 4, 2, 0); set_px(tb, 464.0, 96.0);
+			table_set(tb, 0, 0, "Ada"); table_set(tb, 0, 1, "12");
+			table_set(tb, 1, 0, "Bea"); table_set(tb, 1, 1, "9");
+			table_filter(tb, "a"); table_pin(tb, 1);
+		} else {
+			let ch = chart(col, g % 7, mode % 6); set_px(ch, 464.0, 112.0);
+			let tb = table(col, 4, 2, 0); set_px(tb, 464.0, 128.0);
+			table_set(tb, 0, 0, "Ada"); table_set(tb, 0, 1, "12");
+			table_set(tb, 1, 0, "Bea"); table_set(tb, 1, 1, "9");
+			table_set(tb, 2, 0, "Cal"); table_set(tb, 2, 1, "4");
+			table_set(tb, 3, 0, "Dee"); table_set(tb, 3, 1, "7");
+			table_filter(tb, "a"); table_pin(tb, 1); table_resize(tb, 0, 160.0);
+		}
+	}
+	if g == 26 || g == 34 { let buy = button(col, "Buy", 0); set_px(buy, 120.0, 32.0); }
+	if g == 32 {
+		let row = scr_row(col);
+		let a = badge(row, "1", 0); set_px(a, 32.0, 32.0);
+		let b = badge(row, "2", 1); set_px(b, 32.0, 32.0);
+		let c = badge(row, "3", 2); set_px(c, 32.0, 32.0);
+	}
+	col
 }
 
 fn screen_title(col int, g int) {

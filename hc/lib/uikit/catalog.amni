@@ -449,6 +449,15 @@ fn app_kit(col int, g int, look int) {
 }
 
 fn build_genre(parent int, g int, variation int) int {
-	if g < 24 { build_screen(parent, g, 3); } else { app_page(parent, g); }
+	if g < 24 { rich_column(parent, g, variation); } else { rich_app(parent, g, variation); }
 	variation
+}
+
+fn min_leaves(g int) int {
+	if g < 24 { return 17; }
+	if g == 33 || g == 31 || g == 28 || g == 37 { return 4; }
+	if g == 36 || g == 32 { return 6; }
+	if g == 38 { return 2; }
+	if g == 26 || g == 34 { return 4; }
+	3
 }

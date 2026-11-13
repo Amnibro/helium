@@ -3,8 +3,7 @@
 Catalog themes: 300
 Curated themes: 35
 Genres: 41 (24 game, 17 app)
-Game sheets: 7 screens (title, pause, settings, HUD, bag, map, results)
-App sheets: light and dark page
+Each sheet: 5 layout variations. Game columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit.
 Icons: 500
 Text effects: 100
 Widget styles: 20

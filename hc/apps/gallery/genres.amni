@@ -25,13 +25,20 @@ fn screen_caption(s int) const byte[:] {
 	"Results"
 }
 
-fn lock_metrics() {
-	uikit::THEME.radius = 8.0;
-	uikit::THEME.border_w = 1.0;
+fn shape_for(v int) {
+	uikit::catalog_set(2 + v * 40);
 	uikit::THEME.pixel = 0;
-	uikit::THEME.glass = 0;
-	uikit::THEME.shadow = 1;
-	uikit::THEME.family = uikit::FAM_FLAT;
+	if v == 0 {
+		uikit::THEME.radius = 8.0; uikit::THEME.border_w = 1.0; uikit::THEME.family = uikit::FAM_FLAT; uikit::THEME.shadow = 1; uikit::THEME.glass = 0;
+	} else if v == 1 {
+		uikit::THEME.radius = 0.0; uikit::THEME.border_w = 3.0; uikit::THEME.family = uikit::FAM_BRUTAL; uikit::THEME.shadow = 2; uikit::THEME.glass = 0;
+	} else if v == 2 {
+		uikit::THEME.radius = 16.0; uikit::THEME.border_w = 0.0; uikit::THEME.family = uikit::FAM_FLAT; uikit::THEME.shadow = 1; uikit::THEME.glass = 1;
+	} else if v == 3 {
+		uikit::THEME.radius = 4.0; uikit::THEME.border_w = 2.0; uikit::THEME.family = uikit::FAM_FANTASY; uikit::THEME.shadow = 0; uikit::THEME.glass = 0;
+	} else {
+		uikit::THEME.radius = 6.0; uikit::THEME.border_w = 1.0; uikit::THEME.family = uikit::FAM_NEON; uikit::THEME.shadow = 3; uikit::THEME.glass = 0;
+	}
 }
 
 fn centered_kind(k int) bool {
@@ -52,20 +59,9 @@ fn check_align(g int, col int, ox int, oy int) int {
 			print("grid ", uikit::genre_slug(g), " col ", col, " ", x, " ", y, " ", w, " ", h);
 			bad += 1;
 		}
-		if col > 0 {
-			let rx = x - ox;
-			let ry = y - oy;
-			if rx != uikit::AX[i] || ry != uikit::AY[i] || w != uikit::AW[i] || h != uikit::AH[i] {
-				print("shift ", uikit::genre_slug(g), " col ", col, " node ", i);
-				bad += 1;
-			}
-		} else {
-			while uikit::AX.len <= i { uikit::AX.push(0); uikit::AY.push(0); uikit::AW.push(0); uikit::AH.push(0); }
-			uikit::AX[i] = x - ox;
-			uikit::AY[i] = y - oy;
-			uikit::AW[i] = w;
-			uikit::AH[i] = h;
-		}
+		let rx = x - ox;
+		let ry = y - oy;
+		if rx < 0 || ry < 0 { bad += 1; }
 		if centered_kind(uikit::N[i].kind) && uikit::N[i].str_i >= 0 {
 			let s = uikit::s_text(uikit::N[i].str_i);
 			let sz = uikit::label_size(i);
@@ -110,46 +106,43 @@ fn paint_genre(g int) {
 	dir.append("docs/ui-gallery/");
 	dir.append(uikit::genre_slug(g));
 	make_dir(dir[..]);
-	uikit::AX.clear();
-	uikit::AY.clear();
-	uikit::AW.clear();
-	uikit::AH.clear();
-	let themes = [2, 42, 82, 122, 162];
 	if g < 24 {
-		uikit::canvas(1040, 460);
-		uikit::fill_rect(0, 0, 1040, 460, 0x101218, 255);
+		uikit::canvas(1296, 760);
+		uikit::fill_rect(0, 0, 1296, 760, 0x101218, 255);
 		for v in 5 {
-			let x = 16 + v * 204;
-			uikit::catalog_set(themes[v]);
-			lock_metrics();
+			let x = 8 + v * 256;
+			shape_for(v);
 			uikit::reset();
 			let root = uikit::flex(-1, uikit::DIR_COL);
-			uikit::build_screen(root, g, 3);
-			uikit::layout_root(root, x as f32, 16.0, 184.0, 420.0);
-			let bad = check_align(g, v, x, 16);
+			uikit::build_genre(root, g, v);
+			uikit::layout_root(root, x as f32, 8.0, 248.0, 740.0);
+			let leaves = uikit::leaf_count();
+			let need = uikit::min_leaves(g);
+			let bad = check_align(g, v, x, 8);
 			let ov = uikit::overlap_count();
 			let cl = uikit::text_clip_count();
-			if bad != 0 || ov != 0 || cl != 0 {
-				print("fail ", uikit::genre_slug(g), " col ", v, " align ", bad, " ov ", ov, " cl ", cl);
-				abort("align");
+			if leaves < need || bad != 0 || ov != 0 || cl != 0 {
+				print("fail ", uikit::genre_slug(g), " col ", v, " leaves ", leaves, "/", need, " align ", bad, " ov ", ov, " cl ", cl);
+				abort("content");
 			}
 			uikit::paint_roots();
 		}
 	} else {
-		uikit::canvas(2920, 640);
-		uikit::fill_rect(0, 0, 2920, 640, 0xF4F4F8, 255);
+		uikit::canvas(2568, 720);
+		uikit::fill_rect(0, 0, 2568, 720, 0xF4F4F8, 255);
 		for v in 5 {
-			let x = 16 + v * 580;
-			uikit::catalog_set(themes[v] + 10);
-			lock_metrics();
+			let x = 8 + v * 512;
+			shape_for(v);
 			uikit::reset();
 			let root = uikit::flex(-1, uikit::DIR_COL);
-			uikit::app_page(root, g);
-			uikit::layout_root(root, x as f32, 16.0, 560.0, 600.0);
-			let bad = check_align(g, v, x, 16);
-			if bad != 0 || uikit::overlap_count() != 0 || uikit::text_clip_count() != 0 {
-				print("fail app ", uikit::genre_slug(g), " ", v);
-				abort("align");
+			uikit::build_genre(root, g, v);
+			uikit::layout_root(root, x as f32, 8.0, 496.0, 700.0);
+			let leaves = uikit::leaf_count();
+			let need = uikit::min_leaves(g);
+			let bad = check_align(g, v, x, 8);
+			if leaves < need || bad != 0 || uikit::overlap_count() != 0 || uikit::text_clip_count() != 0 {
+				print("fail app ", uikit::genre_slug(g), " ", v, " leaves ", leaves, "/", need);
+				abort("content");
 			}
 			uikit::paint_roots();
 		}
@@ -365,8 +358,7 @@ fn write_index() {
 	format(out, "Catalog themes: ", uikit::catalog_count(), "\n");
 	format(out, "Curated themes: ", uikit::theme_count(), "\n");
 	format(out, "Genres: ", uikit::genre_count(), " (", uikit::game_genre_count(), " game, ", uikit::genre_count() - uikit::game_genre_count(), " app)\n");
-	format(out, "Game sheets: 7 screens (title, pause, settings, HUD, bag, map, results)\n");
-	format(out, "App sheets: light and dark page\n");
+	format(out, "Each sheet: 5 layout variations. Game columns include the 57dbc71a kit (boss, buffs, bars, minimap, inventory, quest, cooldowns, radial or chart, dialogue, damage, Play/Map/Bag) plus genre extras. Leaf count must be at least that commit.\n");
 	format(out, "Icons: ", uikit::icon_count(), "\n");
 	format(out, "Text effects: ", uikit::fx_count(), "\n");
 	format(out, "Widget styles: ", uikit::style_count(), "\n");
