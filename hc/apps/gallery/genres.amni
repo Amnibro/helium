@@ -274,7 +274,7 @@ fn paint_stage_screen(g int, screen int) {
 }
 
 fn paint_screen(g int, screen int) {
-	if g == 0 || g == 1 || g == 2 || g == 3 || g == 4 || g == 5 || g == 7 || g == 8 || g == 12 { paint_stage_screen(g, screen); return; }
+	if g == 0 || g == 1 || g == 2 || g == 3 || g == 4 || g == 5 || g == 6 || g == 7 || g == 8 || g == 12 { paint_stage_screen(g, screen); return; }
 	var dir byte[>..] = [];
 	dir.append("docs/ui-gallery/");
 	dir.append(uikit::genre_slug(g));
@@ -659,6 +659,11 @@ fn main() {
 		if which[..] == "royale" {
 			for s in 7 { paint_stage_screen(1, s); }
 			print("royale done");
+			return;
+		}
+		if which[..] == "mmo" {
+			for s in 7 { paint_stage_screen(6, s); }
+			print("mmo done");
 			return;
 		}
 		if which[..] == "rts" {

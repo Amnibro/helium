@@ -13,6 +13,7 @@ fn menu_n(g int) int {
 	if g == 8 { return 4; }
 	if g == 12 { return 4; }
 	if g == 3 { return 4; }
+	if g == 6 { return 4; }
 	4
 }
 fn menu_at(g int, i int) const byte[:] {
@@ -58,6 +59,12 @@ fn menu_at(g int, i int) const byte[:] {
 		if i == 0 { return "Versus"; }
 		if i == 1 { return "Arcade"; }
 		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 6 {
+		if i == 0 { return "Enter"; }
+		if i == 1 { return "Character"; }
+		if i == 2 { return "Group"; }
 		return "Options";
 	}
 	if g == 3 {
@@ -1422,6 +1429,105 @@ fn stage_map_rts(f int, mode int) {
 	let c = button(f, "Third", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
 }
 
+fn stage_hud_mmo(f int, mode int) {
+	var px f32 = 48.0;
+	var py f32 = 36.0;
+	var mx f32 = 1600.0;
+	var my f32 = 48.0;
+	var ax f32 = 720.0;
+	var ay f32 = 960.0;
+	if mode == 1 { py = 860.0; mx = 1600.0; my = 760.0; ay = 780.0; }
+	else if mode == 2 { px = 1560.0; ax = 48.0; ay = 480.0; mx = 48.0; my = 760.0; }
+	else if mode == 3 { mx = 48.0; my = 760.0; ay = 860.0; }
+	else if mode == 4 { py = 200.0; mx = 1600.0; my = 48.0; }
+	let name = label(f, "Mira", 1); place_at(name, px, py, 240.0, 36.0);
+	let hp = health_bar(f, 0.7, 0); place_at(hp, px, py + 44.0, 280.0, 20.0);
+	let mp = mana_bar(f, 0.4, 0); place_at(mp, px, py + 72.0, 280.0, 16.0);
+	let lv = label(f, "Lv 40", 2); place_at(lv, px, py + 96.0, 160.0, 32.0);
+	let foe = label(f, "Warden", 0); place_at(foe, 760.0, 36.0, 400.0, 48.0); mark_anchor(foe);
+	let th = health_bar(f, 0.55, 1); place_at(th, 760.0, 96.0, 400.0, 20.0);
+	let cast = label(f, "Casting", 2); place_at(cast, 760.0, ay - 40.0, 240.0, 32.0);
+	let bar = health_bar(f, 0.35, 2); place_at(bar, 760.0, ay, 400.0, 16.0);
+	ability6(f, ax, ay + 36.0, 56.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 240.0); N[map].i3 = 6;
+}
+
+fn stage_pause_mmo(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Rest", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Return", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Character", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Logout", 5); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_mmo(f int, mode int) {
+	var x f32 = 160.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; y = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { x = 480.0; y = 80.0; }
+	let head = label(f, "Vendor", 0); place_at(head, x, y, 360.0, 56.0);
+	let gold = label(f, "Gold  86", 1); place_at(gold, x + 520.0, y, 240.0, 40.0);
+	let a = button(f, "Potion  2", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Food  1", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Scroll  8", 2); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Buy", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_mmo(f int, mode int) {
+	var y f32 = 140.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 420.0; }
+	else if mode == 4 { y = 160.0; x = 240.0; }
+	let head = label(f, "Clear", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let zone = label(f, "Vault", 2); place_at(zone, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "Group");
+	table_set(tb, 0, 0, "Damage"); table_set(tb, 0, 1, "48200"); table_set(tb, 0, 2, "91000");
+	table_set(tb, 1, 0, "Healing"); table_set(tb, 1, 1, "1200"); table_set(tb, 1, 2, "24000");
+	table_set(tb, 2, 0, "Deaths"); table_set(tb, 2, 1, "0"); table_set(tb, 2, 2, "1");
+	table_set(tb, 3, 0, "Loot"); table_set(tb, 3, 1, "Ring"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "22:10"); table_set(tb, 4, 2, "22:10");
+	table_set(tb, 5, 0, "Gold"); table_set(tb, 5, 1, "40"); table_set(tb, 5, 2, "160");
+	let again = button(f, "Leave", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_mmo(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Interface", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = toggle(f, "Nameplates", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = toggle(f, "Self cast", 0, 2); place_at(b, x, y + 152.0, 480.0, 56.0);
+	let s = slider(f, 0.5, 0); place_at(s, x, y + 232.0, 480.0, 32.0);
+}
+
+fn stage_map_mmo(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { x = 80.0; by = 80.0; y = 200.0; }
+	else if mode == 3 { x = 400.0; }
+	else if mode == 4 { y = 48.0; by = 880.0; }
+	let map = minimap(f, 0); place_at(map, x, y, 1440.0, 760.0); N[map].i3 = 6;
+	if mode == 1 || mode == 2 { place_at(map, 240.0, 200.0, 1440.0, 760.0); }
+	let a = button(f, "Town", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Wild", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Vault", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
 fn build_stage(frame int, g int, screen int, mode int) int {
 	N[frame].i0 = g;
 	N[frame].i1 = screen;
@@ -1436,6 +1542,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 12 { stage_pause_deck(frame, mode); }
 		else if g == 2 { stage_pause_moba(frame, mode); }
 		else if g == 3 { stage_pause_rts(frame, mode); }
+		else if g == 6 { stage_pause_mmo(frame, mode); }
 		else { stage_pause(frame, g, mode); }
 	}
 	else if screen == 2 {
@@ -1447,6 +1554,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 12 { stage_settings_deck(frame, mode); }
 		else if g == 2 { stage_settings_moba(frame, mode); }
 		else if g == 3 { stage_settings_rts(frame, mode); }
+		else if g == 6 { stage_settings_mmo(frame, mode); }
 		else { stage_settings(frame, g, mode); }
 	}
 	else if screen == 3 {
@@ -1458,6 +1566,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 8 { stage_hud_fighting(frame, mode); }
 		else if g == 12 { stage_hud_deck(frame, mode); }
 		else if g == 3 { stage_hud_rts(frame, mode); }
+		else if g == 6 { stage_hud_mmo(frame, mode); }
 		else { stage_hud_fps(frame, mode); }
 	}
 	else if screen == 4 {
@@ -1469,6 +1578,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 12 { stage_shop_deck(frame, mode); }
 		else if g == 2 { stage_shop_moba(frame, mode); }
 		else if g == 3 { stage_shop_rts(frame, mode); }
+		else if g == 6 { stage_shop_mmo(frame, mode); }
 		else { stage_shop_fps(frame, g, mode); }
 	}
 	else if screen == 5 {
@@ -1480,6 +1590,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 		else if g == 12 { stage_map_deck(frame, mode); }
 		else if g == 2 { stage_map_moba(frame, mode); }
 		else if g == 3 { stage_map_rts(frame, mode); }
+		else if g == 6 { stage_map_mmo(frame, mode); }
 		else { stage_map_fps(frame, g, mode); }
 	}
 	else if g == 4 { stage_results_jrpg(frame, mode); }
@@ -1490,6 +1601,7 @@ fn build_stage(frame int, g int, screen int, mode int) int {
 	else if g == 12 { stage_results_deck(frame, mode); }
 	else if g == 2 { stage_results_moba(frame, mode); }
 	else if g == 3 { stage_results_rts(frame, mode); }
+	else if g == 6 { stage_results_mmo(frame, mode); }
 	else { stage_results_fps(frame, g, mode); }
 	frame
 }
