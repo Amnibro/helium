@@ -56,15 +56,61 @@ fn stage_title(f int, g int, mode int) {
 	place_at(go, px, 920.0, 360.0, 48.0);
 }
 
+fn mark_anchor(id int) { N[id].flags = N[id].flags | FL_ANCHOR; }
+
+fn kill_row(col int, killer const byte[:], kcol u32, icon int, victim const byte[:], vcol u32) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 8.0);
+	set_pad(row, 0.0);
+	set_px(row, 212.0, 36.0);
+	let a = label(row, killer, 3); set_px(a, 80.0, 36.0); N[a].fg = kcol;
+	let ic = icon_button(row, icon, 3); set_px(ic, 36.0, 36.0);
+	let b = label(row, victim, 3); set_px(b, 80.0, 36.0); N[b].fg = vcol;
+}
+
 fn feed_col(f int, x f32, y f32) {
 	let col = card(f, "", 2);
 	set_gap(col, 8.0);
-	set_pad(col, 12.0);
-	place_at(col, x, y, 384.0, 208.0);
-	let a = label(col, "You    Ace", 3); set_px(a, 360.0, 36.0);
-	let b = label(col, "Nova   You", 3); set_px(b, 360.0, 36.0);
-	let c = label(col, "You    Hex", 3); set_px(c, 360.0, 36.0);
-	let d = label(col, "Ace    Kit", 3); set_px(d, 360.0, 36.0);
+	set_pad(col, 8.0);
+	place_at(col, x, y, 228.0, 184.0);
+	let ally = 0xD6ECFF as u32;
+	let foe = 0xFFD0C2 as u32;
+	kill_row(col, "You", ally, 77, "Ace", foe);
+	kill_row(col, "Nova", foe, 0, "You", ally);
+	kill_row(col, "You", ally, 16, "Hex", foe);
+	kill_row(col, "Ace", foe, 74, "Kit", ally);
+}
+
+fn vitals(f int, x f32, y f32) {
+	let heart = icon_button(f, 2, 3); place_at(heart, x, y, 36.0, 36.0);
+	let hp = health_bar(f, 0.72, 0); place_at(hp, x + 44.0, y + 8.0, 220.0, 24.0);
+	let hn = label(f, "144", 2); place_at(hn, x + 272.0, y + 4.0, 72.0, 32.0);
+	let sh = icon_button(f, 1, 3); place_at(sh, x, y + 44.0, 36.0, 36.0);
+	let arm = health_bar(f, 0.4, 2); place_at(arm, x + 44.0, y + 52.0, 220.0, 20.0);
+	let sn = label(f, "80", 3); place_at(sn, x + 272.0, y + 44.0, 64.0, 28.0);
+}
+
+fn ammo_readout(f int, x f32, y f32) {
+	let big = label(f, "24", 0); place_at(big, x, y, 72.0, 56.0);
+	let slash = label(f, "/", 4); place_at(slash, x + 72.0, y + 20.0, 24.0, 28.0);
+	let small = label(f, "90", 3); place_at(small, x + 96.0, y + 16.0, 56.0, 32.0);
+}
+
+fn objective_pip(f int, y f32) {
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 8.0);
+	set_pad(row, 0.0);
+	place_at(row, 888.0, y, 144.0, 40.0);
+	mark_anchor(row);
+	let pip = icon_button(row, 75, 3); set_px(pip, 40.0, 40.0);
+	let letter = label(row, "A", 2); set_px(letter, 32.0, 40.0); N[letter].i2 = 1;
+	let dist = label(row, "32m", 3); set_px(dist, 56.0, 40.0); N[dist].i2 = 1;
+}
+
+fn prompt_center(f int, text const byte[:], y f32) {
+	let lab = label(f, text, 2);
+	place_at(lab, 840.0, y, 240.0, 40.0);
+	mark_anchor(lab);
 }
 
 fn ability4(f int, x f32, y f32, s f32) {
@@ -126,21 +172,15 @@ fn stage_hud_fps(f int, mode int) {
 	place_at(map, mapx, mapy, maps, maps);
 	N[map].i3 = 0;
 	feed_col(f, fx, fy);
-	let hp = health_bar(f, 0.72, 0);
-	place_at(hp, hx, hy, 360.0, 28.0);
-	let arm = health_bar(f, 0.4, 2);
-	place_at(arm, hx, hy + 36.0, 360.0, 24.0);
-	let ammo = label(f, "24  /  90", 1);
-	place_at(ammo, ax, ay, 280.0, 48.0);
+	vitals(f, hx, hy);
+	ammo_readout(f, ax, ay);
 	let gun = icon_button(f, 78, 2);
 	place_at(gun, wx, wy, 72.0, 72.0);
 	ability4(f, bx, by, bs);
 	let nade = icon_button(f, 79, 0);
-	place_at(nade, if mode == 4 { 48.0 } else { 48.0 }, if mode == 4 { 800.0 } else { 400.0 }, 72.0, 72.0);
-	let hold = label(f, "Hold F", 2);
-	place_at(hold, 860.0, 800.0, 200.0, 40.0);
-	let obj = label(f, "Secure A", 2);
-	place_at(obj, 780.0, 48.0, 360.0, 40.0);
+	place_at(nade, 48.0, if mode == 4 { 800.0 } else { 400.0 }, 72.0, 72.0);
+	prompt_center(f, "Hold F", 800.0);
+	objective_pip(f, 48.0);
 }
 
 fn ability6(f int, x f32, y f32, s f32) {

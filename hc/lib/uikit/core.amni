@@ -21,7 +21,7 @@ let LOOK_FILLED = 0; let LOOK_TONAL = 1; let LOOK_OUTLINE = 2; let LOOK_GHOST = 
 let WM_AUTO = 0; let WM_PX = 1; let WM_PCT = 2;
 let DIR_ROW = 0; let DIR_COL = 1;
 
-let FL_OFF = 1; let FL_HOVER = 2; let FL_PRESS = 4; let FL_FOCUS = 8; let FL_OPEN = 16; let FL_ON = 32; let FL_HIDE = 128;
+let FL_OFF = 1; let FL_HOVER = 2; let FL_PRESS = 4; let FL_FOCUS = 8; let FL_OPEN = 16; let FL_ON = 32; let FL_ANCHOR = 64; let FL_HIDE = 128;
 
 struct Node {
 	parent int, kind int, look int, dir int, cols int,

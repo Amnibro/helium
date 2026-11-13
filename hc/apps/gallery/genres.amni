@@ -62,6 +62,21 @@ fn check_align(g int, col int, ox int, oy int) int {
 		let rx = x - ox;
 		let ry = y - oy;
 		if rx < 0 || ry < 0 { bad += 1; }
+		if uikit::N[i].kind == uikit::K_LABEL && uikit::N[i].flags & uikit::FL_ANCHOR != 0 && uikit::N[i].str_i >= 0 {
+			let s = uikit::s_text(uikit::N[i].str_i);
+			let sz = uikit::label_size(i);
+			let ax, ay = uikit::label_shift(w as f32, h as f32, s, sz, -1, -1.0);
+			if ax > 1.0 || ay > 1.0 {
+				print("anchor text ", uikit::genre_slug(g), " ", s, " x ", ax, " y ", ay);
+				bad += 1;
+			}
+		}
+		if uikit::N[i].kind == uikit::K_LABEL && uikit::N[i].fg != 0 {
+			if uikit::contrast_ratio(uikit::N[i].fg, uikit::THEME.surface) < 4.5 {
+				print("fg contrast ", uikit::genre_slug(g));
+				bad += 1;
+			}
+		}
 		if centered_kind(uikit::N[i].kind) && uikit::N[i].str_i >= 0 {
 			let s = uikit::s_text(uikit::N[i].str_i);
 			let sz = uikit::label_size(i);
@@ -79,6 +94,17 @@ fn check_align(g int, col int, ox int, oy int) int {
 		}
 	}
 	if col == 0 { print("worst before ", worst_b, " after ", worst_a, " ", uikit::genre_slug(g)); }
+	for i in uikit::N.len {
+		if !uikit::shown(i) || uikit::N[i].flags & uikit::FL_ANCHOR == 0 { continue; }
+		let mid = uikit::N[i].x + uikit::N[i].w / 2.0;
+		let want = (ox as f32) + uikit::VW / 2.0;
+		var aerr = mid - want;
+		if aerr < 0.0 { aerr = 0.0 - aerr; }
+		if aerr > 1.0 {
+			print("anchor ", uikit::genre_slug(g), " mid ", mid, " want ", want);
+			bad += 1;
+		}
+	}
 	for i in uikit::N.len {
 		if uikit::N[i].dir != uikit::DIR_ROW || uikit::KIDS[i].len < 2 { continue; }
 		var prev = -1000;
