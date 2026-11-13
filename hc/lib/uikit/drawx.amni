@@ -269,144 +269,242 @@ fn map_ring(x int, y int, w int, h int, px int, py int, p int, rgb u32) {
 	}
 }
 
+fn map_lot(x int, y int, w int, h int, px int, py int, bw int, bh int, rgb u32) {
+	let ww = w * bw / 100;
+	let hh = h * bh / 100;
+	if ww < 2 || hh < 2 { return; }
+	fill_rect(map_at(x, w, px), map_at(y, h, py), ww, hh, rgb, 255);
+}
+
+fn map_block(x int, y int, w int, h int, px int, py int, bw int, bh int, body u32, roof u32) {
+	let x0 = map_at(x, w, px);
+	let y0 = map_at(y, h, py);
+	let ww = w * bw / 100;
+	let hh = h * bh / 100;
+	if ww < 4 || hh < 4 { return; }
+	fill_rect(x0 + 2, y0 + 2, ww, hh, 0x000000, 70);
+	fill_rect(x0, y0, ww, hh, body, 255);
+	fill_rect(x0, y0, ww, 2, roof, 255);
+	fill_rect(x0, y0, 2, hh, roof, 200);
+	if ww > 14 && hh > 12 { fill_rect(x0 + ww / 3, y0 + hh / 3, ww / 5, hh / 4, roof, 160); }
+}
+
+fn map_road(x int, y int, w int, h int, x0 int, y0 int, x1 int, y1 int, wide int, asphalt u32, curb u32) {
+	let ax = map_at(x, w, x0);
+	let ay = map_at(y, h, y0);
+	let bx = map_at(x, w, x1);
+	let by = map_at(y, h, y1);
+	var dx = bx - ax;
+	if dx < 0 { dx = -dx; }
+	var dy = by - ay;
+	if dy < 0 { dy = -dy; }
+	let n = if dx > dy { dx } else { dy };
+	if n < 1 { return; }
+	let cw = wide + 4;
+	var i = 0;
+	while i <= n {
+		let px = ax + (bx - ax) * i / n;
+		let py = ay + (by - ay) * i / n;
+		fill_rect(px - cw / 2, py - cw / 2, cw, cw, curb, 255);
+		fill_rect(px - wide / 2, py - wide / 2, wide, wide, asphalt, 255);
+		if wide >= 8 && i % 10 < 4 { fill_rect(px - 1, py - 1, 2, 2, 0xE7D48A, 255); }
+		i += 1;
+	}
+}
+
 fn map_lay(seed int, x int, y int, w int, h int) {
+	let road = 0x3C4450 as u32;
+	let curb = 0xD9CDB4 as u32;
+	let wall = 0x6A5844 as u32;
+	let roof = 0xE4C48A as u32;
+	let grass = 0x2C6A44 as u32;
+	let dirt = 0x6A5438 as u32;
+	let water = 0x2A6494 as u32;
 	if seed == 1 {
-		map_blob(x, y, w, h, 50, 54, 38, 34, 0x245C38);
-		map_blob(x, y, w, h, 38, 46, 16, 12, 0x3A7048);
-		map_ring(x, y, w, h, 50, 50, 40, 0x8A78E0);
-		map_node(x, y, w, h, 62, 40, 3, 0xE8C840);
+		map_lot(x, y, w, h, 6, 8, 88, 70, grass);
+		map_lot(x, y, w, h, 0, 72, 100, 28, water);
+		map_road(x, y, w, h, 14, 18, 86, 18, 7, road, curb);
+		map_road(x, y, w, h, 14, 58, 86, 58, 7, road, curb);
+		map_road(x, y, w, h, 18, 14, 18, 64, 6, road, curb);
+		map_road(x, y, w, h, 78, 14, 78, 64, 6, road, curb);
+		map_block(x, y, w, h, 28, 28, 16, 14, wall, roof);
+		map_block(x, y, w, h, 52, 30, 14, 16, 0x4A4038, 0xC45A3A);
+		map_ring(x, y, w, h, 50, 42, 28, 0xE7C84A);
 	} else if seed == 2 {
-		map_blob(x, y, w, h, 50, 50, 48, 8, 0x1A4A6A);
-		map_chain(x, y, w, h, 12, 18, 88, 18, 8, 3, 0xC2B280);
-		map_chain(x, y, w, h, 14, 82, 86, 16, 8, 3, 0xC2B280);
-		map_chain(x, y, w, h, 16, 84, 84, 84, 8, 3, 0xC2B280);
-		map_node(x, y, w, h, 14, 16, 6, 0x3A6AD0);
-		map_node(x, y, w, h, 86, 84, 6, 0xD04A3A);
+		map_lot(x, y, w, h, 0, 0, 100, 100, 0x1A3A2C);
+		map_road(x, y, w, h, 10, 16, 90, 16, 8, road, curb);
+		map_road(x, y, w, h, 10, 84, 90, 84, 8, road, curb);
+		map_road(x, y, w, h, 10, 78, 90, 22, 7, road, curb);
+		map_road(x, y, w, h, 0, 46, 100, 58, 12, water, 0x8EC8E4);
+		map_block(x, y, w, h, 6, 68, 16, 16, 0x3A6AD0, 0xD6E4FF);
+		map_block(x, y, w, h, 76, 8, 16, 16, 0xC44A3A, 0xF4C8B0);
 	} else if seed == 3 {
-		map_blob(x, y, w, h, 48, 42, 40, 16, 0x3A4A32);
-		map_node(x, y, w, h, 22, 70, 8, 0x4A4430);
-		map_node(x, y, w, h, 74, 28, 7, 0x2A4038);
-		map_node(x, y, w, h, 40, 36, 3, 0xE8C840);
-		map_node(x, y, w, h, 58, 48, 3, 0xE8C840);
+		map_lot(x, y, w, h, 4, 6, 92, 88, 0x3A4A32);
+		map_road(x, y, w, h, 12, 78, 48, 48, 7, dirt, curb);
+		map_road(x, y, w, h, 48, 48, 82, 22, 7, dirt, curb);
+		map_road(x, y, w, h, 22, 28, 70, 70, 5, road, curb);
+		map_block(x, y, w, h, 16, 62, 18, 16, wall, roof);
+		map_block(x, y, w, h, 62, 16, 20, 14, 0x5A6840, 0xC8D090);
+		map_block(x, y, w, h, 40, 36, 12, 12, 0x4A4438, 0xE8C878);
 	} else if seed == 4 {
-		map_blob(x, y, w, h, 22, 62, 18, 16, 0x1A4A73);
-		map_blob(x, y, w, h, 30, 28, 16, 14, 0xD0D8E4);
-		map_blob(x, y, w, h, 68, 40, 20, 16, 0x3A6848);
-		map_node(x, y, w, h, 78, 72, 5, 0xC2B280);
-		map_chain(x, y, w, h, 22, 62, 68, 40, 6, 2, 0x8A7048);
+		map_lot(x, y, w, h, 8, 10, 40, 30, water);
+		map_lot(x, y, w, h, 52, 18, 40, 50, grass);
+		map_road(x, y, w, h, 8, 78, 46, 62, 6, dirt, curb);
+		map_road(x, y, w, h, 46, 62, 86, 28, 6, dirt, curb);
+		map_block(x, y, w, h, 58, 24, 14, 12, 0xC45A58, 0xF4D0B0);
+		map_block(x, y, w, h, 74, 26, 12, 14, 0x8A4040, 0xE8B090);
+		map_block(x, y, w, h, 66, 48, 16, 12, wall, roof);
 	} else if seed == 5 {
-		map_chain(x, y, w, h, 16, 78, 40, 58, 5, 5, 0x3A342C);
-		map_chain(x, y, w, h, 40, 58, 62, 36, 4, 5, 0x3A342C);
-		map_node(x, y, w, h, 78, 24, 8, 0x6A3030);
-		map_node(x, y, w, h, 16, 78, 3, 0xE8C840);
+		map_lot(x, y, w, h, 8, 12, 84, 76, 0x2A2420);
+		map_road(x, y, w, h, 12, 78, 48, 58, 8, 0x4A443C, curb);
+		map_road(x, y, w, h, 48, 58, 78, 28, 8, 0x4A443C, curb);
+		map_block(x, y, w, h, 62, 14, 24, 22, 0x3A3030, 0xC4A878);
+		map_block(x, y, w, h, 70, 18, 8, 28, 0x2A2424, 0xE8C8A0);
 	} else if seed == 6 {
-		map_blob(x, y, w, h, 28, 32, 18, 16, 0x2A6840);
-		map_blob(x, y, w, h, 62, 28, 16, 14, 0x1A4A6A);
-		map_blob(x, y, w, h, 48, 68, 22, 16, 0x4A4430);
-		map_chain(x, y, w, h, 28, 32, 62, 28, 4, 2, 0xC2B280);
-		map_chain(x, y, w, h, 48, 68, 62, 28, 4, 2, 0xC2B280);
+		map_lot(x, y, w, h, 6, 8, 88, 84, grass);
+		map_road(x, y, w, h, 16, 74, 50, 40, 7, dirt, curb);
+		map_road(x, y, w, h, 50, 40, 82, 20, 7, dirt, curb);
+		map_block(x, y, w, h, 18, 58, 16, 14, wall, roof);
+		map_block(x, y, w, h, 58, 22, 18, 14, 0x4A6848, 0xD0C080);
+		map_block(x, y, w, h, 70, 58, 14, 16, wall, 0xC45A3A);
 	} else if seed == 7 {
-		map_blob(x, y, w, h, 50, 50, 42, 34, 0x3A3E44);
-		map_blob(x, y, w, h, 50, 50, 28, 20, 0x1E4A32);
-		map_node(x, y, w, h, 50, 18, 2, 0xE6E2D0);
+		map_lot(x, y, w, h, 18, 16, 64, 68, grass);
+		map_road(x, y, w, h, 16, 22, 84, 22, 10, 0x2A2E34, 0xE8E4E0);
+		map_road(x, y, w, h, 16, 78, 84, 78, 10, 0x2A2E34, 0xE8E4E0);
+		map_road(x, y, w, h, 16, 22, 16, 78, 10, 0x2A2E34, 0xC44A3A);
+		map_road(x, y, w, h, 84, 22, 84, 78, 10, 0x2A2E34, 0xC44A3A);
+		map_block(x, y, w, h, 40, 40, 20, 16, 0x3A4248, 0xD0D4DC);
 	} else if seed == 8 {
-		map_blob(x, y, w, h, 50, 54, 36, 28, 0x4A3428);
-		map_node(x, y, w, h, 38, 54, 4, 0x6EC8FF);
-		map_node(x, y, w, h, 62, 54, 4, 0xFF5A5A);
+		map_lot(x, y, w, h, 16, 22, 68, 56, 0x4A3428);
+		map_road(x, y, w, h, 20, 28, 80, 28, 4, 0xE8E0D0, 0x2A2420);
+		map_road(x, y, w, h, 20, 72, 80, 72, 4, 0xE8E0D0, 0x2A2420);
+		map_block(x, y, w, h, 22, 36, 12, 16, 0x6EC8FF, 0xF4FBFF);
+		map_block(x, y, w, h, 66, 36, 12, 16, 0xE24A4A, 0xF4D0C8);
 	} else if seed == 9 {
-		map_blob(x, y, w, h, 50, 52, 40, 30, 0x2A7048);
-		map_ring(x, y, w, h, 50, 52, 8, 0xE8E4D0);
-		map_node(x, y, w, h, 18, 52, 3, 0xE8E4D0);
-		map_node(x, y, w, h, 82, 52, 3, 0xE8E4D0);
+		map_lot(x, y, w, h, 14, 16, 72, 68, 0x2E8A48);
+		map_road(x, y, w, h, 18, 50, 82, 50, 3, 0xF4F4F0, 0x2E8A48);
+		map_road(x, y, w, h, 50, 20, 50, 80, 3, 0xF4F4F0, 0x2E8A48);
+		map_block(x, y, w, h, 8, 20, 10, 60, 0xD8E4F0, 0xFFFFFF);
+		map_block(x, y, w, h, 82, 20, 10, 60, 0xD8E4F0, 0xFFFFFF);
+		map_block(x, y, w, h, 44, 42, 12, 10, 0xF8F8F8, 0xE8E8E8);
 	} else if seed == 10 {
-		map_blob(x, y, w, h, 30, 28, 22, 6, 0x3A6844);
-		map_blob(x, y, w, h, 58, 46, 26, 6, 0x2A5038);
-		map_blob(x, y, w, h, 36, 66, 20, 5, 0x4A7850);
-		map_blob(x, y, w, h, 70, 80, 18, 5, 0x345C40);
-		map_node(x, y, w, h, 58, 40, 2, 0xE8C840);
+		map_lot(x, y, w, h, 6, 8, 88, 84, 0x1E4A30);
+		map_block(x, y, w, h, 12, 22, 28, 8, 0x3A6844, 0x8ED48A);
+		map_block(x, y, w, h, 22, 40, 36, 8, 0x2A5038, 0x6AAA70);
+		map_block(x, y, w, h, 16, 58, 24, 8, 0x4A7850, 0xC8E090);
+		map_road(x, y, w, h, 48, 18, 48, 82, 4, 0xC8B080, dirt);
+		map_block(x, y, w, h, 62, 62, 18, 12, wall, roof);
 	} else if seed == 11 {
-		map_node(x, y, w, h, 22, 24, 8, 0x2A2428);
-		map_node(x, y, w, h, 48, 30, 7, 0x322C30);
-		map_node(x, y, w, h, 72, 48, 9, 0x3A3034);
-		map_node(x, y, w, h, 36, 68, 8, 0x2A2428);
-		map_node(x, y, w, h, 68, 76, 7, 0x4A3030);
-		map_chain(x, y, w, h, 22, 24, 48, 30, 3, 2, 0x5A5048);
-		map_chain(x, y, w, h, 48, 30, 72, 48, 3, 2, 0x5A5048);
-		map_chain(x, y, w, h, 48, 30, 36, 68, 3, 2, 0x5A5048);
+		map_lot(x, y, w, h, 8, 10, 24, 20, 0x2A2428);
+		map_lot(x, y, w, h, 40, 12, 22, 22, 0x322C30);
+		map_lot(x, y, w, h, 66, 36, 24, 22, 0x3A3034);
+		map_lot(x, y, w, h, 24, 58, 22, 24, 0x2A2428);
+		map_road(x, y, w, h, 28, 24, 46, 22, 4, 0x5A5048, 0x2A2420);
+		map_road(x, y, w, h, 56, 28, 70, 44, 4, 0x5A5048, 0x2A2420);
+		map_road(x, y, w, h, 46, 30, 34, 64, 4, 0x5A5048, 0x2A2420);
+		map_block(x, y, w, h, 44, 16, 8, 8, 0x6A3030, 0xE07030);
 	} else if seed == 12 {
-		map_chain(x, y, w, h, 16, 70, 84, 30, 6, 4, 0x3A6848);
-		map_node(x, y, w, h, 84, 30, 6, 0x6A3030);
-		map_node(x, y, w, h, 16, 70, 4, 0xE8C840);
+		map_lot(x, y, w, h, 8, 14, 84, 72, 0x1A3A28);
+		map_road(x, y, w, h, 14, 28, 86, 28, 6, 0xC8B48A, 0x3A6848);
+		map_road(x, y, w, h, 14, 50, 86, 50, 6, 0xC8B48A, 0x3A6848);
+		map_road(x, y, w, h, 14, 72, 86, 72, 6, 0xC8B48A, 0x3A6848);
+		map_block(x, y, w, h, 20, 18, 12, 10, 0xF4E7C5, 0xC45A3A);
+		map_block(x, y, w, h, 46, 40, 12, 10, 0xE8D8B0, 0x3A6AD0);
+		map_block(x, y, w, h, 68, 62, 12, 10, 0xF4E7C5, 0xE8C040);
 	} else if seed == 13 {
-		map_blob(x, y, w, h, 30, 36, 16, 14, 0x3A6840);
-		map_blob(x, y, w, h, 68, 58, 18, 14, 0x2A5034);
-		map_blob(x, y, w, h, 48, 74, 14, 8, 0x1A4A6A);
-		map_node(x, y, w, h, 34, 40, 3, 0xE8C840);
+		map_lot(x, y, w, h, 6, 8, 88, 60, grass);
+		map_lot(x, y, w, h, 10, 70, 80, 22, water);
+		map_road(x, y, w, h, 14, 78, 40, 40, 6, dirt, curb);
+		map_road(x, y, w, h, 40, 40, 82, 24, 6, dirt, curb);
+		map_block(x, y, w, h, 28, 28, 16, 12, wall, roof);
+		map_block(x, y, w, h, 58, 18, 12, 14, 0x4A4030, 0x6A5030);
+		map_block(x, y, w, h, 62, 46, 10, 16, 0x2A4030, 0x1E3020);
 	} else if seed == 14 {
-		map_blob(x, y, w, h, 24, 32, 14, 12, 0x3A3830);
-		map_blob(x, y, w, h, 48, 28, 12, 10, 0x4A4438);
-		map_blob(x, y, w, h, 72, 48, 16, 12, 0x2E2C28);
-		map_blob(x, y, w, h, 40, 70, 46, 8, 0x1A4A6A);
+		map_lot(x, y, w, h, 4, 6, 92, 88, 0x3A4038);
+		map_road(x, y, w, h, 8, 0, 8, 100, 7, road, curb);
+		map_road(x, y, w, h, 36, 0, 40, 100, 6, road, curb);
+		map_road(x, y, w, h, 70, 0, 66, 100, 8, road, curb);
+		map_road(x, y, w, h, 0, 28, 100, 24, 6, road, curb);
+		map_road(x, y, w, h, 0, 62, 100, 68, 7, road, curb);
+		map_block(x, y, w, h, 14, 8, 16, 12, wall, roof);
+		map_block(x, y, w, h, 48, 32, 14, 18, 0x5A5048, 0xC4A878);
+		map_block(x, y, w, h, 16, 74, 18, 14, 0x4A4840, 0xE8D0A0);
+		map_block(x, y, w, h, 76, 40, 16, 16, wall, 0xC45A3A);
 	} else if seed == 15 {
-		map_node(x, y, w, h, 28, 30, 9, 0x1A1A20);
-		map_node(x, y, w, h, 58, 36, 8, 0x141418);
-		map_node(x, y, w, h, 40, 68, 10, 0x3A3420);
-		map_chain(x, y, w, h, 28, 30, 40, 68, 3, 2, 0x2A2A30);
+		map_lot(x, y, w, h, 6, 8, 88, 84, 0x1A1814);
+		map_road(x, y, w, h, 8, 86, 40, 62, 6, dirt, 0x3A3428);
+		map_road(x, y, w, h, 40, 62, 48, 36, 5, dirt, 0x3A3428);
+		map_block(x, y, w, h, 36, 16, 28, 22, 0x2A2420, 0x6A3030);
+		map_block(x, y, w, h, 44, 12, 8, 16, 0x1A1614, 0xC04040);
+		map_block(x, y, w, h, 70, 60, 16, 10, 0x241E1A, 0x3A3428);
 	} else if seed == 16 {
-		map_node(x, y, w, h, 32, 42, 12, 0x3A4A6A);
-		map_node(x, y, w, h, 68, 36, 6, 0xC8C0A8);
-		map_node(x, y, w, h, 58, 70, 4, 0x6A4030);
-		map_chain(x, y, w, h, 32, 42, 68, 36, 5, 2, 0x8AA0C0);
+		map_lot(x, y, w, h, 8, 18, 28, 22, 0x24344C);
+		map_lot(x, y, w, h, 52, 16, 22, 18, 0xC8C0A8);
+		map_lot(x, y, w, h, 40, 58, 24, 18, 0x4A4038);
+		map_road(x, y, w, h, 32, 32, 58, 26, 5, 0x8AA0C0, 0xD6E4F4);
+		map_road(x, y, w, h, 58, 32, 50, 60, 5, 0x8AA0C0, 0xD6E4F4);
+		map_block(x, y, w, h, 14, 24, 10, 10, 0x6A8AB0, 0xF4F7FB);
+		map_block(x, y, w, h, 58, 18, 10, 10, 0xE8E0D0, 0xFFFFFF);
 	} else if seed == 17 {
-		map_blob(x, y, w, h, 26, 40, 18, 16, 0x2A6840);
-		map_blob(x, y, w, h, 58, 30, 16, 14, 0x1A4A6A);
-		map_blob(x, y, w, h, 72, 66, 18, 14, 0x4A4430);
-		map_node(x, y, w, h, 40, 58, 3, 0xE8C840);
+		map_lot(x, y, w, h, 6, 10, 88, 80, grass);
+		map_road(x, y, w, h, 10, 78, 46, 48, 7, dirt, curb);
+		map_road(x, y, w, h, 46, 48, 84, 24, 7, dirt, curb);
+		map_block(x, y, w, h, 40, 28, 22, 18, 0xC8C0A8, 0x8A3030);
+		map_block(x, y, w, h, 46, 16, 8, 16, wall, roof);
+		map_block(x, y, w, h, 16, 22, 12, 14, 0x2A6840, 0x1E4A28);
 	} else if seed == 18 {
-		map_blob(x, y, w, h, 28, 40, 14, 10, 0x6A5030);
-		map_blob(x, y, w, h, 52, 36, 12, 9, 0x5A4828);
-		map_blob(x, y, w, h, 72, 58, 14, 10, 0x3A6828);
-		map_blob(x, y, w, h, 36, 70, 12, 8, 0x1A4A6A);
-		map_node(x, y, w, h, 18, 24, 5, 0x4A4030);
+		map_lot(x, y, w, h, 8, 12, 84, 76, 0x6AAA58);
+		map_road(x, y, w, h, 12, 70, 80, 36, 5, 0xE8D8B0, 0xC4A878);
+		map_block(x, y, w, h, 18, 22, 16, 12, 0xF4E0C0, 0xE09060);
+		map_block(x, y, w, h, 48, 28, 14, 12, 0x8ED36A, 0x3A6828);
+		map_block(x, y, w, h, 66, 52, 16, 14, wall, roof);
+		map_lot(x, y, w, h, 22, 58, 18, 12, water);
 	} else if seed == 19 {
-		map_blob(x, y, w, h, 50, 50, 8, 40, 0x2A1830);
-		map_node(x, y, w, h, 50, 22, 3, 0xE24A8A);
-		map_node(x, y, w, h, 50, 40, 3, 0x4AA0E2);
-		map_node(x, y, w, h, 50, 58, 3, 0xE8C840);
-		map_node(x, y, w, h, 50, 76, 3, 0xE24A8A);
+		map_lot(x, y, w, h, 10, 12, 80, 76, 0x1A1020);
+		map_road(x, y, w, h, 50, 12, 50, 88, 6, 0x3A2848, 0xE24A8A);
+		map_road(x, y, w, h, 22, 30, 78, 30, 4, 0x3A2848, 0x4AD0FF);
+		map_road(x, y, w, h, 22, 70, 78, 70, 4, 0x3A2848, 0xE8C840);
+		map_block(x, y, w, h, 40, 40, 20, 16, 0x4A2060, 0xF4E7C5);
 	} else if seed == 20 {
-		map_node(x, y, w, h, 28, 30, 6, 0x3A3848);
-		map_node(x, y, w, h, 50, 30, 6, 0x4A4860);
-		map_node(x, y, w, h, 72, 30, 6, 0x3A3848);
-		map_node(x, y, w, h, 28, 55, 6, 0x4A4860);
-		map_node(x, y, w, h, 50, 55, 6, 0xE8C840);
-		map_node(x, y, w, h, 72, 55, 6, 0x3A3848);
-		map_node(x, y, w, h, 40, 78, 6, 0x4A4860);
-		map_node(x, y, w, h, 62, 78, 6, 0x3A3848);
+		map_lot(x, y, w, h, 8, 10, 84, 80, 0x2A3050);
+		map_block(x, y, w, h, 16, 16, 16, 14, 0x4A5888, 0xF2C14A);
+		map_block(x, y, w, h, 40, 16, 16, 14, 0x3A4878, 0xE8E4F0);
+		map_block(x, y, w, h, 64, 16, 16, 14, 0x4A5888, 0xF2C14A);
+		map_block(x, y, w, h, 16, 42, 16, 14, 0x3A4878, 0xC8D0E8);
+		map_block(x, y, w, h, 40, 42, 16, 14, 0xF2C14A, 0xFFFFFF);
+		map_block(x, y, w, h, 64, 42, 16, 14, 0x4A5888, 0xE8E4F0);
+		map_block(x, y, w, h, 28, 68, 16, 14, 0x3A4878, 0xC8D0E8);
+		map_block(x, y, w, h, 52, 68, 16, 14, 0x4A5888, 0xF2C14A);
 	} else if seed == 21 {
-		map_chain(x, y, w, h, 16, 72, 84, 28, 6, 4, 0x3A3040);
-		map_node(x, y, w, h, 16, 72, 4, 0xE0A060);
-		map_node(x, y, w, h, 84, 28, 4, 0xE8E4D0);
+		map_lot(x, y, w, h, 10, 14, 80, 72, 0x3A3040);
+		map_road(x, y, w, h, 16, 74, 84, 28, 5, 0x6A5848, curb);
+		map_block(x, y, w, h, 18, 28, 22, 16, 0x5A4038, 0xE0A060);
+		map_block(x, y, w, h, 52, 36, 18, 14, 0x4A3848, 0xC8B0A0);
+		map_block(x, y, w, h, 28, 58, 14, 18, 0x3A3040, 0x8A6848);
+		map_block(x, y, w, h, 62, 60, 16, 12, wall, roof);
 	} else if seed == 22 {
-		map_node(x, y, w, h, 48, 48, 14, 0x4A4030);
-		map_node(x, y, w, h, 24, 30, 6, 0x3A3428);
-		map_node(x, y, w, h, 74, 32, 5, 0x3A3428);
-		map_node(x, y, w, h, 70, 70, 6, 0x2A2620);
-		map_chain(x, y, w, h, 24, 30, 48, 48, 3, 2, 0x8A7048);
+		map_lot(x, y, w, h, 8, 10, 84, 80, 0x3A3428);
+		map_road(x, y, w, h, 16, 50, 84, 50, 8, road, curb);
+		map_block(x, y, w, h, 20, 22, 18, 16, wall, roof);
+		map_block(x, y, w, h, 58, 20, 20, 14, 0x5A4630, 0xE0B060);
+		map_block(x, y, w, h, 24, 64, 16, 14, 0x4A3A28, 0xC89858);
+		map_block(x, y, w, h, 62, 62, 18, 16, wall, 0xF0C14A);
 	} else if seed == 23 {
-		map_node(x, y, w, h, 50, 42, 8, 0xE8C840);
-		map_node(x, y, w, h, 30, 28, 4, 0xF4E7C5);
-		map_node(x, y, w, h, 70, 26, 3, 0xF4E7C5);
-		map_node(x, y, w, h, 24, 58, 3, 0xC8B0E0);
-		map_node(x, y, w, h, 76, 62, 4, 0xC8B0E0);
-		map_chain(x, y, w, h, 30, 28, 50, 42, 3, 2, 0x8A78E0);
-		map_chain(x, y, w, h, 50, 42, 76, 62, 3, 2, 0x8A78E0);
+		map_lot(x, y, w, h, 8, 12, 84, 76, 0x4A1868);
+		map_road(x, y, w, h, 16, 70, 50, 42, 6, 0xC8B0E0, 0xFFD24A);
+		map_road(x, y, w, h, 50, 42, 84, 24, 6, 0xC8B0E0, 0xFFD24A);
+		map_block(x, y, w, h, 36, 22, 22, 16, 0xF4E7C5, 0xFF4AD0);
+		map_block(x, y, w, h, 18, 48, 12, 14, 0xE8C878, 0xFFD24A);
+		map_block(x, y, w, h, 68, 50, 14, 16, 0xC8B0E0, 0xFFFFFF);
 	} else {
-		map_blob(x, y, w, h, 28, 36, 16, 14, 0x245C40);
-		map_blob(x, y, w, h, 68, 62, 18, 14, 0x1A4A38);
-		map_chain(x, y, w, h, 12, 78, 40, 58, 5, 3, 0xC2B280);
-		map_chain(x, y, w, h, 40, 58, 88, 28, 5, 3, 0xC2B280);
-		map_ring(x, y, w, h, 62, 40, 16, 0xF2E35A);
+		map_lot(x, y, w, h, 6, 8, 88, 84, 0x1E3A30);
+		map_road(x, y, w, h, 10, 80, 40, 48, 7, road, curb);
+		map_road(x, y, w, h, 40, 48, 88, 22, 7, road, curb);
+		map_road(x, y, w, h, 22, 20, 70, 78, 5, road, curb);
+		map_block(x, y, w, h, 24, 28, 16, 14, wall, roof);
+		map_block(x, y, w, h, 58, 36, 14, 16, 0x4A4038, 0xC45A3A);
+		map_block(x, y, w, h, 48, 62, 18, 12, wall, 0xE8C878);
+		map_ring(x, y, w, h, 64, 30, 12, 0xF2E35A);
 	}
 }
 
