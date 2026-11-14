@@ -21,7 +21,10 @@ const mmap = len => {
   try {
     const n = N(C64[2]);
     for (let k = 0; k < n; k++) { const a = N(C64[FL + 2 * k]), l = N(C64[FL + 2 * k + 1]); if (l >= len) { if (l === len) { C64[FL + 2 * k] = C64[FL + 2 * (n - 1)]; C64[FL + 2 * k + 1] = C64[FL + 2 * (n - 1) + 1]; C64[2] = BigInt(n - 1); } else { C64[FL + 2 * k] = BigInt(a + len); C64[FL + 2 * k + 1] = BigInt(l - len); } sync(); u8.fill(0, a, a + len); return a; } }
-    const old = mem.grow(len / 65536); sync(); return old * 65536;
+    if (N(C64[3]) + len <= N(C64[4])) { const b = N(C64[3]); C64[3] = BigInt(b + len); return b; }
+    const want = len / 65536, chunk = shared ? Math.max(want, 16384) : want; let old;
+    try { old = mem.grow(chunk); if (chunk > want) { C64[3] = BigInt((old + want) * 65536); C64[4] = BigInt((old + chunk) * 65536); } } catch { old = mem.grow(want); }
+    sync(); return old * 65536;
   } catch { return -12; } finally { unlock(); }
 };
 const munmap = (a, len) => { a = N(a); len = Math.ceil(N(len) / 65536) * 65536; if (a % 65536 || len <= 0) return; lock(); const n = N(C64[2]); if (n < FCAP) { C64[FL + 2 * n] = BigInt(a); C64[FL + 2 * n + 1] = BigInt(len); C64[2] = BigInt(n + 1); } unlock(); };
@@ -50,7 +53,7 @@ const TR = process.env.HE_TRACE;
 const sys = (n, a, b, c, d, e, f) => {
   n = N(n); sync(); if (TR) fs.writeSync(2, `sys ${n} ${N(a)} ${N(b)} ${N(c)} ${N(d)}${isMainThread ? '' : ' [w]'}\n`); if (shared) checkExit();
   switch (n) {
-    case 0: { const h = fdh(a); if (!h || h.dir) return -9n; return wrap(() => BigInt(fs.readSync(h.fd, u8, N(b), N(c), null))); }
+    case 0: { const h = fdh(a); if (!h || h.dir) return -9n; return wrap(() => { const k = fs.readSync(h.fd, u8, N(b), N(c), h.pos ?? null); if (h.pos !== undefined) h.pos += k; return BigInt(k); }); }
     case 1: { const h = fdh(a); if (!h || h.dir) return -9n; return wrap(() => BigInt(fs.writeSync(h.fd, u8.subarray(N(b), N(b) + N(c))))); }
     case 2: { const p = cstr(a), fl = N(b); return wrap(() => { if (fl & 0x10000) { const ents = fs.readdirSync(p, { withFileTypes: true }); const k = nfd++; fds.set(k, { dir: true, ents: [{ name: '.', t: 4 }, { name: '..', t: 4 }, ...ents.map(x => ({ name: x.name, t: x.isDirectory() ? 4 : x.isSymbolicLink() ? 10 : 8 }))], i: 0 }); return BigInt(k); } const k = nfd++; fds.set(k, { fd: fs.openSync(p, oflags(fl), N(c)) }); return BigInt(k); }); }
     case 3: { const h = fdh(a); if (!h) return -9n; fds.delete(N(a)); if (h.fd !== undefined && h.fd > 2) fs.closeSync(h.fd); return 0n; }
@@ -66,6 +69,7 @@ const sys = (n, a, b, c, d, e, f) => {
     case 82: return wrap(() => { fs.renameSync(cstr(a), cstr(b)); return 0n; });
     case 83: return wrap(() => { fs.mkdirSync(cstr(a), { mode: N(b) }); return 0n; });
     case 84: return wrap(() => { fs.rmdirSync(cstr(a)); return 0n; });
+    case 8: { const h = fdh(a); if (!h || h.dir || h.fd === undefined || h.fd <= 2) return -9n; h.pos = Math.max(0, N(b)); return BigInt(h.pos); }
     case 87: return wrap(() => { fs.unlinkSync(cstr(a)); return 0n; });
     case 90: return wrap(() => { fs.chmodSync(cstr(a), N(b)); return 0n; });
     case 89: { const p = cstr(a); const t = te.encode(p === '/proc/self/exe' ? path.resolve(file) : fs.readlinkSync(p)); const k = Math.min(t.length, N(c)); u8.set(t.subarray(0, k), N(b)); return BigInt(k); }

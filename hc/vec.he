@@ -68,7 +68,7 @@ vgsame(g int, v int) bool:
 	n == VGN[g] as int
 recursive vdptr(s int, n int) bool:
 	if s < 0 || n == 0 || VDP[s] < 0: return false
-	x := IR[VDP[s]]; op := x.op as int; if op == I_SLOT { return VND[s] == 1 } if op == I_LD { return x.l == -3 && x.c == 0 && x.w == 3 } VND[s] == 1 && op == I_BIN && x.c == B_ADD as i64 && x.w == 3 && (vdptr(x.a as int, n - 1) || vdptr(x.b as int, n - 1))
+	x := IR[VDP[s]]; op := x.op as int; if op == I_SLOT { return VND[s] == 1 } if op == I_LD { return x.l == -3 && x.c == 0 && x.w == 3 } if op == I_PARAM { return VND[s] == 1 && x.b == -2 } if op == I_MOV { return VND[s] == 1 && x.a >= 0 && VND[x.a] == 1 && vdptr(x.a as int, n - 1) } VND[s] == 1 && op == I_BIN && x.c == B_ADD as i64 && x.w == 3 && (vdptr(x.a as int, n - 1) || vdptr(x.b as int, n - 1))
 vslg(g int) int:
 	s := VGS[3 * g] as int; if VGN[g] != 1 || VGM[3 * g] != 1 || s < 0 || VDP[s] < 0 || IR[VDP[s]].op as int != I_SLOT || VND[s] != 1 { return -1 } s
 vgphys(fi int):
@@ -296,7 +296,7 @@ vec_loop(fi int, h int, j int) bool:
 	vk(v0 int) i64: v ~= v0; for z 4 { if v < 0 || VND[v] != 1 || VDP[v] < 0 { return -1 } y := IR[VDP[v]]; if y.op as int == I_IMM { return y.c } if y.op as int != I_MOV { return -1 } v = y.a as int } -1
 	bk := vk(bnd); q0 ~= h - 1; while bk >= 0 && q0 >= i0 { y := IR[q0]; o := y.op as int; if o == I_LBL || o == I_JMP || o == I_BZ || o == I_BNZ || o == I_CALL { break } if y.d as int == iv { st := if o == I_IMM { y.c } else { if o == I_MOV { vk(y.a as int) } else { -1 } }; if st >= 0 && st <= bk { VBK = bk - st; VLST = st } break } q0-- }
  k2 := vskip(k + 1, i1, 1); y := IR[k2]; if y.op as int != I_BZ || y.a as int != cnd: return false
-	ex := y.c as int; e := vskip(j + 1, i1, 1); if e >= i1 || IR[e].op as int != I_LBL || IR[e].c as int != ex: return false
+	ex := y.c as int; e ~= vskip(j + 1, i1, 1); if e >= i1 || IR[e].op as int != I_LBL || IR[e].c as int != ex { e = -1; for q j + 1..i1 { if e < 0 && IR[q].op as int == I_LBL && IR[q].c as int == ex { e = q } } if e < 0 { return false } }
 	ic := vskip(j - 1, i0, -1); z := IR[ic]; if z.op as int != I_BIN || z.c != B_ADD as i64 || z.d as int != iv || z.a as int != iv || z.l >= 0 || z.w != 3: return false
 	one := z.b as int; if one < 0 || VND[one] != 1 || VDP[one] < 0 || IR[VDP[one]].op as int != I_IMM || IR[VDP[one]].c != 1: return false
 	if VND[cnd] != 1: return false

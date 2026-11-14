@@ -3,4 +3,5 @@ const_slice_written.amni
 missing_return.amni
 optional_return_local.amni
 optional_return_temporary.amni
+slit_order_checked_cast.amni
 varsize_field_through_ref.amni

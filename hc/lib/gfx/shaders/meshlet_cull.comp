@@ -1,0 +1,47 @@
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) readonly buffer Tab { vec4 ml_tab[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Rng { uint ml_rng[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Idx { uint ml_idx[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Draws { vec4 ml_draw[]; };
+layout(std430, set = 1, binding = 0) buffer Args { uint ml_args[]; };
+layout(std430, set = 1, binding = 1) buffer Out { uint ml_out[]; };
+layout(set = 2, binding = 0) uniform U { vec4 eye; vec4 lod; vec4 planes[6]; };
+void main() {
+	int k = int(gl_GlobalInvocationID.y);
+	int d = k / 2;
+	vec4 info = ml_draw[d * 5 + 4];
+	int c = int(gl_GlobalInvocationID.x);
+	if (c >= int(info.y)) return;
+	c += int(info.x);
+	vec3 m0 = ml_draw[d * 5].xyz;
+	vec3 m1 = ml_draw[d * 5 + 1].xyz;
+	vec3 m2 = ml_draw[d * 5 + 2].xyz;
+	vec3 m3 = ml_draw[d * 5 + 3].xyz;
+	float s = info.z;
+	vec4 es = ml_tab[c * 5 + 2];
+	vec4 ps = ml_tab[c * 5 + 3];
+	vec4 ee = ml_tab[c * 5 + 4];
+	if (ee.x * s * lod.x / max(distance(m0 * es.x + m1 * es.y + m2 * es.z + m3, eye.xyz) - es.w * s, lod.z) > lod.y) return;
+	if (ee.y < 1e29) { if (ee.y * s * lod.x / max(distance(m0 * ps.x + m1 * ps.y + m2 * ps.z + m3, eye.xyz) - ps.w * s, lod.z) <= lod.y) return; }
+	if (k - d * 2 == 0) {
+		vec4 bs = ml_tab[c * 5];
+		vec3 bw = m0 * bs.x + m1 * bs.y + m2 * bs.z + m3;
+		float br = bs.w * s;
+		bool gone = false;
+		for (int i = 0; i < 6; i++) { if (dot(planes[i].xyz, bw) + planes[i].w < -br) gone = true; }
+		if (gone) return;
+		vec4 cn = ml_tab[c * 5 + 1];
+		if (lod.w > 0.5 && mod(info.w, 2.0) > 0.5 && cn.w < 1.5) {
+			vec3 v = bw - eye.xyz;
+			if (dot(v, normalize(m0 * cn.x + m1 * cn.y + m2 * cn.z)) >= cn.w * length(v) + br) return;
+		}
+	}
+	else if (info.w > 1.5) return;
+	uint n = ml_rng[c * 2 + 1];
+	if (eye.w < 0.5) { atomicAdd(ml_args[k * 8], n); return; }
+	uint p = atomicAdd(ml_args[k * 8 + 5], n);
+	if (p + n > ml_args[k * 8]) return;
+	uint o = ml_args[k * 8 + 2] + p;
+	uint st = ml_rng[c * 2];
+	for (uint i = 0u; i < n; i++) ml_out[o + i] = ml_idx[st + i];
+}

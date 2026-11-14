@@ -1,0 +1,86 @@
+use os
+use crypto.x509
+use crypto.ecc
+use crypto.hash
+use net.sock
+use net.quic
+use net.quic_ep
+extern "libc.so.6" {
+	cpu_us() int = "clock";
+}
+struct Res { late real = 0.0, cpu real = 0.0, n int = 0 }
+data(n int, seed int) byte[>..]: b byte[>..] ~= []; b.resize(n, 0); for i n { b[i] = ((i * 7 + seed) % 251) as! byte } b
+stamp(b byte[>..]&): v := clock_ns(); for i 8 { b[i] = ((v >> (i * 8)) & 255) as! byte }
+age(b const byte[:]) real: v ~= 0; for i 8 { v |= (b[i] as int) << (i * 8) } (clock_ns() - v) as real * 1.0e-9
+take(a byte[>..]&, n int): rest byte[>..] ~= []; rest.append(a[n..]); a.clear(); a.append(rest[..])
+shake(s net::QEp&, to net::Addr, pin const byte[:]) real:
+	c ~= net::qe_bind(net::addr("127.0.0.1", 0)); i := net::qe_dial(c, to, "amni-lan", "amni-v1", pin); t0 := clock()
+	while net::quic_state(c.c[i][0]) == net::QUIC_HANDSHAKE && clock() - t0 < 2.0: net::qe_poll(s, 0); net::qe_poll(c, 0)
+	t := clock() - t0; ok := net::quic_state(c.c[i][0]) == net::QUIC_OPEN
+	net::quic_close(c.c[i][0], 0, ""); net::qe_poll(c, 0); net::qe_poll(s, 0); net::qe_close(c)
+	if ok { t } else { 9.0 }
+bulk(s net::QEp&, to net::Addr, pin const byte[:], n int) real:
+	c ~= net::qe_bind(net::addr("127.0.0.1", 0)); i := net::qe_dial(c, to, "amni-lan", "amni-v1", pin); t0 := clock(); id ~= -1; got ~= 0; sum ~= 0; tmp byte[>..] ~= []; t ~= -1.0; ts ~= 0.0; msg := data(n, 5); want ~= 0
+	for k n: want += msg[k] as int
+	while t < 0.0 && clock() - t0 < 20.0:
+		k ~= net::qe_poll(s, 0)
+		for j s.c.len:
+			if s.c[j].len == 0: continue
+			tmp.clear(); m := net::quic_read(s.c[j][0], 0, tmp); got += max(m, 0)
+			for q max(m, 0): sum += tmp[q] as int
+			if m >= 0 && got == n && (net::quic_stream(s.c[j][0], 0) & 2) != 0: t = clock() - ts
+		k += net::qe_poll(c, 0)
+		if id < 0 && net::quic_state(c.c[i][0]) == net::QUIC_OPEN: id = net::quic_open(c.c[i][0], true); ts = clock(); net::quic_write(c.c[i][0], id, msg[..]); net::quic_fin(c.c[i][0], id)
+		if k == 0: net::wait_one(s.fd, net::READ, 1)
+	net::quic_close(c.c[i][0], 0, ""); net::qe_poll(c, 0); net::qe_close(c)
+	if sum == want { t } else { -1.0 }
+frames(s net::QEp&, to net::Addr, pin const byte[:], nc int, secs real, stall real) Res:
+	r ~= Res{}; ce net::QEp[>..] ~= []; acc byte[>..][>..] ~= []; sacc byte[>..][>..] ~= []; next real[>..] ~= []; sent int[>..] ~= []; sid int[>..] ~= []; tmp byte[>..] ~= []; f ~= data(1024, 3); total := (secs * 30.0) as! int; up ~= 0; t0 := clock(); var p net::Poll
+	for j 7: ce.push(net::qe_bind(net::addr("127.0.0.1", 0)))
+	for k nc: net::qe_dial(ce[k % 7], to, "amni-lan", "amni-v1", pin); e byte[>..] ~= []; acc.push(e); sid.push(-1); sent.push(0); next.push(0.0)
+	while up < nc && clock() - t0 < 10.0:
+		net::qe_poll(s, 1)
+		for j 7: net::qe_poll(ce[j], 0)
+		for k nc:
+			if sid[k] < 0 && net::quic_state(ce[k % 7].c[k / 7][0]) == net::QUIC_OPEN: sid[k] = net::quic_open(ce[k % 7].c[k / 7][0], true); up += 1
+	t1 := clock(); stalled ~= stall <= 0.0
+	for k nc: next[k] = t1 + (k as real) / (30.0 * (nc as real))
+	while r.n < nc * total && clock() - t1 < secs + 2.0:
+		c0 := cpu_us(); n ~= net::qe_poll(s, 0)
+		for i s.c.len:
+			while sacc.len <= i: e byte[>..] ~= []; sacc.push(e)
+			if s.c[i].len == 0: sacc[i].clear(); continue
+			net::quic_read(s.c[i][0], 0, sacc[i])
+			while sacc[i].len >= 1024: r.late = max(r.late, age(sacc[i][..8])); tmp.clear(); tmp.append(sacc[i][..1024]); stamp(tmp); net::quic_write(s.c[i][0], 0, tmp[..]); take(sacc[i], 1024)
+		net::qe_flush(s, clock()); r.cpu += (cpu_us() - c0) as real * 1.0e-6
+		for j 7: n += net::qe_poll(ce[j], 0)
+		now := clock(); wrote ~= 0
+		for k nc:
+			if sent[k] < total && next[k] <= now: stamp(f); net::quic_write(ce[k % 7].c[k / 7][0], sid[k], f[..]); sent[k] += 1; next[k] += 1.0 / 30.0; wrote += 1
+			net::quic_read(ce[k % 7].c[k / 7][0], sid[k], acc[k])
+			while acc[k].len >= 1024: r.late = max(r.late, age(acc[k][..8])); take(acc[k], 1024); r.n += 1
+		for j 7: net::qe_flush(ce[j], clock())
+		if !stalled && wrote > 0 && now - t1 > 0.3: stalled = true; sleep(stall)
+		if n == 0 && wrote == 0:
+			net::clear(p); net::add(p, s.fd, net::READ)
+			for j 7: net::add(p, ce[j].fd, net::READ)
+			net::wait(p, 1)
+	for k nc: net::quic_close(ce[k % 7].c[k / 7][0], 0, "")
+	for j 7: net::qe_poll(ce[j], 0); net::qe_close(ce[j])
+	r
+main():
+	priv := crypto::ec_generate(crypto::P256); cert, okc := crypto::x509_self_signed("amni-lan", priv[..], (time() as int) - 3600, 30); p8, ok8 := crypto::pkcs8_ec(priv[..]); pin := crypto::sha256(cert)
+	s ~= net::qe_bind(net::addr("127.0.0.1", 0)); net::qe_serve(s, cert[..], p8[..], "amni-v1"); to := net::addr("127.0.0.1", net::qe_port(s)); hs real[>..] ~= []
+	for i 20: hs.push(shake(s, to, pin[..]))
+	for a 20:
+		for b 19 - a:
+			if hs[b] > hs[b + 1]: x := hs[b]; hs[b] = hs[b + 1]; hs[b + 1] = x
+	print("Q11 handshake ", hs[10] <= 0.05)
+	t := bulk(s, to, pin[..], 8 << 20)
+	print("Q11 bulk ", t > 0.0 && 8.0 / t >= 2.0)
+	r := frames(s, to, pin[..], 70, 10.0, 0.0)
+	print("Q11 frames ", r.n == 70 * 300); print("Q11 on time ", r.late <= 0.1); print("Q11 server load ", r.cpu <= 5.0)
+	c := frames(s, to, pin[..], 7, 1.0, 0.15)
+	print("Q11 control ", c.n == 7 * 30 && c.late > 0.1)
+	if args().len > 2: print("info handshake ms ", hs[10] * 1000.0, " bulk MiB/s ", 8.0 / t, " frames ", r.n, " late ms ", r.late * 1000.0, " server cpu s ", r.cpu, " control late ms ", c.late * 1000.0, " slots ", s.c.len)
+	net::qe_close(s)

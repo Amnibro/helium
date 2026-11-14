@@ -1,0 +1,255 @@
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.scene3d;
+fn num(s const byte[:]) real {
+	let v, ok = parse_flt(s);
+	if ok { v } else { 0.0 }
+}
+fn has(list const byte[:], word const byte[:]) bool {
+	let parts = split(list, ',');
+	for p in parts {
+		if p == word { return true; }
+	}
+	return false;
+}
+fn gpu_ns(path const byte[:], ns real[>..]&) {
+	ns.clear();
+	var data byte[>..] = [];
+	guard read_file(path, data) else { return; }
+	let lines = split(data[..], '\n');
+	for line in lines {
+		if starts_with(line, "submit") {
+			let fields = words(line);
+			var last const byte[:] = "";
+			for f in fields { last = f; }
+			let n, ok = parse_int(last);
+			if ok { ns.push(n); }
+		}
+	}
+}
+fn median(xs real[>..]) real {
+	guard xs.len > 0 else { return 0.0; }
+	var c = copy(xs);
+	sort(c) { a, b => a < b };
+	c[xs.len / 2]
+}
+fn p95(xs real[>..]) real {
+	guard xs.len > 0 else { return 0.0; }
+	var c = copy(xs);
+	sort(c) { a, b => a < b };
+	c[min(xs.len - 1, xs.len * 95 / 100)]
+}
+fn studio() {
+	s3d::sun = s3d::Sun { to_sun: linalg::unit3(float3 { 2.3, 3.0, 1.3 }), rgb: float3 { 3.1, 3.1, 3.1 }, shadows: true, shadow_far: 10.0, map_size: 2048 };
+	s3d::lights.clear();
+	s3d::add_light(float3 { -11.9, 14.3, -16.7 }, float3 { 371.0, 241.0, 936.0 }, 1000.0);
+	s3d::add_light(float3 { -17.3, 8.65, 15.85 }, float3 { 124.0, 136.0, 169.0 }, 1000.0);
+	s3d::add_light(float3 { 0.0, 9.0, 23.0 }, float3 { 600.0, 600.0, 600.0 }, 1000.0);
+	s3d::sky = s3d::Sky { zenith: float3 { 0.0308, 0.0366, 0.0967 }, horizon: float3 { 0.0154, 0.0182, 0.0436 }, ground: float3 { 0.0082, 0.0096, 0.0185 }, ambient: 2.5, draw: true };
+	s3d::look.exposure = 1.12;
+	s3d::look.bloom = 0.0;
+	s3d::look.desaturate = 0.0;
+	s3d::look.curve = 1;
+}
+fn many(n int) {
+	for ki in n {
+		let k real = ki as real;
+		s3d::lights.push(s3d::Light { pos: float3 { (1.5 * sin(k * 12.9898)) as f32, (0.9 + 0.9 * sin(k * 78.233)) as f32, (1.5 * sin(k * 37.719)) as f32 }, range: 1.0, rgb: float3 { ((0.5 + 0.5 * sin(k * 1.7)) * 0.2) as f32, ((0.5 + 0.5 * sin(k * 2.9)) * 0.2) as f32, ((0.5 + 0.5 * sin(k * 4.3)) * 0.2) as f32 }, kind: 0, radius: 0.02, .. });
+	}
+}
+fn features(f const byte[:]) {
+	if has(f, "pcss") {
+		s3d::sun.angle = 0.07;
+		s3d::sun.reach = 1.0;
+	}
+	if has(f, "wide") { s3d::sun.angle = 0.17; }
+	if has(f, "fit") { s3d::sun.fit = true; }
+	if has(f, "taa") { s3d::temporal = 1; }
+	if has(f, "noao") { s3d::look.ssao = false; }
+	if has(f, "gtao") { s3d::ao_mode = 1; }
+	if has(f, "contact") { s3d::sun.contact = 0.07; }
+	if has(f, "local") {
+		for k in 2 {
+			s3d::lights[k].kind = 1;
+			s3d::lights[k].dir = linalg::unit3(float3 { 0.0, 0.9, 0.0 } - s3d::lights[k].pos);
+			s3d::lights[k].cone = 0.08;
+			s3d::lights[k].shadows = true;
+		}
+	}
+	if has(f, "point") {
+		s3d::lights[0].shadows = true;
+		s3d::lights[1].shadows = true;
+	}
+	if has(f, "direct") { s3d::debug_view = 5; }
+	if has(f, "noshadow") { s3d::sun.shadows = false; }
+	if has(f, "hires") { s3d::sun.map_size = 8192; }
+	if has(f, "sunonly") {
+		s3d::lights.clear();
+		s3d::sky.ambient = 0.0;
+	}
+	if has(f, "soft") { s3d::studio_soft(float3 { 0.8, 0.81, 0.84 }, 2.0); }
+	if has(f, "expo") { s3d::look.auto_exposure = true; }
+	if has(f, "bright") {
+		let four = float3 { 4.0, 4.0, 4.0 };
+		s3d::sun.rgb = s3d::sun.rgb * four;
+		for &l in s3d::lights { l.rgb = l.rgb * four; }
+	}
+	if has(f, "dof") {
+		let d = s3d::view.eye - s3d::view.target;
+		s3d::dof_aperture = 0.004;
+		s3d::dof_focus = sqrt((d.x * d.x + d.y * d.y + d.z * d.z) as real) as f32;
+	}
+	if has(f, "mblur") { s3d::motion_blur = 0.5; }
+	if has(f, "many8") { many(8); }
+	if has(f, "many64") { many(64); }
+	if has(f, "many512") { many(512); }
+	if has(f, "lut") {
+		warm_lut();
+		s3d::look.lut = 1.0;
+	}
+	if has(f, "idlut") { s3d::look.lut = 1.0; }
+	if has(f, "noso") { s3d::spec_occlusion = false; }
+	if has(f, "ssr") { s3d::ssr_on = true; }
+	if has(f, "dbgso") { s3d::debug_view = 9; }
+	if has(f, "dbgssr") { s3d::debug_view = 10; }
+	if has(f, "ambient") { s3d::debug_view = 4; }
+}
+fn warm_lut() {
+	var px byte[>..] = [];
+	for bi in 17 {
+		for gi in 17 {
+			for ri in 17 {
+				let r = ri as real / 16.0;
+				let g = gi as real / 16.0;
+				let b = bi as real / 16.0;
+				let r2 = min(1.0, r * 1.06 + 0.02);
+				let g2 = g;
+				let b2 = b * 0.88 + 0.03;
+				px.push(floor(r2 * 255.0 + 0.5) as byte);
+				px.push(floor(g2 * 255.0 + 0.5) as byte);
+				px.push(floor(b2 * 255.0 + 0.5) as byte);
+				px.push(255);
+			}
+		}
+	}
+	s3d::set_lut(px[..], 17);
+}
+var eye0 float3;
+var have_eye0 = false;
+fn orbit(k int) {
+	if !have_eye0 {
+		eye0 = s3d::view.eye;
+		have_eye0 = true;
+	}
+	let t = s3d::view.target;
+	let dx = eye0.x - t.x;
+	let dz = eye0.z - t.z;
+	let a = 0.03 * k;
+	let c = cos(a) as f32;
+	let s = sin(a) as f32;
+	s3d::view.eye = float3 { t.x + dx * c + dz * s, eye0.y, t.z - dx * s + dz * c };
+}
+fn main() {
+	let a = args();
+	let w = num(a[3]) as int;
+	let h = num(a[4]) as int;
+	gltf::lazy_pixels = true;
+	guard gfx::open_headless(w, h) else {
+		print("look_bench: no device: ", gfx::error());
+		return;
+	}
+	let asset = gltf::load(a[1]);
+	guard asset >= 0 else {
+		print("look_bench: load failed");
+		return;
+	}
+	let it = s3d::add(asset);
+	s3d::place(it, gfx::mat4_identity);
+	if a.len > 14 && a[14] == "floor" {
+		var fm = shapes::material(float3 { 0.55, 0.55, 0.56 }, 0.0, 0.9);
+		fm.no_shadow = true;
+		let fl = s3d::add(shapes::plane(3.0, fm));
+		s3d::place(fl, gfx::mat4_identity);
+	}
+	s3d::view = s3d::Camera {
+		eye: float3 { num(a[5]) as f32, num(a[6]) as f32, num(a[7]) as f32 },
+		target: float3 { num(a[8]) as f32, num(a[9]) as f32, num(a[10]) as f32 },
+		up: float3 { 0.0, 1.0, 0.0 },
+		fov_y: num(a[11]) as f32,
+		near: 0.05,
+		far: 100.0,
+	};
+	studio();
+	features(a[12]);
+	s3d::init(w, h);
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	let spin = has(a[12], "mblur");
+	var fk = 0;
+	fn frame() {
+		if spin {
+			orbit(fk);
+			fk += 1;
+		}
+		s3d::render(out);
+	}
+	let frames = if s3d::temporal != 0 { 48 } else { 3 };
+	for i in frames {
+		frame();
+		gfx::flush();
+	}
+	if has(a[12], "expo") {
+		print("look_bench: exposure ", s3d::exposure_now());
+	}
+	if has(a[12], "info") {
+		print("look_bench: cascades live ", s3d::cascade_live, " ends ", s3d::cascade_end[0], " ", s3d::cascade_end[1], " ", s3d::cascade_end[2]);
+	}
+	if a[2] != "-" {
+		gfx::save_png(out, a[2]);
+		print("saved ", a[2]);
+	}
+	let n = num(a[13]) as int;
+	if n > 0 {
+		for i in 30 {
+			frame();
+			gfx::flush();
+		}
+		var log byte[>..] = [];
+		env("HELIUM_GPUTIME", log);
+		let have_log = log.len > 0;
+		var before real[>..] = [];
+		var first = 0;
+		if have_log {
+			gpu_ns(log[..], before);
+			first = before.len;
+		}
+		var wall real[>..] = [];
+		for i in n {
+			let t = gfx::time();
+			frame();
+			gfx::flush();
+			wall.push((gfx::time() - t) * 1000.0);
+		}
+		print("look_bench: ", a[12], " wall ms median ", median(copy(wall)), " p95 ", p95(copy(wall)));
+		if have_log {
+			var all real[>..] = [];
+			gpu_ns(log[..], all);
+			let k = all.len - first;
+			if k == 0 || k % n != 0 {
+				print("look_bench: gpu submits cannot be split");
+			} else {
+				let per = k / n;
+				var each real[>..] = [];
+				for f in n {
+					var sum = 0.0;
+					for j in per { sum += all[first + f * per + j]; }
+					each.push(sum / 1e6);
+				}
+				print("look_bench: ", a[12], " gpu ms median ", median(copy(each)), " p95 ", p95(copy(each)), " (", per, " submits/frame)");
+			}
+		}
+	}
+}

@@ -1,0 +1,76 @@
+use std
+use os
+use crypto.hash
+use net.tcp
+use net.tls
+use net.http
+use net.ws
+use net.sio
+hexs(d const byte[:]) byte[>..]: o byte[>..] ~= []; hex_encode(o, d); o
+pat(n int) byte[>..]: o byte[>..] ~= []; o.resize(n, 0); for i n { o[i] = ((i * 31 + 7) & 255) as! byte } o
+http_mode(method const byte[:], url const byte[:], body const byte[:]):
+	h ~= net::http_start(method, url, "Authorization: Bearer abc\r\n", body)
+	r := net::http_wait(h, 20000)
+	if r != net::HTTP_DONE: print("ERR ", h.err, " verify=", h.c.verify, " pin=", hexs(h.c.pin)); return
+	print("status=", h.status, " len=", h.body.len, " sha=", hexs(crypto::sha256(h.body)), " x=", net::http_header(h.head, "x-test"), if h.body.len > 0 && h.body[0] == '{' { str(" json=", h.body) } else { "" })
+wait_ws(w net::Ws&, out byte[>..]&) int:
+	t0 := clock()
+	while clock() - t0 < 20.0:
+		k := net::ws_next(w, out)
+		if k != 0: return k
+		r := net::ws_pump(w)
+		if r == net::WS_ERR || r == net::WS_CLOSED: return -r
+		if net::ws_fd(w) >= 0: net::tcp_poll(net::ws_fd(w), 1, 20)
+	0
+ws_mode(url const byte[:]):
+	w ~= net::ws_open(url, ""); n ~= 0
+	for sz [0, 1, 125, 126, 127, 65535, 65536, 1048577]:
+		for bin [false, true]:
+			m := pat(sz)
+			if !bin: for i sz { m[i] = (32 + m[i] % 90) as! byte }
+			if !bin && sz > 10: m[3] = 0xC3; m[4] = 0xA9
+			t0 := clock()
+			while net::ws_pump(w) == net::WS_CONNECTING && clock() - t0 < 10.0: net::tcp_poll(net::ws_fd(w), 1, 20)
+			if !net::ws_send(w, m, bin): print("FAIL send ", w.err); return
+			o byte[>..] ~= []; k := wait_ws(w, o)
+			if k != (if bin { net::WS_BINARY } else { net::WS_TEXT }) || o[..] != m[..]: print("FAIL echo size ", sz, " bin ", bin, " kind ", k, " got ", o.len, " ", w.err); return
+			n += 1
+	net::ws_send(w, "frag", false); o byte[>..] ~= []; k := wait_ws(w, o)
+	if o[..] != "fragmented": print("FAIL fragments ", o); return
+	net::ws_send(w, "close", false); o2 byte[>..] ~= []; k2 := wait_ws(w, o2)
+	print("ws ok echoes=", n, " fragments=ok close=", w.code, " state=", -k2)
+wait_ev(s net::Sio&, want const byte[:], args byte[>..]&) int:
+	t0 := clock(); nm byte[>..] ~= []
+	while clock() - t0 < 20.0:
+		id := net::sio_event(s, nm, args)
+		if id != -2 && nm[..] == want: return id
+		if id != -2: print("  (event ", nm, " ", args, ")")
+		r := net::sio_pump(s)
+		if r == net::SIO_ERR || r == net::SIO_CLOSED: print("FAIL waiting ", want, " state ", r, " ", s.err); return -3
+		if net::sio_fd(s) >= 0: net::tcp_poll(net::sio_fd(s), 1, 20)
+	print("FAIL timeout ", want); -3
+sio_mode(base const byte[:], token const byte[:]):
+	auth byte[>..] ~= []; auth.append("{\"token\":\""); auth.append(token); auth.append("\"}"); s ~= net::sio_open(base, auth); a byte[>..] ~= []
+	if wait_ev(s, "welcome", a) == -3: return
+	print("welcome ", a, " sid=", s.sid)
+	net::sio_emit(s, "echo", "1,\"two\",{\"three\":[3,3.5,null,true]}"); a.clear()
+	if wait_ev(s, "echoed", a) == -3: return
+	print("echoed ", a)
+	id := net::sio_call(s, "add", "2,40"); r byte[>..] ~= []; t0 := clock()
+	while !net::sio_ack(s, id, r) && clock() - t0 < 10.0: net::sio_pump(s); net::tcp_poll(net::sio_fd(s), 1, 20)
+	print("ack ", r)
+	net::sio_emit(s, "ask", ""); a.clear(); q := wait_ev(s, "question", a); net::sio_reply(s, q, "\"helium\""); a.clear()
+	if wait_ev(s, "thanks", a) == -3: return
+	print("thanks ", a)
+	t1 := clock()
+	while clock() - t1 < 5.0 && net::sio_pump(s) == net::SIO_OPEN: net::tcp_poll(net::sio_fd(s), 1, 50)
+	print("alive after heartbeats: ", net::sio_pump(s) == net::SIO_OPEN)
+	net::sio_emit(s, "bye", ""); t2 := clock(); st ~= net::SIO_OPEN
+	while clock() - t2 < 5.0 && st == net::SIO_OPEN: st = net::sio_pump(s); net::tcp_poll(net::sio_fd(s), 1, 20)
+	print("sio ok end=", st)
+main():
+	a := args(); p byte[>..] ~= []; pe byte[>..] ~= []
+	if env("PIN", pe): hex_decode(pe[..], p); net::tls_pin(p[..])
+	if a[1] == "http": http_mode(a[2], a[3], if a.len > 4 { a[4] } else { "" })
+	if a[1] == "ws": ws_mode(a[2])
+	if a[1] == "sio": sio_mode(a[2], a[3])

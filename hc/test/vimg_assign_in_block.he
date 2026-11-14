@@ -1,0 +1,25 @@
+struct P { id u32, r f32 }
+struct S { ps P[], blob byte[] }
+mk(m int) S:
+	ps P[>..] ~= []
+	for i m: ps.push(P{i as u32, 2.0})
+	S{copy(ps), "xyz"}
+ap(s S&, d S&, x bool, y bool) S:
+	r ~= copy(s)
+	if x: r.ps = copy(d.ps)
+	if y: r.blob = copy(d.blob)
+	r
+main():
+	s := mk(1)
+	d := mk(4)
+	r := ap(s, d, true, true)
+	print(r.ps.len, " ", r.blob)
+	q ~= copy(s)
+	yes := d.ps.len > 0
+	if yes: q.ps = copy(d.ps)
+	q.blob = "abcdefg"
+	print(q.ps.len, " ", q.blob)
+	bb byte[] ~= "a"
+	if yes: bb = copy("long long text")
+	zz byte[] := "QQQQQQQQQQQQQQQQQQQQQQ"
+	print(bb, " ", zz)

@@ -1,0 +1,54 @@
+use std
+use os
+fill(b byte[:], seed int):
+	x ~= seed
+	for i b.len:
+		x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+		b[i] = (x >> 16 & 255) as byte
+digit(x int) byte: (x + (if x > 9 { 87 } else { 48 })) as! byte
+val(c int) int: if c >= 48 && c <= 57 { c - 48 } else if c >= 97 && c <= 102 { c - 87 } else if c >= 65 && c <= 70 { c - 55 } else { -1 }
+main():
+	a := args()
+	src byte[420] ~= [0; 420]
+	fill(src[..], 2024)
+	bad ~= 0
+	for n 420:
+		w byte[>..] ~= []
+		for c src[..n]: w.push(digit((c as int) >> 4)); w.push(digit((c as int) & 15))
+		e byte[>..] ~= []
+		e.append("xy")
+		hex_encode(e, src[..n])
+		bad += if e.len == 2 * n + 2 && e[..2] == "xy" && e[2..] == w[..] { 0 } else { 1 }
+		for k w.len: if k % 3 == 0 && w[k] >= 'a' { w[k] = w[k] - 32 }
+		d byte[>..] ~= []
+		d.push('z')
+		bad += if hex_decode(w[..], d) && d.len == n + 1 && d[0] == 'z' && d[1..] == src[..n] { 0 } else { 1 }
+	print("round trip mismatches ", bad)
+	bad = 0
+	h byte[>..] ~= []
+	hex_encode(h, src[..150])
+	for p h.len:
+		keep := h[p]
+		for c 256:
+			h[p] = c as! byte
+			d byte[>..] ~= []
+			d.push('z')
+			ok := hex_decode(h[..], d)
+			want := if p % 2 == 0 { val(c) * 16 + val(h[p + 1] as int) } else { val(h[p - 1] as int) * 16 + val(c) }
+			bad += if ok == (val(c) >= 0) && d.len == (if ok { 151 } else { 1 }) && (!ok || (d[1 + p / 2] as int) == want) { 0 } else { 1 }
+		h[p] = keep
+	print("every byte at every place mismatches ", bad)
+	odd byte[>..] ~= []
+	print("odd length ", hex_decode(h[..299], odd), " ", odd.len)
+	bad = 0
+	if std_vk_cpu() == 1 || a.len > 1 && a[1] == "HC_NOVK":
+		raw byte[640] ~= [0; 640]
+		txt byte[1280] ~= [0; 1280]
+		back byte[640] ~= [0; 640]
+		fill(raw[..], 77)
+		std_vk_hexenc(std_ptr(txt[..]), std_ptr(raw[..]), 640)
+		for i 640: bad += if txt[2 * i] == digit((raw[i] as int) >> 4) && txt[2 * i + 1] == digit((raw[i] as int) & 15) { 0 } else { 1 }
+		bad += if std_vk_hexdec(std_ptr(back[..]), std_ptr(txt[..]), 1280) == 1 && back[..] == raw[..] { 0 } else { 1 }
+		txt[700] = 'g'
+		bad += std_vk_hexdec(std_ptr(back[..]), std_ptr(txt[..]), 1280)
+	print("direct mismatches ", bad)

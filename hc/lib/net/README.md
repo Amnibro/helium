@@ -60,3 +60,157 @@ The L2 control is a client that applies a delta onto its newest snapshot when th
 missing (what a naive client does); the real `decode` refuses such deltas instead. The first run
 decoded nothing: a full 64-entity snapshot (1247 B) did not fit the 1200 B packet limit and sat
 in the queue. The limit is now 1400 B and unreliable messages that can never fit are dropped.
+
+## TLS 1.3 server and QUIC v1
+
+* `crypto.x509` gains a certificate writer: a self-signed ECDSA P-256 certificate for one DNS
+  name, and the PKCS#8 form of its private key (the same pair of files rcgen writes).
+* `net.tls` gains the TLS 1.3 server side over TCP, and a mode in which the same handshake code
+  hands its messages and traffic secrets to QUIC instead of writing TLS records.
+* `net.quic` (quic.he): QUIC version 1 (RFC 9000, 9001, 9002), client and server. The
+  connection is independent of the socket: datagrams go in and come out through calls, time is
+  a parameter, so tests can run it over a simulated link. `net.quic_ep` (quic_ep.he) drives
+  many connections over one real UDP socket.
+
+### Pre-registered bars (committed before the first run; never loosened)
+
+* **T1 certificate writer.** A certificate written for the name `amni-lan`: `x509_parse` reads
+  it back (P-256 key, the DNS name, validity dates) and it verifies under its own key;
+  `openssl x509` parses it and `openssl verify` with the certificate as its own trust anchor
+  and `-verify_hostname amni-lan` says OK; `openssl pkey` reads the PKCS#8 key and its public
+  key equals the certificate's; a PKCS#8 P-256 key written by `openssl genpkey` loads.
+  Control: one flipped signature byte fails both our check and OpenSSL's.
+* **T2 ECDSA signing.** The RFC 6979 A.2.5 P-256 / SHA-256 signatures for "sample" and "test"
+  come out exact. 100 random messages: each signature verifies with our verifier, and 5 of
+  them with `openssl dgst -verify`. Control: a flipped message bit fails verification.
+* **T3 TLS 1.3 server over TCP.** Helium client against Helium server on 127.0.0.1, for each
+  of the three TLS 1.3 cipher suites with X25519, with P-256, and through a HelloRetryRequest
+  to P-384: the handshake completes, the ALPN name is agreed, 1 MiB each way arrives byte
+  exact, the close alert is seen. `openssl s_client -tls1_3` with the certificate as trust
+  anchor and `-verify_return_error` completes and gets its line echoed. `curl --cacert` gets a
+  fixed body over HTTPS. Controls: a client pinned to another certificate refuses; a server
+  whose key does not match its certificate is refused by the client; a client Finished with
+  one flipped bit is refused by the server.
+* **T4 TLS client unchanged.** The Helium client still completes TLS 1.3 and TLS 1.2 against
+  `openssl s_server` and reads the page it serves.
+* **Q1 RFC 9001 Appendix A.** A.1 keys (client and server key, IV and header key) exact; the
+  A.2 client Initial and the A.3 server Initial come out byte exact from their unprotected
+  forms and open back to their payloads; the A.5 ChaCha20-Poly1305 short-header packet is
+  exact. Control: one flipped bit in the connection ID and the A.2 packet no longer opens.
+* **Q2 encoding and junk.** The four RFC 9000 A.1 variable-length integers and every length
+  boundary encode and decode exactly; every frame the code sends parses back to the same
+  values. 200,000 random and mutated datagrams fed to a listening server and to an open
+  connection: no crash, no hang, and a connection either ignores the datagram or closes with
+  an error code.
+* **Q3 handshake and echo, perfect link.** Client and server joined in memory, each TLS 1.3
+  suite: the handshake completes, ALPN `amni-v1` is agreed, the client's pin (SHA-256 of the
+  certificate) holds, the client's first datagram is at least 1200 bytes, the server sends at
+  most three times what it has received until the client's address is validated, 1 MiB each
+  way on one two-way stream arrives byte exact, the end of stream arrives both ways, a close
+  code and reason reach the peer, and both ends finish closed. Controls: a wrong pin fails at
+  the client with a certificate error; an ALPN the server does not offer fails with QUIC error
+  0x178.
+* **Q4 hostile link.** The link simulator above (100 ms +- 50 ms, 20 % dropped, 10 %
+  duplicated) on simulated time, 200 seeds: the handshake completes and 250 KiB each way
+  arrives byte exact within 90 s of simulated time, every seed. Control: loss detection and
+  probe timeouts switched off does not complete.
+* **Q5 flow control.** A strict receiver checks every stream frame against the limits it has
+  advertised, in every test here. With a reader that stops reading, the sender stops exactly
+  at the stream limit, and with four streams exactly at the connection limit, then resumes
+  when the reader reads. Control: a sender that ignores the limits is closed with
+  FLOW_CONTROL_ERROR (0x03).
+* **Q7 streams.** 100 two-way and 100 one-way streams opened from each side at once, distinct
+  data on each, all byte exact. Opening past the peer's stream limit waits for more credit; a
+  peer that exceeds ours is closed with STREAM_LIMIT_ERROR (0x04). A reset stream and a
+  stop-sending request reach the other side's reader and writer.
+* **Q8 timers and keys.** With a 3 s idle timeout and silence both ends close at 3 s, within
+  one probe timeout, without sending. With keep-alive on, the connection is still open after
+  30 s. A key update forced from either side: data continues byte exact.
+* **Q9 real UDP.** One server endpoint on 127.0.0.1 and 70 clients at once, each echoing
+  80 KiB byte exact. A datagram with version 0x1a2a3a4a gets a Version Negotiation packet that
+  lists version 1.
+* **Q10 other implementations (opt-in step, `HELIUM_QUIC_INTEROP=1`).** `openssl s_client
+  -quic -alpn amni-v1`, trusting only our certificate, against the Helium echo server: 80 KiB
+  sent comes back byte exact. `curl --http3-only` (ngtcp2) against a Helium server offering
+  `h3`: the handshake completes and the server receives curl's control stream (a one-way
+  stream whose first byte is 0). Control: a server offering a different ALPN name is refused.
+  The same tests against quinn, in both directions, live with the Arena server port.
+* **Q11 speed.** On loopback UDP: median handshake of 20 at most 50 ms; 8 MiB one way at
+  2 MiB/s or more; 70 clients each exchanging a 1 KiB frame both ways at 30 Hz for 10 s with
+  the server using at most half of one core and no frame arriving more than 100 ms late.
+* **Q12 nothing else moves.** The `net`, `net_sock` and `he` steps of `tools/hc/ci.sh` pass
+  as before.
+
+### Results (2026-11-10)
+
+| check | measured | result |
+| --- | --- | --- |
+| T1 certificate writer | `x509_parse`, our verifier and OpenSSL all accept the certificate and the PKCS#8 key | PASS |
+| T2 ECDSA signing | RFC 6979 vectors exact; 100/100 random messages verify; OpenSSL accepts 5/5 | PASS |
+| T3 TLS 1.3 server over TCP | 3 cipher suites x (X25519, P-256, P-384 after HelloRetryRequest); `openssl s_client` and curl connect | PASS |
+| T4 TLS client unchanged | TLS 1.3 and TLS 1.2 complete | PASS |
+| Q1 RFC 9001 Appendix A | keys, client Initial, server Initial and ChaCha20 packet byte exact | PASS |
+| Q2 encoding and junk | integers, frames and parameters round-trip; 200,000 junk datagrams, no crash or hang | PASS |
+| Q3 handshake and echo | all three cipher suites, echo byte exact | PASS |
+| Q4 hostile link | 200/200 seeds finish byte exact | PASS |
+| Q5 flow control | stream and connection limits never exceeded; transfer resumes when credit arrives | PASS |
+| Q7 streams | 100 two-way and 100 one-way from each side; reset and stop delivered | PASS |
+| Q8 timers and keys | idle close, keep-alive and key update | PASS |
+| Q9 real UDP | 70/70 handshakes, 70/70 echoes of 80 KiB byte exact in 2.3 s; Version Negotiation lists version 1 | PASS |
+| Q10 other implementations | OpenSSL 3.6.5 `s_client -quic`: 81,920 bytes echoed exact; curl 8.22.0 (ngtcp2 1.25.0): handshake and control stream | PASS |
+| Q11 speed | handshake median 9.0 ms; 90.9 MiB/s one way; 21,000/21,000 frames, none more than 2 ms late; server 0.09 of one core | PASS |
+| Q12 nothing else moves | `net`, `net_sock` and `he` steps pass | PASS |
+| controls | wrong pin, wrong key, wrong protocol name, flipped signature, record, Finished and connection ID bits, sender ignoring limits, loss recovery off, 150 ms stall | fail as required |
+
+Tests: `hc/test/net_quic` (`cert`, `tls`, `wire`, `conn`, `link`, `udp`, `speed` run in the
+`net_quic` step of `tools/hc/ci.sh`; `interop` runs when `HELIUM_QUIC_INTEROP=1`).
+
+### Using it
+
+Server (`use net.sock`, `use net.quic`, `use net.quic_ep`, `use crypto.x509`, `use crypto.ecc`):
+
+```
+priv := crypto::ec_generate(crypto::P256)
+cert, ok := crypto::x509_self_signed("amni-lan", priv[..], (time() as int) - 3600, 3650)
+e ~= net::qe_bind(net::addr("0.0.0.0", 4433)); net::qe_serve(e, cert[..], priv[..], "amni-v1")
+while true:
+	net::qe_poll(e, 10)
+	i ~= net::qe_next(e)
+	while i >= 0: mine.push(i); i = net::qe_next(e)
+	for i mine:
+		if net::quic_state(e.c[i][0]) == net::QUIC_CLOSED: net::qe_free(e, i); continue
+		buf.clear(); n := net::quic_read(e.c[i][0], 0, buf)
+		if n > 0: net::quic_write(e.c[i][0], 0, buf[..])
+```
+
+Client: `i := net::qe_dial(e, net::addr("192.168.1.7", 4433), "amni-lan", "amni-v1", pin[..])`
+on an endpoint from `qe_bind`, then `qe_poll` until `quic_state(e.c[i][0])` is `QUIC_OPEN`,
+`id := quic_open(e.c[i][0], true)`, `quic_write`, `quic_fin`, `quic_read`.
+
+* The pin is the SHA-256 of the server certificate (`crypto::sha256(cert)`); an empty pin
+  verifies the chain against the roots added with `tls_add_roots` instead.
+* `qe_serve` takes the private key raw (32 bytes) or as PKCS#8 (`crypto::pkcs8_ec`), the form
+  rcgen and OpenSSL write. `quic_server` and `tls_accept` take the raw key.
+* `quic_read` appends to its buffer and returns -1 while the stream does not exist yet;
+  `quic_stream` returns -1 in that case too, so test its bits only after a read that returned
+  0 or more. Bits: 1 readable, 2 peer finished, 4 reset by peer, 8 peer asked to stop,
+  16 our end acknowledged.
+* `qe_same(e, addr)` counts live connections from one host, for a per-host cap:
+  `quic_close(c, 0, "too many connections")`.
+* A connection without an endpoint: `quic_client` / `quic_server`, feed datagrams with
+  `quic_recv(q, d, now)`, drain with `quic_send(q, out, now)` until it returns false, and call
+  either again no later than `quic_timeout(q)`.
+* TLS over TCP: `tls_accept(fd, cert, key, alpn)` is the server side of `tls_connect`; read
+  and write calls are the same on both sides.
+
+### Known gaps
+
+* Not implemented: 0-RTT and session resumption, Retry and address validation tokens, ECN,
+  path MTU discovery (datagrams stay at 1200 bytes), the datagram extension, connection
+  migration, stateless reset, persistent congestion, issuing more than one connection ID.
+* Congestion control is NewReno.
+* A connection holds about 180 growable lists and the runtime gives a process about 64,000,
+  so one process carries a few hundred connections; an endpoint accepts 200 by default
+  (`maxc`).
+* The server certificate is ECDSA P-256 only. Client certificates are not requested.
+* quinn in both directions is checked with the Arena server port, not here.

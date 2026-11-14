@@ -2,7 +2,7 @@ layout(local_size_x = 64) in;
 layout(std430, set = 0, binding = 0) readonly buffer Rays { vec4 rays[]; };
 layout(std430, set = 1, binding = 0) buffer Irr { vec4 probe_irr[]; };
 layout(std430, set = 1, binding = 1) buffer Dist { vec2 probe_dist[]; };
-layout(set = 2, binding = 0) uniform Gi { vec4 origin; vec4 step; vec4 dims; vec4 rot0; vec4 rot1; vec4 rot2; vec4 params; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; vec4 light_pos[8]; vec4 light_rgb[8]; };
+layout(set = 2, binding = 0) uniform Gi { vec4 origin; vec4 step; vec4 dims; vec4 rot0; vec4 rot1; vec4 rot2; vec4 params; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; vec4 light_pos[8]; vec4 light_rgb[8]; vec4 env; vec4 env_rot; };
 const int GI_IRR = 8;
 const int GI_DIST = 16;
 vec3 gi_unoct(vec2 uv) {

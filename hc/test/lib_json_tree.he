@@ -1,0 +1,46 @@
+use std
+use json
+use binary
+walk(n json::Node&, out byte[>..]&, depth int) int:
+	for i depth { out.push(' ') }
+	out.append(n.key)
+	out.push('|')
+	match n.val:
+		Null => { out.append("null") }
+		Bool v => { out.append(if v.v { "true" } else { "false" }) }
+		Int v => { out.append("int "); format(out, v.v) }
+		UInt v => { out.append("uint "); format(out, v.v) }
+		Num v => { out.append("num "); json::format_number(out, v.v) }
+		Str v => { out.append("str "); out.append(v.s) }
+		Arr v => { out.append("arr "); format(out, v.count) }
+		Obj v => { out.append("obj "); format(out, v.count) }
+	out.push('\n')
+	json::each(n) { c => walk(c, out, depth + 1) }
+	0
+main():
+	doc json::Node[>..] ~= []
+	dec byte[>..] ~= []
+	out byte[>..] ~= []
+	t1 byte[>..] ~= []
+	t2 byte[>..] ~= []
+	t3 byte[>..] ~= []
+	t1.append("{\"a\":1,\"b\":[true,null,\"x\\u00e9\\n\",1.5,{\"c\":[]}],\"k\\u0041y\":-3e2,\"a\":2}")
+	t2.append("[9223372036854775807,9223372036854775808,18446744073709551615,18446744073709551616,-1,0.5]")
+	t3.append("{\"a\":")
+	a, ea := json::parse(t1[..], doc, dec)
+	b, eb := json::parse(t2[..], doc, dec)
+	bad, ec := json::parse(t3[..], doc, dec)
+	if a { walk(a, out, 0) }
+	if b { walk(b, out, 0) }
+	print(out[..])
+	print(ea.len, " ", eb.len, " ", ec.len > 0)
+	if !bad { print("bad is null") }
+	print(json::as_i64(json::member(a, "a")))
+	print(json::as_f64(json::member(a, "kAy")))
+	print(json::as_string(json::member(a, "zzz")))
+	print(json::as_bool(json::member(a, "a")))
+	bm := json::member(a, "b")
+	if !json::member(bm, "c") { print("arrays have no members") }
+	if b { json::each(b) { c => print(json::as_u64(c)) } }
+	if b { json::each(b) { c => print(json::as_f64(c)) } }
+	print(binary::le("abcd", 1, 2))

@@ -1,0 +1,741 @@
+=== 316d0981875144b4
+import math;
+namespace bc;
+let BC1 = 1;
+let BC3 = 3;
+let BC4 = 4;
+let BC5 = 5;
+let BC7 = 7;
+=== 2e0f6841bcc176bf
+fn block_bytes(kind int) int {
+	match kind {
+		1, 4 => 8,
+		3, 5, 7 => 16,
+		_ => 0,
+	}
+}
+=== -6210833fec636556
+fn size(kind int, w int, h int) int {
+	block_bytes(kind) * ((w + 3) / 4) * ((h + 3) / 4)
+}
+=== -759c44657f8207e4
+fn e5(v int) int { (v << 3) | (v >> 2) }
+fn e6(v int) int { (v << 2) | (v >> 4) }
+fn color_block(b const byte[:], at int, four bool, px byte[:], o int) {
+	let c0 = (b[at] as int) | ((b[at + 1] as int) << 8);
+	let c1 = (b[at + 2] as int) | ((b[at + 3] as int) << 8);
+	var pal int[16] = [0; 16];
+	for k in 2 {
+		let c = if k == 0 { c0 } else { c1 };
+		pal[k * 4] = e5((c >> 11) & 31);
+		pal[k * 4 + 1] = e6((c >> 5) & 63);
+		pal[k * 4 + 2] = e5(c & 31);
+		pal[k * 4 + 3] = 255;
+	}
+	let opaque = four || c0 > c1;
+	for ch in 3 {
+		let e0 = pal[ch];
+		let e1 = pal[4 + ch];
+		if opaque {
+			pal[8 + ch] = (2 * e0 + e1 + 1) / 3;
+			pal[12 + ch] = (e0 + 2 * e1 + 1) / 3;
+		} else {
+			pal[8 + ch] = (e0 + e1 + 1) / 2;
+			pal[12 + ch] = 0;
+		}
+	}
+	pal[11] = 255;
+	pal[15] = if opaque { 255 } else { 0 };
+	for i in 16 {
+		let s = ((b[at + 4 + (i >> 2)] as int) >> ((i & 3) * 2)) & 3;
+		for ch in 4 { px[o + 4 * i + ch] = pal[s * 4 + ch] as byte; }
+	}
+}
+=== 1abe281ba63a1765
+fn alpha_palette(a0 int, a1 int, pal int[:]) {
+	pal[0] = a0;
+	pal[1] = a1;
+	if a0 > a1 {
+		let ws int[6] = [9, 18, 27, 37, 46, 55];
+		for j in 6 {
+			let k = j + 1;
+			let w = ws[j];
+			pal[k + 1] = ((((7 - k) * a0 + k * a1) * 64) + (a0 * (64 - w) + a1 * w) * 7 + 448) / 896;
+		}
+	} else {
+		let ws int[4] = [13, 26, 38, 51];
+		for j in 4 {
+			let k = j + 1;
+			let w = ws[j];
+			pal[k + 1] = ((((5 - k) * a0 + k * a1) * 64) + (a0 * (64 - w) + a1 * w) * 5 + 320) / 640;
+		}
+		pal[6] = 0;
+		pal[7] = 255;
+	}
+}
+fn alpha_block(b const byte[:], at int, px byte[:], o int, step int) {
+	var pal int[8] = [0; 8];
+	alpha_palette(b[at] as int, b[at + 1] as int, pal[..]);
+	var v = 0;
+	for j in 6 { v |= (b[at + 2 + j] as int) << (8 * j); }
+	for i in 16 { px[o + step * i] = pal[(v >> (3 * i)) & 7] as byte; }
+}
+=== -1beaf42f9ee2555f
+fn bits(b const byte[:], at int, pos int, n int) int {
+	var v = 0;
+	for i in n {
+		let p = pos + i;
+		v |= (((b[at + (p >> 3)] as int) >> (p & 7)) & 1) << i;
+	}
+	v
+}
+=== -5712f528ad9c6f15
+fn bc7_anchor(i int, ns int, part int) bool {
+	i == 0 || (ns == 2 && i == A2[part]) || (ns == 3 && (i == A3A[part] || i == A3B[part]))
+}
+fn bc7_w(n int, k int) int {
+	match n {
+		2 => W2[k],
+		3 => W3[k],
+		_ => W4[k],
+	}
+}
+fn bc7_block(b const byte[:], at int, px byte[:], o int) {
+	let b0 = b[at] as int;
+	if b0 == 0 {
+		for i in 64 { px[o + i] = 0; }
+		return;
+	}
+	var m = 0;
+	while ((b0 >> m) & 1) == 0 { m++; }
+	var pos = m + 1;
+	let part = bits(b, at, pos, M_PART[m]);
+	pos += M_PART[m];
+	var rot = 0;
+	var sel = 0;
+	if m == 4 {
+		rot = bits(b, at, pos, 2);
+		pos += 2;
+		sel = bits(b, at, pos, 1);
+		pos += 1;
+	} else if m == 5 {
+		rot = bits(b, at, pos, 2);
+		pos += 2;
+	}
+	let ns = M_SUBSETS[m];
+	let ne = 2 * ns;
+	let cb = M_CBITS[m];
+	let ab = M_ABITS[m];
+	var ep int[24] = [0; 24];
+	for ch in 3 {
+		for e in ne {
+			ep[e * 4 + ch] = bits(b, at, pos, cb);
+			pos += cb;
+		}
+	}
+	if ab > 0 {
+		for e in ne {
+			ep[e * 4 + 3] = bits(b, at, pos, ab);
+			pos += ab;
+		}
+	}
+	let pb = M_PBITS[m];
+	var pbit int[6] = [0; 6];
+	if pb == 1 {
+		for e in ne {
+			pbit[e] = bits(b, at, pos, 1);
+			pos += 1;
+		}
+	} else if pb == 2 {
+		for s in ns {
+			let p = bits(b, at, pos, 1);
+			pos += 1;
+			pbit[2 * s] = p;
+			pbit[2 * s + 1] = p;
+		}
+	}
+	let hasp = pb > 0;
+	let cw = if hasp { cb + 1 } else { cb };
+	let aw = if hasp { ab + 1 } else { ab };
+	for e in ne {
+		for ch in 4 {
+			if ch == 3 && ab == 0 {
+				ep[e * 4 + 3] = 255;
+			} else {
+				let n = if ch == 3 { aw } else { cw };
+				var v = ep[e * 4 + ch];
+				if hasp { v = (v << 1) | pbit[e]; }
+				ep[e * 4 + ch] = (v << (8 - n)) | (v >> (2 * n - 8));
+			}
+		}
+	}
+	var sub int[16] = [0; 16];
+	for i in 16 {
+		sub[i] = if ns == 1 { 0 } else if ns == 2 { (P2[part] >> i) & 1 } else { (P3[part] >> (2 * i)) & 3 };
+	}
+	let ib = M_IBITS[m];
+	var idx int[16] = [0; 16];
+	var idx2 int[16] = [0; 16];
+	if m == 4 {
+		for i in 16 {
+			let n = if i == 0 { 1 } else { 2 };
+			idx[i] = bits(b, at, pos, n);
+			pos += n;
+		}
+		for i in 16 {
+			let n = if i == 0 { 2 } else { 3 };
+			idx2[i] = bits(b, at, pos, n);
+			pos += n;
+		}
+	} else if m == 5 {
+		for i in 16 {
+			let n = if i == 0 { 1 } else { 2 };
+			idx[i] = bits(b, at, pos, n);
+			pos += n;
+		}
+		for i in 16 {
+			let n = if i == 0 { 1 } else { 2 };
+			idx2[i] = bits(b, at, pos, n);
+			pos += n;
+		}
+	} else {
+		for i in 16 {
+			let n = if bc7_anchor(i, ns, part) { ib - 1 } else { ib };
+			idx[i] = bits(b, at, pos, n);
+			pos += n;
+		}
+	}
+	for i in 16 {
+		let s = sub[i];
+		var ci = idx[i];
+		var cn = ib;
+		var ai = idx[i];
+		var an = ib;
+		if m == 4 {
+			if sel == 0 {
+				ci = idx[i];
+				cn = 2;
+				ai = idx2[i];
+				an = 3;
+			} else {
+				ci = idx2[i];
+				cn = 3;
+				ai = idx[i];
+				an = 2;
+			}
+		} else if m == 5 {
+			cn = 2;
+			an = 2;
+			ai = idx2[i];
+		}
+		let cwt = bc7_w(cn, ci);
+		let awt = bc7_w(an, ai);
+		var r int[4] = [0; 4];
+		for ch in 4 {
+			let wt = if ch == 3 { awt } else { cwt };
+			let e0 = ep[(2 * s) * 4 + ch];
+			let e1 = ep[(2 * s + 1) * 4 + ch];
+			r[ch] = ((64 - wt) * e0 + wt * e1 + 32) >> 6;
+		}
+		if rot > 0 {
+			let t = r[3];
+			r[3] = r[rot - 1];
+			r[rot - 1] = t;
+		}
+		for ch in 4 { px[o + 4 * i + ch] = r[ch] as byte; }
+	}
+}
+=== -49de0b638cd61e34
+fn decode(kind int, blocks const byte[:], w int, h int, out byte[>..]&) bool {
+	out.clear();
+	let bb = block_bytes(kind);
+	if bb == 0 || w <= 0 || h <= 0 || blocks.len < size(kind, w, h) { return false; }
+	out.resize(w * h * 4, 0);
+	var px byte[64] = [0; 64];
+	let bw = (w + 3) / 4;
+	let bh = (h + 3) / 4;
+	for by in bh {
+		for bx in bw {
+			let at = (by * bw + bx) * bb;
+			if kind == 1 {
+				color_block(blocks, at, false, px[..], 0);
+			} else if kind == 3 {
+				color_block(blocks, at + 8, true, px[..], 0);
+				alpha_block(blocks, at, px[..], 3, 4);
+			} else if kind == 4 {
+				alpha_block(blocks, at, px[..], 0, 4);
+				for i in 16 {
+					px[i * 4 + 1] = 0;
+					px[i * 4 + 2] = 0;
+					px[i * 4 + 3] = 255;
+				}
+			} else if kind == 5 {
+				alpha_block(blocks, at, px[..], 0, 4);
+				alpha_block(blocks, at + 8, px[..], 1, 4);
+				for i in 16 {
+					px[i * 4 + 2] = 0;
+					px[i * 4 + 3] = 255;
+				}
+			} else {
+				bc7_block(blocks, at, px[..], 0);
+			}
+			for ty in 4 {
+				for tx in 4 {
+					let x = bx * 4 + tx;
+					let y = by * 4 + ty;
+					if x < w && y < h {
+						for c in 4 { out[(y * w + x) * 4 + c] = px[(ty * 4 + tx) * 4 + c]; }
+					}
+				}
+			}
+		}
+	}
+	true
+}
+=== 2a125894b9826b6d
+fn fetch(rgba const byte[:], w int, h int, bx int, by int, px byte[:]) {
+	for ty in 4 {
+		for tx in 4 {
+			let x = min(bx * 4 + tx, w - 1);
+			let y = min(by * 4 + ty, h - 1);
+			for c in 4 { px[(ty * 4 + tx) * 4 + c] = rgba[(y * w + x) * 4 + c]; }
+		}
+	}
+}
+=== -38b8fd30701a23a3
+fn c565(r real, g real, bl real) int {
+	let ri = (r + 0.5) as int;
+	let gi = (g + 0.5) as int;
+	let bi = (bl + 0.5) as int;
+	(((ri * 31 + 127) / 255) << 11) | (((gi * 63 + 127) / 255) << 5) | ((bi * 31 + 127) / 255)
+}
+fn clamp255(x real) real {
+	if x < 0.0 { 0.0 } else if x > 255.0 { 255.0 } else { x }
+}
+fn pal4(c0 int, c1 int, pal int[:]) {
+	for k in 2 {
+		let c = if k == 0 { c0 } else { c1 };
+		pal[k * 3] = e5((c >> 11) & 31);
+		pal[k * 3 + 1] = e6((c >> 5) & 63);
+		pal[k * 3 + 2] = e5(c & 31);
+	}
+	for ch in 3 {
+		pal[6 + ch] = (2 * pal[ch] + pal[3 + ch] + 1) / 3;
+		pal[9 + ch] = (pal[ch] + 2 * pal[3 + ch] + 1) / 3;
+	}
+}
+fn assign4(px const byte[:], pal const int[:], idx int[:]) int {
+	var tot = 0;
+	for i in 16 {
+		var best = 0;
+		var be = 1 << 40;
+		for k in 4 {
+			var e = 0;
+			for c in 3 {
+				let d = (px[i * 4 + c] as int) - pal[k * 3 + c];
+				e += d * d;
+			}
+			if e < be {
+				be = e;
+				best = k;
+			}
+		}
+		idx[i] = best;
+		tot += be;
+	}
+	tot
+}
+fn pack_color(px const byte[:], b byte[:], at int, four bool) {
+	var mean real[3] = [0.0; 3];
+	for i in 16 { for c in 3 { mean[c] += px[i * 4 + c] as real; } }
+	for c in 3 { mean[c] /= 16.0; }
+	var cov real[9] = [0.0; 9];
+	for i in 16 {
+		var d real[3] = [0.0; 3];
+		for c in 3 { d[c] = (px[i * 4 + c] as real) - mean[c]; }
+		for r in 3 { for c in 3 { cov[r * 3 + c] += d[r] * d[c] / 16.0; } }
+	}
+	var ax real[3] = [0.0; 3];
+	for r in 3 { ax[r] = cov[r * 3] + cov[r * 3 + 1] + cov[r * 3 + 2]; }
+	var len = sqrt(ax[0] * ax[0] + ax[1] * ax[1] + ax[2] * ax[2]);
+	if len < 1.0e-6 {
+		ax = [1.0, 1.0, 1.0];
+		len = sqrt(3.0);
+	}
+	for c in 3 { ax[c] /= len; }
+	for rd in 8 {
+		var nv real[3] = [0.0; 3];
+		for r in 3 { for c in 3 { nv[r] += cov[r * 3 + c] * ax[c]; } }
+		let l = sqrt(nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]);
+		if l < 1.0e-12 { break; }
+		for c in 3 { ax[c] = nv[c] / l; }
+	}
+	var tmin = 1.0e30;
+	var tmax = -1.0e30;
+	for i in 16 {
+		var t = 0.0;
+		for c in 3 { t += ((px[i * 4 + c] as real) - mean[c]) * ax[c]; }
+		if t < tmin { tmin = t; }
+		if t > tmax { tmax = t; }
+	}
+	var c0 = c565(clamp255(mean[0] + ax[0] * tmin), clamp255(mean[1] + ax[1] * tmin), clamp255(mean[2] + ax[2] * tmin));
+	var c1 = c565(clamp255(mean[0] + ax[0] * tmax), clamp255(mean[1] + ax[1] * tmax), clamp255(mean[2] + ax[2] * tmax));
+	var pal int[12] = [0; 12];
+	var idx int[16] = [0; 16];
+	pal4(c0, c1, pal[..]);
+	var err = assign4(px, pal[..], idx[..]);
+	for rd in 2 {
+		var a = 0.0;
+		var ab = 0.0;
+		var g = 0.0;
+		var r0 real[3] = [0.0; 3];
+		var r1 real[3] = [0.0; 3];
+		for i in 16 {
+			let t = match idx[i] {
+				0 => 0.0,
+				1 => 1.0,
+				2 => 1.0 / 3.0,
+				_ => 2.0 / 3.0,
+			};
+			let om = 1.0 - t;
+			a += om * om;
+			ab += om * t;
+			g += t * t;
+			for c in 3 {
+				let v = px[i * 4 + c] as real;
+				r0[c] += om * v;
+				r1[c] += t * v;
+			}
+		}
+		let det = a * g - ab * ab;
+		if det < 1.0e-9 { continue; }
+		var ne real[6] = [0.0; 6];
+		for c in 3 {
+			ne[c] = clamp255((g * r0[c] - ab * r1[c]) / det);
+			ne[3 + c] = clamp255((a * r1[c] - ab * r0[c]) / det);
+		}
+		let n0 = c565(ne[0], ne[1], ne[2]);
+		let n1 = c565(ne[3], ne[4], ne[5]);
+		var npal int[12] = [0; 12];
+		var nidx int[16] = [0; 16];
+		pal4(n0, n1, npal[..]);
+		let nerr = assign4(px, npal[..], nidx[..]);
+		if nerr < err {
+			err = nerr;
+			c0 = n0;
+			c1 = n1;
+			idx = nidx;
+		}
+	}
+	if c0 < c1 {
+		let t = c0;
+		c0 = c1;
+		c1 = t;
+	}
+	if c0 == c1 {
+		for i in 16 { idx[i] = 0; }
+	} else {
+		pal4(c0, c1, pal[..]);
+		err = assign4(px, pal[..], idx[..]);
+	}
+	b[at] = (c0 & 255) as byte;
+	b[at + 1] = ((c0 >> 8) & 255) as byte;
+	b[at + 2] = (c1 & 255) as byte;
+	b[at + 3] = ((c1 >> 8) & 255) as byte;
+	for j in 4 {
+		var v = 0;
+		for k in 4 { v |= idx[j * 4 + k] << (k * 2); }
+		b[at + 4 + j] = v as byte;
+	}
+}
+=== 43d88f0378d57424
+fn pack_alpha(px const byte[:], o int, step int, b byte[:], at int) {
+	var hi = 0;
+	var lo = 255;
+	for i in 16 {
+		let v = px[o + step * i] as int;
+		if v > hi { hi = v; }
+		if v < lo { lo = v; }
+	}
+	b[at] = hi as byte;
+	b[at + 1] = lo as byte;
+	var bits48 = 0;
+	if hi != lo {
+		var pal int[8] = [0; 8];
+		alpha_palette(hi, lo, pal[..]);
+		for i in 16 {
+			let v = px[o + step * i] as int;
+			var best = 0;
+			var be = 1 << 40;
+			for k in 8 {
+				let d = v - pal[k];
+				let e = d * d;
+				if e < be {
+					be = e;
+					best = k;
+				}
+			}
+			bits48 |= best << (3 * i);
+		}
+	}
+	for j in 6 { b[at + 2 + j] = ((bits48 >> (8 * j)) & 255) as byte; }
+}
+=== 3fc2639262273ccb
+fn bq_end(ef const real[:], at int, opaque bool, qf int[:]) int {
+	var best = 0;
+	var be = 1.0e30;
+	var tq int[4] = [0; 4];
+	for p in 2 {
+		if opaque && p == 0 { continue; }
+		var err = 0.0;
+		var cq int[4] = [0; 4];
+		for c in 4 {
+			if opaque && c == 3 {
+				cq[3] = 127;
+				continue;
+			}
+			let x = ef[at + c];
+			let f = floor((x - (p as real)) / 2.0 + 0.5);
+			let q = clamp(f as int, 0, 127);
+			cq[c] = q;
+			let d = x - ((2 * q + p) as real);
+			err += d * d;
+		}
+		if err < be {
+			be = err;
+			best = p;
+			tq = cq;
+		}
+	}
+	for c in 4 { qf[at + c] = tq[c]; }
+	best
+}
+fn bq_make(ef const real[:], opaque bool, qf int[:], pb int[:], ev int[:]) {
+	for e in 2 {
+		let p = bq_end(ef, e * 4, opaque, qf);
+		pb[e] = p;
+		for c in 4 { ev[e * 4 + c] = 2 * qf[e * 4 + c] + p; }
+	}
+}
+fn bq_assign(px const byte[:], ev const int[:], idx int[:]) int {
+	var dd = 0;
+	for c in 4 {
+		let d = ev[4 + c] - ev[c];
+		dd += d * d;
+	}
+	var tot = 0;
+	for i in 16 {
+		var k0 = 0;
+		if dd > 0 {
+			var num = 0;
+			for c in 4 { num += ((px[i * 4 + c] as int) - ev[c]) * (ev[4 + c] - ev[c]); }
+			let f = floor((num as real) / (dd as real) * 15.0 + 0.5);
+			k0 = clamp(f as int, 0, 15);
+		}
+		var best = k0;
+		var be = 1 << 40;
+		for k in max(k0 - 1, 0)..min(k0 + 2, 16) {
+			let w = W4[k];
+			var e = 0;
+			for c in 4 {
+				let pc = ((64 - w) * ev[c] + w * ev[4 + c] + 32) >> 6;
+				let d = (px[i * 4 + c] as int) - pc;
+				e += d * d;
+			}
+			if e < be {
+				be = e;
+				best = k;
+			}
+		}
+		idx[i] = best;
+		tot += be;
+	}
+	tot
+}
+fn bq_put(b byte[:], at int, pos int&, v int, n int) {
+	for i in n {
+		if ((v >> i) & 1) == 1 {
+			let j = at + (pos >> 3);
+			b[j] = (((b[j] as int) | (1 << (pos & 7))) as byte);
+		}
+		pos += 1;
+	}
+}
+fn pack_bc7(px const byte[:], b byte[:], at int) {
+	var opaque = true;
+	for i in 16 { if px[i * 4 + 3] != 255 { opaque = false; } }
+	var mean real[4] = [0.0; 4];
+	for i in 16 { for c in 4 { mean[c] += px[i * 4 + c] as real; } }
+	for c in 4 { mean[c] /= 16.0; }
+	var cov real[16] = [0.0; 16];
+	for i in 16 {
+		var d real[4] = [0.0; 4];
+		for c in 4 { d[c] = (px[i * 4 + c] as real) - mean[c]; }
+		for r in 4 { for c in 4 { cov[r * 4 + c] += d[r] * d[c] / 16.0; } }
+	}
+	var ax real[4] = [0.0; 4];
+	for r in 4 { ax[r] = cov[r * 4] + cov[r * 4 + 1] + cov[r * 4 + 2] + cov[r * 4 + 3]; }
+	var len = sqrt(ax[0] * ax[0] + ax[1] * ax[1] + ax[2] * ax[2] + ax[3] * ax[3]);
+	if len < 1.0e-6 {
+		ax = [1.0, 1.0, 1.0, 1.0];
+		len = 2.0;
+	}
+	for c in 4 { ax[c] /= len; }
+	for rd in 8 {
+		var nv real[4] = [0.0; 4];
+		for r in 4 { for c in 4 { nv[r] += cov[r * 4 + c] * ax[c]; } }
+		let l = sqrt(nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2] + nv[3] * nv[3]);
+		if l < 1.0e-12 { break; }
+		for c in 4 { ax[c] = nv[c] / l; }
+	}
+	var tmin = 1.0e30;
+	var tmax = -1.0e30;
+	for i in 16 {
+		var t = 0.0;
+		for c in 4 { t += ((px[i * 4 + c] as real) - mean[c]) * ax[c]; }
+		if t < tmin { tmin = t; }
+		if t > tmax { tmax = t; }
+	}
+	var ef real[8] = [0.0; 8];
+	for c in 4 {
+		ef[c] = clamp255(mean[c] + ax[c] * tmin);
+		ef[4 + c] = clamp255(mean[c] + ax[c] * tmax);
+	}
+	var qf int[8] = [0; 8];
+	var pb int[2] = [0; 2];
+	var ev int[8] = [0; 8];
+	var idx int[16] = [0; 16];
+	bq_make(ef[..], opaque, qf[..], pb[..], ev[..]);
+	var err = bq_assign(px, ev[..], idx[..]);
+	for rd in 2 {
+		var a = 0.0;
+		var ab = 0.0;
+		var g = 0.0;
+		var r0 real[4] = [0.0; 4];
+		var r1 real[4] = [0.0; 4];
+		for i in 16 {
+			let t = (W4[idx[i]] as real) / 64.0;
+			let om = 1.0 - t;
+			a += om * om;
+			ab += om * t;
+			g += t * t;
+			for c in 4 {
+				let v = px[i * 4 + c] as real;
+				r0[c] += om * v;
+				r1[c] += t * v;
+			}
+		}
+		let det = a * g - ab * ab;
+		if det < 1.0e-9 { continue; }
+		var nf real[8] = [0.0; 8];
+		for c in 4 {
+			nf[c] = clamp255((g * r0[c] - ab * r1[c]) / det);
+			nf[4 + c] = clamp255((a * r1[c] - ab * r0[c]) / det);
+		}
+		var nqf int[8] = [0; 8];
+		var npb int[2] = [0; 2];
+		var nev int[8] = [0; 8];
+		var nidx int[16] = [0; 16];
+		bq_make(nf[..], opaque, nqf[..], npb[..], nev[..]);
+		let nerr = bq_assign(px, nev[..], nidx[..]);
+		if nerr < err {
+			err = nerr;
+			qf = nqf;
+			pb = npb;
+			ev = nev;
+			idx = nidx;
+		}
+	}
+	if idx[0] >= 8 {
+		for c in 4 {
+			let t = qf[c];
+			qf[c] = qf[4 + c];
+			qf[4 + c] = t;
+		}
+		let tp = pb[0];
+		pb[0] = pb[1];
+		pb[1] = tp;
+		for i in 16 { idx[i] = 15 - idx[i]; }
+	}
+	for j in 16 { b[at + j] = 0; }
+	var pos = 0;
+	bq_put(b, at, pos, 64, 7);
+	for c in 4 {
+		bq_put(b, at, pos, qf[c], 7);
+		bq_put(b, at, pos, qf[4 + c], 7);
+	}
+	bq_put(b, at, pos, pb[0], 1);
+	bq_put(b, at, pos, pb[1], 1);
+	for i in 16 { bq_put(b, at, pos, idx[i], if i == 0 { 3 } else { 4 }); }
+}
+=== 7438664de94253ed
+fn encode(kind int, rgba const byte[:], w int, h int, out byte[>..]&) bool {
+	out.clear();
+	let bb = block_bytes(kind);
+	if bb == 0 || w <= 0 || h <= 0 || rgba.len < w * h * 4 { return false; }
+	out.resize(size(kind, w, h), 0);
+	var px byte[64] = [0; 64];
+	let bw = (w + 3) / 4;
+	let bh = (h + 3) / 4;
+	for by in bh {
+		for bx in bw {
+			let at = (by * bw + bx) * bb;
+			fetch(rgba, w, h, bx, by, px[..]);
+			if kind == 1 {
+				pack_color(px[..], out[..], at, false);
+			} else if kind == 3 {
+				pack_alpha(px[..], 3, 4, out[..], at);
+				pack_color(px[..], out[..], at + 8, true);
+			} else if kind == 4 {
+				pack_alpha(px[..], 0, 4, out[..], at);
+			} else if kind == 5 {
+				pack_alpha(px[..], 0, 4, out[..], at);
+				pack_alpha(px[..], 1, 4, out[..], at + 8);
+			} else {
+				pack_bc7(px[..], out[..], at);
+			}
+		}
+	}
+	true
+}
+=== -51c3843e6d009f74
+var srgb_dec real[256];
+var srgb_ok bool = false;
+fn halve(rgba const byte[:], w int, h int, srgb bool, out byte[>..]&) int, int {
+	if srgb && !srgb_ok {
+		for i in 256 {
+			let c = (i as real) / 255.0;
+			srgb_dec[i] = if c <= 0.04045 { c / 12.92 } else { pow((c + 0.055) / 1.055, 2.4) };
+		}
+		srgb_ok = true;
+	}
+	let nw = max(w / 2, 1);
+	let nh = max(h / 2, 1);
+	out.clear();
+	out.resize(nw * nh * 4, 0);
+	for y in nh {
+		for x in nw {
+			for c in 4 {
+				var sum = 0;
+				var lsum = 0.0;
+				for dy in 2 {
+					for dx in 2 {
+						let sx = min(x * 2 + dx, w - 1);
+						let sy = min(y * 2 + dy, h - 1);
+						let v = rgba[(sy * w + sx) * 4 + c] as int;
+						sum += v;
+						if srgb && c < 3 { lsum += srgb_dec[v]; }
+					}
+				}
+				var r = (sum + 2) / 4;
+				if srgb && c < 3 {
+					let l = lsum / 4.0;
+					let enc = if l <= 0.0031308 { 12.92 * l } else { 1.055 * pow(l, 1.0 / 2.4) - 0.055 };
+					r = clamp((enc * 255.0 + 0.5) as int, 0, 255);
+				}
+				out[(y * nw + x) * 4 + c] = r as byte;
+			}
+		}
+	}
+	return nw, nh;
+}

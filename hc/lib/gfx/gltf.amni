@@ -10,6 +10,8 @@ import gfx;
 import gfx.linalg;
 import gfx.codec_png;
 import gfx.codec_jpeg;
+import gfx.bc;
+import gfx.ktx2;
 
 // One vertex is 26 floats: position 3, normal 3, uv0 2, uv1 2, tangent 4,
 // color 4, joints 4, weights 4.
@@ -37,7 +39,7 @@ let STEP_HOLD = 1;
 let STEP_CUBIC = 2;
 
 struct Span { first int, count int }
-struct TexRef { texture int, uv int }
+struct TexRef { texture int, uv int, m float4 = float4 { 1.0, 0.0, 0.0, 1.0 }, o float2 = float2 { 0.0, 0.0 } }
 struct Material {
 	base float4, base_tex TexRef,
 	metallic f32, roughness f32, mr_tex TexRef,
@@ -46,13 +48,21 @@ struct Material {
 	emissive float3, emissive_tex TexRef,
 	alpha_mode int, alpha_cutoff f32, double_sided bool, unlit bool, name Span,
 	tri f32 = 0.0, top f32 = 0.0, top_scale f32 = 0.0, top_sharp f32 = 8.0,
-	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false
+	top_base TexRef = TexRef { -1, 0 }, top_mr TexRef = TexRef { -1, 0 }, top_normal TexRef = TexRef { -1, 0 }, top_tint float4 = float4 { 1.0, 1.0, 1.0, 1.0 }, no_gi bool = false, no_shadow bool = false, keep_normal bool = false, sheen float3 = float3 { 0.0, 0.0, 0.0 }, sheen_rough f32 = 0.0, catcher f32 = 0.0, shading int = 0, shade_a float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_b float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, shade_c float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, detail TexRef = TexRef { -1, 0 },
+	ext bool = false, ior f32 = 1.5, spec_f f32 = 1.0, spec_c float3 = float3 { 1.0, 1.0, 1.0 }, spec_tex TexRef = TexRef { -1, 0 }, spec_c_tex TexRef = TexRef { -1, 0 },
+	coat f32 = 0.0, coat_r f32 = 0.0, coat_ns f32 = 1.0, coat_tex TexRef = TexRef { -1, 0 }, coat_r_tex TexRef = TexRef { -1, 0 }, coat_n_tex TexRef = TexRef { -1, 0 },
+	trans f32 = 0.0, trans_tex TexRef = TexRef { -1, 0 }, thick f32 = 0.0, thick_tex TexRef = TexRef { -1, 0 }, att_d f32 = 0.0, att_c float3 = float3 { 1.0, 1.0, 1.0 },
+	height_tex TexRef = TexRef { -1, 0 }, height_scale f32 = 0.0, sealed f32 = 0.0,
+	aniso f32 = 0.0, aniso_rot f32 = 0.0, aniso_tex TexRef = TexRef { -1, 0 },
+	irid f32 = 0.0, irid_ior f32 = 1.3, irid_min f32 = 100.0, irid_max f32 = 400.0, irid_tex TexRef = TexRef { -1, 0 }, irid_t_tex TexRef = TexRef { -1, 0 },
+	sheen_c_tex TexRef = TexRef { -1, 0 }, sheen_r_tex TexRef = TexRef { -1, 0 }
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
+struct PLight { kind int, rgb float3, range f32, inner f32, outer f32 }
 struct Mesh { prims Span, weights Span, name Span }
-struct Node { parent int, mesh int, skin int, children Span, t float3, r linalg::Quat, s float3, matrix gfx::mat4, has_matrix bool, weights Span, name Span }
+struct Node { parent int, mesh int, skin int, children Span, t float3, r linalg::Quat, s float3, matrix gfx::mat4, has_matrix bool, weights Span, name Span, light int = -1 }
 struct Texture { image int, mag_nearest bool, min_nearest bool, mipmaps bool, wrap_s int, wrap_t int }
-struct Image { width int, height int, pixels Span, ok bool }
+struct Image { width int, height int, pixels Span, ok bool, coded Span = Span { 0, 0 }, ktx bool = false }
 struct Skin { joints Span, inverse_binds Span, skeleton int, name Span }
 struct Channel { node int, path int, interp int, times Span, values Span, width int }
 struct Animation { channels Span, duration f32, name Span }
@@ -65,11 +75,17 @@ var floats f32[>..];
 var ints int[>..];
 var matrices gfx::mat4[>..];
 var pixels byte[>..];
+var lazy_pixels = false;
+var bad_images = 0;
+var coded byte[>..];
+var decoded byte[>..];
+var decoded_of = -1;
 var names byte[>..];
 var meshes Mesh[>..];
 var prims Primitive[>..];
 var nodes Node[>..];
 var materials Material[>..];
+var plights PLight[>..];
 var textures Texture[>..];
 var images Image[>..];
 var skins Skin[>..];
@@ -99,7 +115,7 @@ fn fail(msg const byte[:]) int {
 
 fn reset() {
 	verts.clear(); indices.clear(); morphs.clear(); floats.clear(); ints.clear(); matrices.clear();
-	pixels.clear(); names.clear(); meshes.clear(); prims.clear(); nodes.clear(); materials.clear();
+	pixels.clear(); coded.clear(); decoded.clear(); decoded_of = -1; names.clear(); meshes.clear(); prims.clear(); nodes.clear(); materials.clear();
 	textures.clear(); images.clear(); skins.clear(); channels.clear(); animations.clear(); assets.clear();
 	problem.clear(); skipped_prims.clear();
 }
@@ -292,10 +308,80 @@ fn load(path const byte[:]) int {
 fn texref(d json::Doc&, n int, tex_base int) TexRef {
 	if n < 0 { return TexRef { -1, 0 }; }
 	let i = whole(d, n, "index", -1);
-	TexRef { if i < 0 { -1 } else { tex_base + i }, whole(d, n, "texCoord", 0) }
+	let x = get(d, get(d, n, "extensions"), "KHR_texture_transform");
+	let sc = get(d, x, "scale");
+	let of = get(d, x, "offset");
+	let sx = item_num(d, sc, 0, 1.0) as f32;
+	let sy = item_num(d, sc, 1, 1.0) as f32;
+	let r = num(d, x, "rotation", 0.0);
+	let c = cos(r) as f32;
+	let s = sin(r) as f32;
+	TexRef { if i < 0 { -1 } else { tex_base + i }, whole(d, x, "texCoord", whole(d, n, "texCoord", 0)), float4 { c * sx, -s * sy, s * sx, c * sy }, float2 { item_num(d, of, 0, 0.0) as f32, item_num(d, of, 1, 0.0) as f32 } }
 }
 
+fn need_pixels(i int) {
+	let im = images[i];
+	if im.coded.count > 0 && decoded_of != i {
+		decoded.clear();
+		let src = coded[im.coded.first..im.coded.first + im.coded.count];
+		var w = 0;
+		var h = 0;
+		var ok = false;
+		if im.ktx {
+			let info = ktx2::read(src);
+			var lv byte[>..] = [];
+			ok = ktx2::level(src, info, 0, lv) && (if info.kind == 0 { decoded.append(lv[..]); true } else { bc::decode(info.kind, lv[..], info.width, info.height, decoded) });
+			w = info.width; h = info.height;
+		} else if codec_png::is_png(src) {
+			let a, b, c = codec_png::decode(src, decoded);
+			w = a; h = b; ok = c;
+		} else {
+			let a, b, c = codec_jpeg::decode(src, decoded);
+			w = a; h = b; ok = c;
+		}
+		if !ok || w != im.width || h != im.height || decoded.len != w * h * 4 {
+			bad_images += 1;
+			decoded.clear();
+			decoded.resize(im.width * im.height * 4, 255 as byte);
+		}
+		decoded_of = i;
+	}
+}
+
+fn image_pixels(i int) const byte[:] {
+	let im = images[i];
+	if im.coded.count == 0 { return pixels[im.pixels.first..im.pixels.first + im.pixels.count]; }
+	if decoded_of != i { return pixels[0..0]; }
+	decoded[..]
+}
+
+fn image_file(i int) const byte[:] { coded[images[i].coded.first..images[i].coded.first + images[i].coded.count] }
 fn decode_image(data const byte[:]) Image {
+	if ktx2::is_ktx2(data) {
+		let info = ktx2::read(data);
+		if info.ok {
+			let at = coded.len;
+			coded.append(data);
+			return Image { width: info.width, height: info.height, pixels: Span { 0, 0 }, ok: true, coded: Span { at, data.len }, ktx: true };
+		}
+	}
+	if lazy_pixels {
+		var w = 0;
+		var h = 0;
+		var ok = false;
+		if codec_png::is_png(data) {
+			let a, b, c = codec_png::size(data);
+			w = a; h = b; ok = c;
+		} else {
+			let a, b, c = codec_jpeg::size(data);
+			w = a; h = b; ok = c;
+		}
+		if ok {
+			let at = coded.len;
+			coded.append(data);
+			return Image { width: w, height: h, pixels: Span { 0, 0 }, ok: true, coded: Span { at, data.len } };
+		}
+	}
 	var px byte[>..] = [];
 	var w = 0;
 	var h = 0;
@@ -308,6 +394,7 @@ fn decode_image(data const byte[:]) Image {
 		w = a; h = b; ok = c;
 	}
 	if !ok || px.len != w * h * 4 {
+		bad_images += 1;
 		px.clear();
 		px.append([255 as byte, 255, 255, 255]);
 		w = 1; h = 1; ok = false;
@@ -317,6 +404,30 @@ fn decode_image(data const byte[:]) Image {
 	Image { w, h, Span { at, px.len }, ok }
 }
 
+fn presize(d json::Doc&, root int) {
+	var acc int[>..] = [];
+	var ms int[>..] = [];
+	var ps int[>..] = [];
+	children_of(d, get(d, root, "accessors"), acc);
+	children_of(d, get(d, root, "meshes"), ms);
+	var nv = 0;
+	var ni = 0;
+	for m in ms {
+		ps.clear();
+		children_of(d, get(d, m, "primitives"), ps);
+		for p in ps {
+			let at = get(d, p, "attributes");
+			let a = whole(d, at, "POSITION", -1);
+			let i = whole(d, p, "indices", -1);
+			let ic = if i >= 0 && i < acc.len { whole(d, acc[i], "count", 0) } else { 0 };
+			nv += if whole(d, at, "NORMAL", -1) < 0 { ic } else if a >= 0 && a < acc.len { whole(d, acc[a], "count", 0) } else { 0 };
+			ni += ic;
+		}
+	}
+	let vn = (nv + nv / 2 + 65536) * VERTEX_FLOATS;
+	if verts.len == 0 && nv * VERTEX_FLOATS * 4 > 8 << 20 { verts.resize(vn, 0.0); verts.clear(); }
+	if indices.len == 0 && ni * 4 > 8 << 20 { indices.resize(ni + ni / 2 + 65536, 0 as u32); indices.clear(); }
+}
 fn load_bytes(data const byte[:], dir const byte[:]) int {
 	blob.clear(); buf_at.clear(); buf_len.clear(); view_at.clear(); view_len.clear(); view_stride.clear(); accessor_node.clear();
 	if skipped_prims.len == 0 { skipped_prims.push(0); }
@@ -344,11 +455,12 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	if root < 0 { return fail(str("gltf: ", why)); }
 	let version = word(d, get(d, root, "asset"), "version");
 	if version.len == 0 || version[0] != '2' { return fail(str("gltf: unsupported asset version '", version, "'")); }
+	presize(d, root);
 	var list int[>..] = [];
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
 		let ext = json::text_of(d, e);
-		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" {
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
 	}
@@ -402,6 +514,21 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		images.push(decode_image(raw[..]));
 	}
 	asset.images.count = images.len - asset.images.first;
+	if lazy_pixels {
+		var big_png = -1;
+		var big_jpg = -1;
+		for k in asset.images.count {
+			let j = asset.images.first + k;
+			let im = images[j];
+			if im.coded.count > 0 && !im.ktx {
+				let png = codec_png::is_png(coded[im.coded.first..im.coded.first + im.coded.count]);
+				let b = if png { big_png } else { big_jpg };
+				if b < 0 || im.width * im.height > images[b].width * images[b].height { if png { big_png = j; } else { big_jpg = j; } }
+			}
+		}
+		if big_jpg >= 0 { need_pixels(big_jpg); }
+		if big_png >= 0 { need_pixels(big_png); }
+	}
 
 	// textures with their samplers
 	var samplers int[>..] = [];
@@ -436,8 +563,12 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		let ext = get(d, m, "extensions");
 		let strength = num(d, get(d, ext, "KHR_materials_emissive_strength"), "emissiveStrength", 1.0) as f32;
 		let normal = get(d, m, "normalTexture");
+		let sh = get(d, ext, "KHR_materials_sheen");
+		let sc = get(d, sh, "sheenColorFactor");
 		let occl = get(d, m, "occlusionTexture");
 		let mode = word(d, m, "alphaMode");
+		let am = word(d, get(d, m, "extras"), "amni");
+		let sk = if am == "skin" { 1 } else if am == "eye" { 2 } else if am == "water" { 4 } else { 0 };
 		materials.push(Material {
 			base: float4 { item_num(d, bc, 0, 1.0) as f32, item_num(d, bc, 1, 1.0) as f32, item_num(d, bc, 2, 1.0) as f32, item_num(d, bc, 3, 1.0) as f32 },
 			base_tex: texref(d, get(d, pbr, "baseColorTexture"), tb),
@@ -455,11 +586,78 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 			double_sided: truth(d, m, "doubleSided", false),
 			unlit: get(d, ext, "KHR_materials_unlit") >= 0,
 			name: keep_name(word(d, m, "name")),
+			sheen: float3 { item_num(d, sc, 0, 0.0) as f32, item_num(d, sc, 1, 0.0) as f32, item_num(d, sc, 2, 0.0) as f32 },
+			sheen_rough: num(d, sh, "sheenRoughnessFactor", 0.0) as f32,
+			shading: sk, shade_a: shade_preset(sk, 0), shade_b: shade_preset(sk, 1), shade_c: shade_preset(sk, 2),
 			..
 		});
+		let mx .= materials[materials.len - 1];
+		let xi = get(d, ext, "KHR_materials_ior");
+		let xs = get(d, ext, "KHR_materials_specular");
+		let xc = get(d, ext, "KHR_materials_clearcoat");
+		let xt = get(d, ext, "KHR_materials_transmission");
+		let xv = get(d, ext, "KHR_materials_volume");
+		let xa = get(d, ext, "KHR_materials_anisotropy");
+		let xr = get(d, ext, "KHR_materials_iridescence");
+		mx.ext = mx.ext || sh >= 0 || xi >= 0 || xs >= 0 || xc >= 0 || xt >= 0 || xa >= 0 || xr >= 0;
+		mx.ior = num(d, xi, "ior", 1.5) as f32;
+		mx.spec_f = num(d, xs, "specularFactor", 1.0) as f32;
+		let sc2 = get(d, xs, "specularColorFactor");
+		mx.spec_c = float3 { item_num(d, sc2, 0, 1.0) as f32, item_num(d, sc2, 1, 1.0) as f32, item_num(d, sc2, 2, 1.0) as f32 };
+		mx.spec_tex = texref(d, get(d, xs, "specularTexture"), tb);
+		mx.spec_c_tex = texref(d, get(d, xs, "specularColorTexture"), tb);
+		mx.coat = num(d, xc, "clearcoatFactor", 0.0) as f32;
+		mx.coat_r = num(d, xc, "clearcoatRoughnessFactor", 0.0) as f32;
+		mx.coat_tex = texref(d, get(d, xc, "clearcoatTexture"), tb);
+		mx.coat_r_tex = texref(d, get(d, xc, "clearcoatRoughnessTexture"), tb);
+		let cnt = get(d, xc, "clearcoatNormalTexture");
+		mx.coat_n_tex = texref(d, cnt, tb);
+		mx.coat_ns = num(d, cnt, "scale", 1.0) as f32;
+		mx.trans = num(d, xt, "transmissionFactor", 0.0) as f32;
+		mx.trans_tex = texref(d, get(d, xt, "transmissionTexture"), tb);
+		mx.thick = num(d, xv, "thicknessFactor", 0.0) as f32;
+		mx.thick_tex = texref(d, get(d, xv, "thicknessTexture"), tb);
+		mx.att_d = num(d, xv, "attenuationDistance", 0.0) as f32;
+		let ac = get(d, xv, "attenuationColor");
+		mx.att_c = float3 { item_num(d, ac, 0, 1.0) as f32, item_num(d, ac, 1, 1.0) as f32, item_num(d, ac, 2, 1.0) as f32 };
+		mx.aniso = num(d, xa, "anisotropyStrength", 0.0) as f32;
+		mx.aniso_rot = num(d, xa, "anisotropyRotation", 0.0) as f32;
+		mx.aniso_tex = texref(d, get(d, xa, "anisotropyTexture"), tb);
+		mx.irid = num(d, xr, "iridescenceFactor", 0.0) as f32;
+		mx.irid_ior = num(d, xr, "iridescenceIor", 1.3) as f32;
+		mx.irid_min = num(d, xr, "iridescenceThicknessMinimum", 100.0) as f32;
+		mx.irid_max = num(d, xr, "iridescenceThicknessMaximum", 400.0) as f32;
+		mx.irid_tex = texref(d, get(d, xr, "iridescenceTexture"), tb);
+		mx.irid_t_tex = texref(d, get(d, xr, "iridescenceThicknessTexture"), tb);
+		mx.sheen_c_tex = texref(d, get(d, sh, "sheenColorTexture"), tb);
+		mx.sheen_r_tex = texref(d, get(d, sh, "sheenRoughnessTexture"), tb);
+		if sk == 4 {
+			mx.ext = true;
+			mx.trans = 1.0;
+			mx.ior = 1.33;
+			mx.metallic = 0.0;
+			mx.roughness = num(d, pbr, "roughnessFactor", 0.03) as f32;
+			mx.no_shadow = true;
+		}
+		let hgt = get(d, get(d, m, "extras"), "height");
+		if hgt >= 0 {
+			mx.ext = true;
+			mx.height_tex = texref(d, hgt, tb);
+			mx.height_scale = num(d, hgt, "scale", 0.03) as f32;
+		}
 	}
 	asset.materials.count = materials.len - asset.materials.first;
 
+	let plight_base = plights.len;
+	var plist0 int[>..] = [];
+	children_of(d, get(d, get(d, get(d, root, "extensions"), "KHR_lights_punctual"), "lights"), plist0);
+	for pl in plist0 {
+		let ty = word(d, pl, "type");
+		let col = get(d, pl, "color");
+		let inten = num(d, pl, "intensity", 1.0) as f32;
+		let sp = get(d, pl, "spot");
+		plights.push(PLight { if ty == "directional" { 0 } else if ty == "spot" { 2 } else { 1 }, float3 { item_num(d, col, 0, 1.0) as f32 * inten, item_num(d, col, 1, 1.0) as f32 * inten, item_num(d, col, 2, 1.0) as f32 * inten }, num(d, pl, "range", 0.0) as f32, num(d, sp, "innerConeAngle", 0.0) as f32, num(d, sp, "outerConeAngle", 0.7853981) as f32 });
+	}
 	// meshes
 	asset.meshes.first = meshes.len;
 	children_of(d, get(d, root, "meshes"), list);
@@ -492,6 +690,8 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		};
 		let mi = whole(d, n, "mesh", -1);
 		if mi >= 0 && mi < asset.meshes.count { node.mesh = asset.meshes.first + mi; }
+		let lref = whole(d, get(d, get(d, n, "extensions"), "KHR_lights_punctual"), "light", -1);
+		if lref >= 0 { node.light = plight_base + lref; }
 		let ch = get(d, n, "children");
 		if ch >= 0 {
 			for i in d.nodes[ch].count {
@@ -751,9 +951,18 @@ fn add_texture_file(path const byte[:]) int {
 	if !read_file(path, raw) { return -1; }
 	let im = decode_image(raw[..]);
 	if !im.ok { return -1; }
+	add_image(im, 10497)
+}
+fn add_image(im Image, wrap int) int {
 	images.push(im);
-	textures.push(Texture { images.len - 1, false, false, true, 10497, 10497 });
+	textures.push(Texture { images.len - 1, false, false, true, wrap, wrap });
 	textures.len - 1
+}
+fn add_texture_ktx2(file const byte[:], wrap int) int { add_image(decode_image(file), wrap) }
+fn add_texture_rgba(px const byte[:], w int, h int, wrap int) int {
+	let at = pixels.len;
+	pixels.append(px);
+	add_image(Image { width: w, height: h, pixels: Span { first: at, count: px.len }, ok: true }, wrap)
 }
 
 fn find_node(asset int, name const byte[:]) int {
@@ -788,6 +997,106 @@ fn find_animation(asset int, name const byte[:]) int {
 	let a = assets[asset];
 	for k in a.animations.count { if text_of(animations[a.animations.first + k].name) == name { return a.animations.first + k; } }
 	-1
+}
+
+fn uf_root(up int[>..]&, x int) int {
+	var r = x;
+	while up[r] != r { up[r] = up[up[r]]; r = up[r]; }
+	r
+}
+fn sph_row(i int, x real, y real, z real) real { if i == 0 { 2.0 * x } else if i == 1 { 2.0 * y } else if i == 2 { 2.0 * z } else { 1.0 } }
+fn solve4(m real[>..]&, o int) bool {
+	for c in 4 {
+		var p = c;
+		for r in 4 { if r > c && abs(m[o + r * 4 + c]) > abs(m[o + p * 4 + c]) { p = r; } }
+		if abs(m[o + p * 4 + c]) < 1e-30 { return false; }
+		for j in 5 { let a = if j < 4 { o + c * 4 + j } else { o + 16 + c }; let b = if j < 4 { o + p * 4 + j } else { o + 16 + p }; let t = m[a]; m[a] = m[b]; m[b] = t; }
+		for r in 4 { if r != c { let f = m[o + r * 4 + c] / m[o + c * 4 + c]; for j in 4 { m[o + r * 4 + j] -= f * m[o + c * 4 + j]; } m[o + 16 + r] -= f * m[o + 16 + c]; } }
+	}
+	for c in 4 { m[o + 16 + c] /= m[o + c * 4 + c]; }
+	true
+}
+fn dome_normals(asset int, name const byte[:]) int {
+	let a = assets[asset];
+	var fit = 0;
+	for mi in a.meshes.count {
+		let m = meshes[a.meshes.first + mi];
+		if text_of(m.name) == name {
+			for pk in m.prims.count {
+				let pr = prims[m.prims.first + pk];
+				let n = pr.vcount;
+				var up int[>..];
+				var root int[>..];
+				var err real[>..];
+				var msum real[>..];
+				var acc real[>..];
+				for v in n { up.push(v); err.push(0.0); msum.push(0.0); msum.push(0.0); }
+				for t in pr.icount / 3 { let r0 = uf_root(up, indices[pr.ifirst + t * 3] as int); for e in 2 { let r1 = uf_root(up, indices[pr.ifirst + t * 3 + e + 1] as int); if r1 != r0 { up[r1] = r0; } } }
+				for v in n { root.push(uf_root(up, v)); }
+				for k in n * 24 { acc.push(0.0); }
+				for pass in 2 {
+					for k in n * 24 { acc[k] = 0.0; }
+					for v in n {
+						let o = (pr.vfirst + v) * VERTEX_FLOATS + AT_POS;
+						let x = verts[o] as real;
+						let y = verts[o + 1] as real;
+						let z = verts[o + 2] as real;
+						let b = root[v] * 24;
+						let mr = msum[root[v] * 2] / max(msum[root[v] * 2 + 1], 1.0);
+						if pass == 0 || err[v] <= 2.0 * mr + 1e-9 {
+							let q = x * x + y * y + z * z;
+							for i in 4 { let ri = sph_row(i, x, y, z); acc[b + 16 + i] += ri * q; for j in 4 { acc[b + i * 4 + j] += ri * sph_row(j, x, y, z); } }
+							acc[b + 21] += 1.0;
+						}
+					}
+					for v in n { if root[v] == v { acc[v * 24 + 22] = if acc[v * 24 + 21] >= 10.0 && solve4(acc, v * 24) { 1.0 } else { 0.0 }; msum[v * 2] = 0.0; msum[v * 2 + 1] = 0.0; } }
+					if pass == 1 { for v in n { let b = root[v] * 24; if acc[b + 22] > 0.5 { let o = (pr.vfirst + v) * VERTEX_FLOATS; acc[b + 23] += verts[o + AT_NRM] as real * (verts[o + AT_POS] as real - acc[b + 16]) + verts[o + AT_NRM + 1] as real * (verts[o + AT_POS + 1] as real - acc[b + 17]) + verts[o + AT_NRM + 2] as real * (verts[o + AT_POS + 2] as real - acc[b + 18]); } } for v in n { if root[v] == v && acc[v * 24 + 23] <= 0.0 { acc[v * 24 + 22] = 0.0; } } }
+					for v in n {
+						let b = root[v] * 24;
+						if acc[b + 22] > 0.5 {
+							let o = (pr.vfirst + v) * VERTEX_FLOATS;
+							let dx = verts[o + AT_POS] as real - acc[b + 16];
+							let dy = verts[o + AT_POS + 1] as real - acc[b + 17];
+							let dz = verts[o + AT_POS + 2] as real - acc[b + 18];
+							let d = sqrt(dx * dx + dy * dy + dz * dz);
+							let rad = sqrt(max(acc[b + 19] + acc[b + 16] * acc[b + 16] + acc[b + 17] * acc[b + 17] + acc[b + 18] * acc[b + 18], 0.0));
+							err[v] = abs(d - rad);
+							msum[root[v] * 2] += err[v];
+							msum[root[v] * 2 + 1] += 1.0;
+							if pass == 1 && d > 1e-12 {
+								let nx = dx / d;
+								let ny = dy / d;
+								let nz = dz / d;
+								verts[o + AT_NRM] = nx as f32;
+								verts[o + AT_NRM + 1] = ny as f32;
+								verts[o + AT_NRM + 2] = nz as f32;
+								if pr.tangents {
+									let tn = verts[o + AT_TAN] as real * nx + verts[o + AT_TAN + 1] as real * ny + verts[o + AT_TAN + 2] as real * nz;
+									let tx = verts[o + AT_TAN] as real - nx * tn;
+									let ty = verts[o + AT_TAN + 1] as real - ny * tn;
+									let tz = verts[o + AT_TAN + 2] as real - nz * tn;
+									let tl = max(sqrt(tx * tx + ty * ty + tz * tz), 1e-12);
+									verts[o + AT_TAN] = (tx / tl) as f32;
+									verts[o + AT_TAN + 1] = (ty / tl) as f32;
+									verts[o + AT_TAN + 2] = (tz / tl) as f32;
+								}
+							}
+						}
+					}
+				}
+				for v in n { if root[v] == v && acc[v * 24 + 22] > 0.5 { fit += 1; } }
+			}
+		}
+	}
+	fit
+}
+fn shade_preset(kind int, part int) float4 {
+	let k = kind * 3 + part;
+	if k == 12 { return float4 { 0.45, 0.09, 0.07, 0.0 }; }
+	if k == 13 { return float4 { 1.1, 0.062, 1.0, 0.7 }; }
+	if k == 14 { return float4 { 0.012, 0.07, 0.08, 0.0 }; }
+	if k == 3 { float4 { 0.0021, 0.0008, 0.00045, 1.2 } } else if k == 4 { float4 { 0.35, 0.1, 0.3, 1.7 } } else if k == 5 { float4 { 0.04, 0.0, 0.0, 0.55 } }
+	else if k == 6 { float4 { 0.705, 0.298, 0.293, 0.703 } } else if k == 7 { float4 { 0.0, 0.0, 1.0, 0.035 } } else if k == 8 { float4 { 0.138, 0.0024, 0.55, 0.35 } } else { float4 { 0.0, 0.0, 0.0, 0.0 } }
 }
 
 fn default_material() Material {

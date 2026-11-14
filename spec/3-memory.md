@@ -153,7 +153,7 @@ Runtime failures are reported as `helium runtime error: <message> (<file>:<line>
 **MEM-16 `push` never moves existing elements of a growable array, grow-only or grow-shrink.** (C, corrected)
 - Rule: `push` on `T[>..<]` does not invalidate a live reference or slice into it. The element keeps its address, as for `T[>..]` (MEM-14).
 - Invariant: element addresses are stable across growth in both growable forms.
-- Enforced at: runtime. The array reserves address space with `mmap(..., MAP_NORESERVE)` (`hc/hrt.h:115`) and grows within it. Growth past the reservation aborts with "array grew past its <N> MiB reserve (raise with -DGS_STACK_RESERVE=bytes) (push)", 2048 MiB by default (`hc/lib/rt.he:59`).
+- Enforced at: runtime. The array reserves address space with `mmap(..., MAP_NORESERVE)` (`hc/hrt.h:115`) and grows within it. Growth past the reservation aborts with "array grew past its 2048 MiB region; build with -DGS_STACK_RESERVE=<bytes> to raise it (push)" (2 GiB by default) (`hc/lib/rt.he:59`).
 - Evidence (skeptic): `p27_addr_stable_gs.amni`: `var r .= xs[0]` on `int[>..<]`, then 1,000,000 pushes, then `var q .= xs[0]`. `r .== q` prints `true`. `p27b_addr_stable_go.amni` gives `true` for `int[>..]`. An address that moved would make `r .== q` false.
 - Evidence: `s17_ref_grow_shrink_push.amni` (one push with a live reference) is accepted and reads `1`. `t01_grow_shrink_realloc_ref.amni` (100,000 pushes, then a write through the reference) prints `42 42`.
 - Caveat: the evidence covers 1,000,000 pushes (several capacity doublings) in one run per form. The mmap path was read, not traced end to end.
@@ -169,7 +169,7 @@ Runtime failures are reported as `helium runtime error: <message> (<file>:<line>
 - Result: hc accepts mutation of the iterated array inside the loop.
 - Evidence: `s15_iter_pop.amni`: `for x in xs { xs.pop(); }` on `T[>..<]` is accepted and prints `[1]`. No crash was observed.
 - Evidence (skeptic): `p32_for_clear.amni`: `for x in xs { xs.clear(); }` on `T[>..<]` is accepted and prints `0`.
-- Evidence: `r14_iter_push.amni` and `s08_for_ref_push.amni`: `push` inside `for x in xs` / `for &x in xs` is accepted. The loop does not terminate; the program aborts with `helium runtime error: array grew past its 2048 MiB reserve (raise with -DGS_STACK_RESERVE=bytes) (push)` and exits 1. This is a bounded failure, not memory corruption, but it is a liveness hazard the rule should catch.
+- Evidence: `r14_iter_push.amni` and `s08_for_ref_push.amni`: `push` inside `for x in xs` / `for &x in xs` is accepted. The loop does not terminate; the program aborts with `helium runtime error: array grew past its 2048 MiB region; build with -DGS_STACK_RESERVE=<bytes> to raise it (push)` and exits 1. This is a bounded failure, not memory corruption, but it is a liveness hazard the rule should catch.
 
 ## 3.5 Bounds checks and runtime limits
 
@@ -322,7 +322,7 @@ Gaps are ordered by severity. G4 was withdrawn in the skeptic pass; the number i
 | G3 | `qput` accepts reference-bearing values and slices. A thread reads through a dangling reference, or crashes. | MEM-31 | `s06_qput_uaf.amni`, `r22_thread_ref_queue.amni`, `r23_thread_slice_queue.amni` (exit 139) | Critical: use-after-free across threads |
 | G4 | WITHDRAWN. A `let` local passed to a writable reference parameter is mutated. This matches the text of `HELIUM.md` (contents of `let` stay writable). Not a gap; see MEM-10 and the open question there. | MEM-10 | `s11_let_to_writer.amni`, `p19_let_to_slice_writer.amni` | Not a gap |
 | G5 | Growable local live across a recursive call is accepted, and each live growable reserves address space. | MEM-28 | `r25_rec_growable.amni`, `p48c_rec_growable_100k.amni` (exit 1: `out of address space`), `p48e_rec_growable_30k.amni` (ok) | High at depth: runtime failure at 100,000 frames |
-| G6 | Mutation of an array inside a `for` loop over it (`pop`, `clear`, `push`) is accepted. Push leads to a reserve abort (2 GiB by default). | MEM-18 | `s15_iter_pop.amni`, `p32_for_clear.amni`, `r14_iter_push.amni`, `s08_for_ref_push.amni` | Medium: liveness; not corruption |
+| G6 | Mutation of an array inside a `for` loop over it (`pop`, `clear`, `push`) is accepted. Push leads to a region-limit abort (2 GiB by default). | MEM-18 | `s15_iter_pop.amni`, `p32_for_clear.amni`, `r14_iter_push.amni`, `s08_for_ref_push.amni` | Medium: liveness; not corruption |
 | G7 | A literal argument is accepted for a writable reference parameter. | MEM-26 | `r24_pass_const_to_writer.amni` | Low: documentation mismatch |
 | G8 | Diagnostic wording misleads or is internal. Scope escape says "<temporary>" for a block-scoped array (`s02`). Reversed slice reports the wrong index (`t04`). A global reference variable is rejected with "native backend: this branch reference natively (kind 1, resolved 0)" (`t14`, from `hc/lower.he:182`). | MEM-6, MEM-19, MEM-32 | `s02_scope_escape_slice.amni`, `t04_slice_reversed.amni`, `t14_global_ref_store.amni` | Low: rejected or caught, message is wrong |
 | G9 | `.he` lifetime checks are off unless `HC_HEPROV=1` is set. | MEM-33 | `h02_he_ret_growable.he` | High for `.he` users: all `.he` safety rules are opt-in |

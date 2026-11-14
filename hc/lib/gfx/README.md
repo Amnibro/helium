@@ -16,12 +16,16 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `linalg` | vectors, quaternions, TRS compose, 4x4 inverse, look-at / perspective / ortho helpers |
 | `zlib` | inflate (stored, fixed and dynamic Huffman blocks) |
 | `codec_png` | PNG decode: all colour types and bit depths, palette + tRNS, Adam7 |
-| `codec_jpeg` | baseline JPEG decode: Huffman, 4:4:4 / 4:2:2 / 4:2:0, restart markers |
+| `codec_jpeg` | baseline and progressive JPEG decode: Huffman, 4:4:4 / 4:2:2 / 4:2:0, restart markers |
+| `codec_hdr` | Radiance `.hdr` decode (flat and run-length scanlines) to RGBA float and half float |
+| `envmap` | image and physical-sky environment lighting: equirect to cube, GGX prefilter, Hillaire 2020 multi-scatter sky, cloud layer, `sun_color` |
+| `clusters` | clustered forward light grid, 16 x 9 x 24 cells, with the light and cell records the surface shader reads |
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
-| `scene3d` (`s3d::`) | the frame: cascaded sun shadows, SSAO, MSAA forward shading with point lights and an analytic sky ambient, bloom, tone curve |
+| `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
 | `sparks` | GPU particles: compute-shader integration with drag, gravity and a bouncing ground plane; additive camera-facing quads |
+| `fx` | GPU particles with emitters, curl noise, depth collision, sorting, soft fades, streaks, and rain and snow that follow the camera and stay out from under roofs |
 | `sdf_font` | signed-distance-field text (glyphs generated at start-up), outline and weight |
 
 ## Using it
@@ -41,12 +45,143 @@ s3d::render(target);                 // RGBA8 target; s3d::hdr_target() is the l
 The scene is plain data (`view`, `sun`, `sky`, `look`, `lights`, `items`) that the
 caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
 
+`s3d::render` records a frame into the current command buffer. The GPU starts on it at
+the next `gfx::frame()`, `gfx::flush()`, `gfx::submit()` or pixel readback. A windowed
+app calls `gfx::frame()` once per frame. A headless loop that renders many frames calls
+`gfx::flush()` after each `s3d::render`, so each frame is its own short GPU job: frames
+recorded back to back are one job, and a driver resets a job that runs past its time
+limit (2 s by default in current Linux amdgpu).
+
+### WebGPU (WGSL)
+
+hc's shader compiler writes WGSL beside SPIR-V, MSL and HLSL, so these shaders can run on
+WebGPU in the browser. `hc --wgsl shaders/surface.frag out.wgsl` prints one shader and
+`hc --blob file out` writes the blob `embed_shader` embeds. A shader WGSL cannot express
+still builds natively; its blob carries empty WGSL and `hc --wgsl` names the reason.
+`node tools/hc/wgsltest.mjs build/hcn` has headless Chrome compile every shader here and in
+`hc/test/wgsl` and build each pipeline this library makes from them, with the layout below.
+
+Bindings follow SDL_GPU's sets, so one GPU pipeline layout serves every backend:
+
+* `@group` is the GLSL `set`. Vertex: 0 samplers, then storage textures, then storage
+  buffers; 1 uniform blocks. Fragment: 2 and 3 the same way. Compute: 0 samplers, read-only
+  storage textures, read-only storage buffers; 1 read-write storage textures, then
+  read-write storage buffers; 2 uniform blocks. A render pipeline has four bind groups, the
+  vertex shader's 0 and 1 and the fragment shader's 2 and 3.
+* `@binding` is twice the GLSL binding. A `sampler2D` at binding b is a texture at 2b and
+  its sampler at 2b + 1; every other resource is at 2b.
+* Uniform blocks are `var<uniform>` structs named `cf_ub_<Block>` (std140 matches WGSL's
+  uniform layout for the vec4/mat4 members gfx uses). Buffer blocks are `var<storage, read>`
+  when `readonly`, else `var<storage, read_write>`, of `array<T>`, or `array<atomic<T>>`
+  when the shader calls atomics on it. Storage images are `read`, `write` or `read_write`
+  by what the shader does with them.
+* The entry point is `main`. Vertex inputs keep their locations; vertex outputs and
+  fragment inputs keep theirs, with `@interpolate(flat)` on `flat` and integer ones.
+
+Blob version 2 (all little-endian): `GSHD`; u16 version; u8 stage (0 vertex, 1 fragment,
+2 compute); u8 vertex input count; u32 x3 workgroup size; u16 x6 samplers, read-only and
+read-write storage textures, read-only and read-write storage buffers, uniform blocks;
+u32 offset and size of SPIR-V, MSL, HLSL and WGSL (each text is followed by a 0 byte);
+u16 WGSL binding count, u16 0; then at byte 68 a u32 std140 size per uniform block, a
+(location, type) byte pair per vertex input, and four bytes per WGSL binding: group,
+binding, kind, info. Kinds: 1 uniform buffer (info: its uniform slot), 2 read-only and
+3 read-write storage buffer, 4 float, 5 uint and 6 depth texture (info: 0 2d, 1 cube, 2 3d,
+3 2d-array), 7 filtering and 8 comparison sampler, 9 write-only, 10 read-only and
+11 read-write storage texture (info: 1 rgba32float, 2 rgba16float, 3 r32float, 4 rgba8unorm,
+6 rg32float, 7 rg16float, 9 r16float, 32 rgba8uint, 33 r32uint). Vertex input types: 3
+float, 6/9/12 vec2/3/4, 1 int and 4/7/10 ivec2/3/4, 2 uint and 5/8/11 uvec2/3/4.
+
+What WGSL output rejects (a WGSL-only error): overloaded functions, 64-bit integers, mat2
+in a uniform block, matrix or bool stage inputs and outputs, `inverse()`, the comma
+operator, an assignment inside an expression, a `++`/`--` in a condition or a postfix one in a returned
+value, a `for` that declares several variables, a `switch` case that falls through,
+sampling a `usampler2D` (use `texelFetch`), atomics on struct fields or vector components,
+and image parameters. Two things behave differently: `c ? a : b` evaluates both sides
+(WGSL `select`), and `atomicCompSwap` is `atomicCompareExchangeWeak`, which may fail
+spuriously, so call it in a retry loop. Derivatives in non-uniform control flow are
+allowed (`diagnostic(off, derivative_uniformity)`), as GLSL allows them.
+
+### In the browser (WebGPU)
+
+`hc build --web prog.amni -o app.wasm` writes `helium.js` from `hc/web/web.js` followed by
+`hc/web/gpu.js`, which implements the SDL3 GPU functions `gfx.he` imports on WebGPU, so a
+gfx program runs in the browser unchanged. When the module imports `SDL_CreateGPUDevice`,
+`start()` requests a high-performance adapter and a device (with its full limits and
+`float32-filterable`, `float32-blendable`, `rg11b10ufloat-renderable` and
+`depth32float-stencil8` when offered) before it instantiates the module.
+
+* Shaders: `SDL_GetGPUShaderFormats` answers 64, a format bit SDL leaves unused, and
+  `gfx.he` then hands `SDL_CreateGPUShader` the whole version 2 blob. The page takes the
+  WGSL text and the binding table from it and builds each pipeline's four bind group
+  layouts (vertex 0 and 1, fragment 2 and 3; compute 0, 1 and 2). SDL slots map to
+  bindings by the rule above: in a resource group, binding / 2 below the sampler count is
+  a sampler slot, then storage texture slots, then storage buffer slots.
+* Uniforms: `SDL_Push*UniformData` copies into 1 MiB uniform buffers (256-byte steps)
+  owned by the command buffer, bound with dynamic offsets and written with
+  `queue.writeBuffer` just before the submit, so every draw sees what was pushed before it.
+* Copies: uploads go through a staging buffer copied inside the command encoder (rows
+  padded to 256 bytes for textures), so they keep their order against earlier passes in
+  the same command buffer. Transfer buffers live in wasm memory (`mmap`).
+* MSAA: WebGPU has 1 and 4 samples only; 2 and 8 become 4. Blits, `generate_mips` and the
+  swapchain blit are a small render pipeline per target format (3D and integer textures
+  get no generated mips). Depth bias is rounded to an integer, as WebGPU takes it.
+* Window: `gfx::open` draws into `<canvas data-helium>` (or `start({canvas})`), or a new
+  canvas of the asked size in CSS pixels. Pointer, wheel, key, focus and touch events
+  become SDL events; key events count only when the canvas, `body` or `html` has them.
+  Text input, relative mouse (pointer lock), cursor hiding, fullscreen and a clipboard
+  mirror (written to `navigator.clipboard`, read from paste events) work; gamepads,
+  `load_texture` by path (decode with `codec_png`) and other present modes do not.
+* Files: `start({files: {path: bytes}, args, env})` gives the program a read-write
+  in-memory file system and its argv/environment, so `gltf::load(path)` and `os::arg`
+  work; `save_png` and `write_file` land in `rt.files`.
+
+Waiting. The page cannot block, so gfx waits use JSPI (`WebAssembly.Suspending`,
+Chrome 137+): `start()` enters `he_start`, `he_frame` and `he_event` through
+`WebAssembly.promising`, and `SDL_WaitForGPUFences`, `SDL_WaitForGPUIdle` and
+`SDL_WaitAndAcquireGPUSwapchainTexture` suspend the program instead. So `read_texture`,
+`read_buffer`, `grab`, `save_png` and `flush` return real data, and a native-style
+`while gfx::frame() { ... }` loop runs one frame per `requestAnimationFrame` (headless
+frames wait for the GPU, as natively). Programs that use `web::frames` and an exported
+`he_frame` work too; there the swapchain image is taken at once. While the program is
+suspended no other export runs (events queue), and `rt.done` resolves when `main`
+returns. `rt.call` on any other export may not wait. Without JSPI (or with
+`start({jspi: false})`) nothing blocks: fences report done, readback copies whatever
+download has finished, which for gfx's read-right-after-submit calls is zeros, and a
+blocking frame loop would hang the page, so such a browser needs `he_frame`.
+
+`flock ~/ai/.rv/gpu.lock node tools/hc/webgputest.mjs build/hcn` (ci.sh with
+`HELIUM_WEBGPU_TEST=1`) builds `hc/test/webgpu/scene_frame.amni` natively and for the web
+and renders the same frame on Vulkan and in headless Chrome: `scene.glb` (skinned and
+textured, a floor, sun shadows, SSAO, bloom, TAA off) and Amni-Companion's `holo.glb`.
+It needs PSNR > 30 dB (an RMS error of 8 levels: a missing shadow, texture or light, or a
+wrong binding, costs far more, while another shader compiler's rounding or MSAA coverage
+would stay well above it) and no WebGPU validation error. It also runs
+`hc/test/webgpu/window_frame.amni` (a blocking frame loop in a canvas, an injected key, a
+page keydown and click, and the canvas contents against `screen()`) and
+`hc/test/webgpu/compute_check.amni` (read-only and read-write storage buffers, a uniform
+block and an atomic in a compute pass, read back), which must print the same natively.
+Images land in `build/webgputest/`. On an RX 9060 XT (RADV, Chrome 154 on Dawn/Vulkan) the
+scene and the canvas match bit for bit (PSNR infinite).
+
+Each grow-only array owns a region that never moves. On wasm32 the first 2 GiB of address
+space is cut into 32 MiB regions (`-DGS_STACK_RESERVE`) and the rest into at most 4 MiB
+ones, and a scene3d program holds about 125 arrays, so an array first touched late gets a
+small region. `holo.glb` runs (bit for bit) because `scene_frame` sets
+`gltf::lazy_pixels`: images stay coded, `gltf::need_pixels(i)` decodes one at a time into
+one shared buffer, the decoders keep their scratch (`codec_png::idat`/`raw`,
+`codec_jpeg::planes`) across calls, and loading warms them on the largest PNG and JPEG
+while 32 MiB regions are left. The scene with GI and ray traced shadows on runs too
+(bit for bit): `gfx::buffer` zero-fills through the mapped transfer buffer in 1 MiB
+steps instead of one buffer-sized array. Region layout also sets the
+page's wasm memory (about 2.3 GiB for holo), so phones need a smarter web region policy.
+
 ### Motion vectors, TAA and upscaling
 
 When temporal runs (or `s3d::motion_vectors = true`), the colour pass writes a
 second target, `s3d::motion_target()` (RGBA16F, render size): xy is the screen
 motion since last frame in uv units (this frame's uv minus last frame's, y down), z
-the view depth, w coverage. Skinned meshes use last frame's joint palette; the sky
+the view depth, w coverage. Skinned meshes use last frame's joint palette and morphed
+ones last frame's weights; the sky
 gives camera-rotation motion only. With both off the motion targets are neither
 allocated nor drawn (they cost about 33 bytes a pixel: a 4x MSAA and a resolved
 RGBA16F image).
@@ -75,6 +210,1252 @@ Bloom and the tone curve run at the output size after it. Shadow cascades are fi
 to the unjittered view (`setup_cascades` uses only `view` and the render size), so
 they do not move with the jitter; the look+taa test checks that.
 
+### Soft, contact and local-light shadows (E3)
+
+All off by default. With them off the frame is the earlier one except that the sun's
+normal offset now uses the side-flipped normal on double-sided back faces (67 of 786,432
+pixels differ in a 768x1024 Holo render); both goldens pass unchanged.
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `sun.angle` | 0 | angular radius of the key light in radians. > 0 turns on PCSS: a 20-tap blocker search in the raw cascade depth, then a 28-tap comparison filter of radius (receiver - blocker) x tan(angle), so penumbras widen with distance from the caster and harden at contact. 0.02-0.05 is a hard studio spot, 0.07 a medium softbox, 0.17-0.25 a large soft key. |
+| `sun.reach` | 1.0 | how far above a receiver (metres) blockers are searched; caps the widest penumbra at reach x tan(angle). |
+| `sun.fit` | false | fits a cascade to the bounding sphere of the shadow casters (non-blended, `no_shadow` off) when it is smaller than the view slice's sphere; that cascade then runs to `shadow_far` and the later ones are not drawn. A single character keeps about 1.3 mm texels at 2048^2 at any camera distance. |
+| `sun.contact` | 0 | screen-space contact-shadow ray length in metres (0.03-0.07 for faces and clothing). |
+| `contact_steps`, `contact_thick` | 12, 0.02 | ray steps (quadratically spaced) and the depth a hit may be behind (metres). |
+| `Light.kind` 1, `dir`, `cone`, `edge` | point, -, 0.5, 0.2 | spot light: outer half-angle in radians and the fraction of it that fades (`add_spot`). |
+| `Light.shadows`, `soft` | false, 1.5 | a shadowed spot takes one layer of the local shadow atlas and a point six; `soft` is the filter radius in texels. |
+| `local_shadow_size` | 1024 | atlas layer size (12 layers, made on first use). |
+
+Receiver-plane depth from the geometric normal keeps wide kernels on sloped receivers
+free of acne without a large constant bias (the cause of peter-panning at the chin,
+collar, belt and hem); a cascade's comparison depth is clamped below its far plane.
+Kernels rotate per pixel only when TAA runs; without TAA the tap pattern is fixed.
+Contact shadows march the prepass's 32-bit view depth, so they are only as good as what
+the prepass draws: blended surfaces and the strand hair (drawn outside scene3d) cast none.
+
+`studio_soft(bg, key)` sets a soft grey studio in one call: a key "sun" from the front,
+upper right (angular radius 0.22, PCSS, fitted cascades, 4 cm contact rays, rgb = key), a
+low fill from the front left, a flat sky of colour `bg` (darker ground) as the wrap/dome
+light and background, ACES, no bloom. `studio_soft(float3 { 0.8, 0.81, 0.84 }, 2.0)` gives
+the light-grey OpenMOSS concept look; put the character on a shadow catcher (a blended,
+`no_shadow` plane with `catcher` > 0) so the floor stays the background colour.
+
+E3 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at f73abda,
+`results/2026-11-06_rx9060xt_radv_f73abda_e3.txt`): `gfxtest.sh` ok, goldens unchanged
+(spheres 52.83 dB, shipped look 56.02 dB, the same as the last recorded run 44a84bd);
+`webgputest.mjs` 0 failures (scene_e3 bit for bit, holo_e3 85.67 dB). GPU time at
+1920x1080 (`look_bench`, Holo under the Amni-Companion studio light, 30 warmup + 200
+frames, median; bar: E3 total <= 1.5 ms):
+
+| camera | none | + PCSS + fit | + contact | + shadowed rim and fill spots | E3 total |
+| --- | --- | --- | --- | --- | --- |
+| face close-up | 3.054 ms | 3.819 | 3.912 | 4.190 | +1.136 ms |
+| full body | 1.717 ms | 2.410 | 2.564 | 2.935 | +1.217 ms |
+
+Seen in the renders: PCSS reproduces the hard 8192^2 reference's shadow shapes (hair over
+the face, nose, chin on the neck, skirt hem on the thighs) with penumbras that widen with
+distance from the caster; the coarse full-body cascade's blotchy hem shadow becomes a
+clean soft one with `fit`. Contact rays mostly add the lash line on the upper lids, the
+nostril and lip creases and self-shadowing between hair cards. Without TAA a wide key
+(0.17 rad and up) shows faint fixed-pattern banding inside large penumbras.
+
+### Virtual shadow maps (E3)
+
+`sun.virt = true` takes the sun's shadow from a clipmap of cached pages instead of the
+cascades. Off by default; with it off the frame is unchanged. The cascades are still
+drawn while it is on.
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `sun.virt` | false | turns the virtual lookup on (needs `sun.shadows`). |
+| `sun.texel` | 0.0005 | size of a level 0 shadow texel in metres. Level k doubles it k times; 12 levels reach 1.02 m. |
+| `sun.sharp` | 1.0 | shadow texels per screen pixel. 0.5 picks one level coarser everywhere and needs about a quarter of the pages. |
+| `sun.pool` | 8192 | side of the page atlas in texels (a DEPTH32F texture, 256 MiB at 8192, made on first use); 128 x 128 pages, so 4096 pages at the default. |
+
+How it works:
+
+* Each level is a 64 x 64 window of pages around the eye in light space (4.1 m wide at
+  level 0, 8.4 km at level 11). A pixel at view depth d uses level
+  `floor(log2(d * pixel angle / (texel * sharp)) + 0.5)`, about one shadow texel per
+  screen pixel at every distance up to `shadow_far`.
+* Every frame the visible draws mark the pages their boxes cover inside each level's
+  depth range. A marked page with casters over it takes a slot in the atlas. A slot is
+  keyed by level and page position, so it survives camera motion, and it is redrawn only
+  when the casters over it change: each page folds the transform, level of detail and
+  instance-set revision of every caster box that overlaps it into a hash. Skinned,
+  morphed and swaying casters redraw their pages every frame.
+* The page table is an int storage buffer (fragment storage slot 7): 0 = not marked
+  (the lookup tries the next coarser level), -1 = marked with no casters (lit),
+  otherwise slot + 1. `sun_vsm()` in `surface.frag` does the lookup with a 3 x 3
+  bilinear-weighted filter; with `sun.angle` > 0 it runs the same blocker search and
+  variable-radius filter as the cascades (32 + 28 taps), and marking grows by the widest
+  penumbra.
+* `vsm_stats()` returns the pages drawn this frame, the pages in use and the pages that
+  did not fit in the pool.
+
+Limits: casters more than 1024 m from the eye along the sun direction are not drawn into
+pages; a page that does not fit in the pool is lit (the third `vsm_stats()` value counts
+them: raise `pool` or lower `sharp`); `sun.soft`, `sun.fit` and `map_size` shape the
+cascades only.
+
+Measured by the `vsm` check in `gfx_smoke` (1280 x 720, RX 9060 XT, RADV):
+
+| check | result |
+| --- | --- |
+| shadow mask against 4096 cascades over 24 m | IoU 0.988 (0.013 with a blank page table) |
+| still scene, third frame | 0 pages drawn, 728 in use |
+| one box moved | 17 of 728 pages redrawn, IoU 0.989 |
+| camera moved | IoU 0.984, 0 pages drawn on the third frame |
+| half-lit edge pixels seen from 0.25 m above the floor, against 2048 cascades over 60 m | 2,227 against 11,303 |
+| soft sun, `angle` 0.07: half-lit pixels against the cascade filter | 4,277 against 4,271 |
+
+### Post effects (E8)
+
+All off by default; with them off the frame is unchanged (both goldens pass as before).
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `look.auto_exposure` | false | histogram auto-exposure: a 128-bin log2-luminance histogram of the resolved HDR image (every second pixel, `ae_log_min`..`ae_log_max` = -10..10 EV, centre-weighted by `look.ae_center` = 3), the mean between the `ae_low` (0.5) and `ae_high` (0.95) fractions of the pixel count, exposure = `ae_key` (0.18) / 2^mean, clamped to `ae_min`..`ae_max` (-4..4 EV). `look.exposure` stays as compensation on top. |
+| `look.ae_up`, `look.ae_down`, `exposure_dt` | 3, 1, 1/60 | adaptation speeds (1/s) toward brighter and darker targets; the first frame, a `temporal_reset` and re-enabling snap. `exposure_now()` reads the value back. |
+| `look.lut` | 0 | mix of a 3D grading table applied after the tone curve, on sRGB-encoded values. `set_lut(rgba, n)`, `lut_strip(rgba, w, h)` (n^2 x n strip, blue picks the slice) and `lut_cube(text)` (.cube) load one; init makes a 17^3 identity. |
+| `dof_aperture`, `dof_focus` | 0, 10 | thin-lens depth of field: lens radius and focus distance in scene units (0.004 is about a 50 mm f/6 lens at character scale). `dof_max_px` (24) caps the circle, `dof_samples` (48) the gather; small circles use fewer taps (at least 16, about 1.5 r^2). |
+| `motion_blur`, `mb_samples` | 0, 15 | shutter fraction (0.5 = 180 degrees) and gather taps; needs the motion target, which turns on with it. |
+
+Exposure runs as two compute passes between bloom and grading; the LUT is a 3D texture at
+set 2 binding 2 of `post.frag` (the exposure value is the storage buffer at binding 3).
+Depth of field first packs the view depth into the colour target's alpha
+(`dof_pack.frag`), so each gather tap is one fetch instead of two.
+
+E8 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 995ee62, the same code
+as this branch's head, `results/2026-11-06_rx9060xt_radv_995ee62_e8.txt`): `gfxtest.sh` ok,
+goldens unchanged (52.83 / 56.02 dB), MB1 0.129, MB2 5.7e-4, MB3b 0.226, D1 0.347, D2
+0.18 %; `webgputest.mjs` 0 failures (scene_e8 and holo_e8 bit for bit with exposure, the
+identity LUT, depth of field and motion blur on). GPU time added at 1920x1080 by each
+effect alone (`look_bench`, Holo, 200 frames, median; bar 1.0 ms each):
+
+| camera | none | auto-exposure | LUT | depth of field | motion blur |
+| --- | --- | --- | --- | --- | --- |
+| face close-up | 3.146 ms | -0.02 | +0.01 | +0.85 | +0.96 |
+| full body | 1.717 ms | +0.03 | +0.01 | +0.75 | +0.76 |
+
+Depth of field there is a 4 mm lens radius focused at the camera target (the face is
+about 12 cm in front of it, so it is soft too; a 15 px background circle), motion blur a
+180 degree shutter with the camera orbiting 0.03 rad a frame. Auto-exposure measured 0.78
+(face) and 1.54 (full body) under the studio light, and 0.21 / 0.58 with every light 4x
+brighter (the sky is not scaled, so full body moves less than 4x).
+
+### Specular occlusion and screen-space reflections (E2)
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `spec_occlusion` | true | occludes ambient specular (sky, probe GI) per lobe. With GTAO bent normals (`ao_mode = 1`, or GI with `gi_ao`) a cone/cone test: the visibility cone around the bent normal (half-angle acos sqrt(1 - visibility)) against the lobe's reflection cone (half-angle 2 atan(alpha), the median of GGX's half-vector spread, doubled), their overlap by the smoothstep approximation of Oat and Sander 2007, measured as projected solid angle (sin^2 of the half-angle, the measure GTAO's cosine-weighted visibility uses, so a fully rough lobe gets the AO itself), over the lobe cone's. Without bent normals, Lagarde and de Rousiers 2014's fit `pow(n.v + ao, exp2(-16 alpha - 1)) - 1 + ao` on the screen AO. Either is multiplied by the same fit on the material occlusion texture and cavity and by a fade of reflection vectors below the geometric normal's horizon (`(1 + r.n_g)^2`), which keeps normal-mapped creases from reflecting the sky. Diffuse ambient keeps the plain AO product. Off: the earlier frame (ambient specular times AO). |
+| `ssr_on` | false | screen-space reflections, below. |
+| `ssr_steps`, `ssr_thickness`, `ssr_max_dist` | 48, 0.05, 3.0 | trace iterations, how far (scene units) a hit may lie behind the depth buffer, and the longest ray. |
+| `ssr_rough`, `ssr_edge` | 0.5, 0.07 | roughness at which the reflection has faded to the probe/sky value (it starts fading at 0.7 x that), and the screen-edge fade as a fraction of the screen. |
+
+The ambient term knows the material models: skin (E7) gets both specular lobes (the second at `shade_b.w` times the roughness, weight `shade_b.z`) and eyes a cornea lobe on the geometric normal (F0 0.02, roughness `shade_b.w`, weight `shade_b.z`), each with its own specular occlusion and reflection fetch, as the direct lights already had.
+
+Reflections: after the prepass a 7-level pyramid of the largest 1 / view depth per cell is built from `lin_depth` (`hiz.frag`, one R32F texture per level), then `ssr_trace.frag` reflects the view ray about the prepass normal and walks it in screen space with 1 / depth interpolated linearly: a cell whose nearest depth is behind the ray segment is skipped and the walk goes one level coarser, otherwise it advances to where the ray reaches that depth and goes one level finer; at full resolution a hit needs the ray within `ssr_thickness` behind the surface. A hit is faded by the screen edge, the ray length and how squarely it meets the hit surface (back faces count 0), and reprojected to last frame by the motion target (when drawn) or the camera matrices. The surface shader blends each lobe toward last frame's colour at that point with that confidence times its roughness fade, fetched from a mip chain of last frame's resolved image (`ssr_copy.frag` + `generate_mips` after the temporal pass, so with TAA it is the history) at the level of the reflection cone's footprint (2 alpha x hit distance / hit depth, in pixels), so rough reflections blur instead of getting noisy. Blended surfaces get no reflections (the prepass does not draw them). The first frame after `ssr_on`, a resize or a `temporal_reset` uses the probe/sky value only. `debug_view` 9 shows the specular occlusion of the main lobe, 10 the reflection confidence (red) and hit distance / depth (green).
+
+Local reflection probes: indoors the sky is the wrong thing to reflect, so a probe captures the room around it and stands in for the sky inside its box.
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `add_probe(pos, lo, hi, fade)` | none | adds a probe captured from `pos` and box-projected onto the box `lo`..`hi` (put the box on the room's inner walls). Full weight inside the box, fading out over `fade` scene units outside it. Up to 8; where boxes overlap the smaller one wins and the larger fills in. |
+| `clear_probes()`, `recapture()` | | drop every probe; capture again after geometry or lights move. Probes recapture by themselves when the sky changes. |
+| `probe_res` | 256 | capture size per cube face. |
+| `probe_bounces` | 3 | capture passes; each is shaded with the previous pass's probes, so light bounces around the room. |
+| `probe_parallax` | true | box projection; off, the probe is sampled as if infinitely far away. |
+| `probe_intensity`, `probe_near` | 1.0, 0.05 | brightness of probe light; near plane of the capture camera. |
+
+The sky cube is now a cube array (`envmap::cube`, `TEXTURE_CUBE_ARRAY`): cube 0 is the sky, cube k + 1 is probe k, all at the sky's size and mip chain (`envmap::size`, 512 by default: about 17 MB of RGBA16F per probe, 4 MB at 256). A capture renders the scene from the probe's position into six 90-degree faces at `probe_res` (sun cascades refit per face; SSR, AO, temporal, transmission, particles and quads off), reprojects each face into a cube (`probe_copy.frag`) and runs the sky's GGX prefilter into the probe's layers. The last bounce keeps the previous bounce's diffuse level, so walls seen in a reflection are lit exactly like the walls themselves (without that, a mirror floor showed the walls brighter than they are; R1b below). In `surface.frag` a probe replaces the sky for reflections, box-projected from the shading point, and for diffuse ambient unless GI is on. A scene with probes uses the full ambient model (`ambient_env`) everywhere. `samplerCubeArray` is new in shaderc for SPIR-V (`SampledCubeArray`), MSL, HLSL and WGSL, and so is `gfx::TEXTURE_CUBE_ARRAY` natively and in the browser.
+
+With both on their defaults the frame changes only through specular occlusion and the model-aware ambient lobes: the sphere golden reads 52.42 dB and the shipped-look golden 52.68 dB (52.83 and 56.02 before; the shipped look runs SSAO, so Lagarde's fit applies there), so neither golden was retaken.
+
+E2 gate results (RX 9060 XT, RADV, Mesa 26.2.4; clean worktree at 0d063ef, `results/2026-11-06_rx9060xt_radv_0d063ef_e2.txt`): `gfxtest.sh` ok; `webgputest.mjs` 0 failures (scene_e2, a glossy floor with SSR, GTAO and specular occlusion, 105.84 dB; holo_e2 bit for bit); `wgsltest.mjs` 51 modules, 42 pipelines, 0 failures. GPU time at 1920x1080 (`look_bench`, Holo, Amni-Companion studio light, floor, 30 warmup + 200 frames, median; bars: specular occlusion <= +0.3 ms, SSR <= +1.5 ms):
+
+| camera | SSAO, SO off | SSAO, SO on | GTAO, SO off | GTAO, SO on | GTAO, SO, SSR | SO cost (SSAO / GTAO) | SSR cost |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| face close-up | 3.329 ms | 3.198 | 3.566 | 3.628 | 3.900 | -0.13 / +0.06 | +0.27 ms |
+| full body | 1.804 ms | 1.811 | 2.329 | 2.399 | 2.976 | +0.01 / +0.07 | +0.58 ms |
+
+Run-to-run noise at the face is about 0.1 ms. SSR costs more at full body because the floor fills most of the frame and every opaque pixel is traced (roughness is not known before the colour pass; rough pixels then ignore the hit). Seen in the renders: under a bright sky (`studio_soft`) the ambient term loses its sky sheen in the eye sockets, nostrils, lip line, lid creases, ear and under the hair; under the dark Amni-Companion studio sky the change is small (the eye region moves by under 1 %). The cornea picks up the sky and, near the lids, the lids themselves; the chain, plate and buckle reflect the skin and clothing around them. Rays from a camera-facing cornea leave the screen, so its centre shows the sky value.
+Off-screen reflections fall back to the reflection probe whose box holds the point, else the probe GI irradiance or the analytic sky.
+
+Screen-space GI: bounce light from what the camera sees, for scenes without the BVH GI (`gi_on`).
+
+| setting | default | what it does |
+| --- | --- | --- |
+| `ssgi_on` | false | screen-space bounce light and occlusion. Ignored while `gi_on` is set and during probe captures. |
+| `ssgi_rays`, `ssgi_steps` | 4, 64 | rays per half-resolution pixel per frame (up to 16) and march iterations per ray (up to 128). Below about 48 steps long rays give up and the bounce light fades. |
+| `ssgi_dist`, `ssgi_thickness` | 10, 0.05 | longest ray in scene units; how far behind the depth buffer a hit may lie, as a fraction of the pixel's own depth, so it works at any scene scale. |
+| `ssgi_intensity`, `ssgi_ao` | 1.0, 1.0 | bounce light scale; how strongly the rays' visibility darkens ambient light. While SSGI is on, that visibility replaces the screen AO (0 means no occlusion). |
+| `ssgi_frames`, `ssgi_edge` | 17, 0.02 | frames in the temporal average; fade of hits near the screen edge, as a fraction of the screen. |
+
+At half resolution `ssgi_trace.frag` casts `ssgi_rays` cosine-distributed rays per pixel, rotated per pixel and per frame, and walks each through the reflections' Hi-Z pyramid (`hiz_march.glsl`, now shared with `ssr_trace.frag`; SSGI starts one level coarser because it runs at half resolution). At a front-face hit it reads last frame's linear colour there, reprojected like a reflection, so light bounces once per frame and builds up to several bounces over the history. Rays that leave the screen count as open (their share is the visibility, which scales the ambient term: sky, probe or GI irradiance); rays that run out of steps are left out of both averages. `ssgi_accum.frag` averages over `ssgi_frames` frames with motion reprojection and a 5 % depth test, and `ssgi_up.comp` upsamples with a 3 x 3 depth- and normal-aware filter into a storage buffer (binding 22) that `surface.frag` reads per pixel: diffuse adds `albedo x kd x bounce`. Last frame's colour comes from the same copy SSR uses (`ssr_prev`); its mip chain is only built when SSR is on.
+
+
+### Ray-traced reflections (E2)
+
+```
+s3d::rt_reflect = true;
+s3d::ssr_on = true;
+```
+
+* **What it does.** With `s3d::rt_reflect`, smooth surfaces trace one reflection ray per
+  pixel through the ray scene that probe GI and ray-traced shadows use. They reflect
+  things that are off screen, behind the camera or hidden behind other objects, which
+  SSR cannot see. A ray that leaves the scene shows the sky or the environment map. A
+  ray that hits shows the surface it hit: lit by the sun and the first 8 lights with
+  ray-traced shadows, by the probes, environment or sky for ambient light, plus its own
+  glow.
+* **With SSR.** Turn `s3d::ssr_on` on as well. Where the screen has the answer, SSR shows
+  it with full textures and detail; the traced ray fills in everything else.
+* **`s3d::rt_rough`** (0.3): surfaces rougher than this keep the usual environment
+  reflection, and the traced reflection fades out between 0.7 and 1 times this value.
+  Below roughness 0.06 the surface is a mirror. In between, each pixel's ray is spread
+  by the roughness, which looks grainy in a single frame; temporal AA (`s3d::temporal`)
+  averages it.
+* **`s3d::rt_reach`** (1000): the longest ray, in world units.
+* **What rays can hit.** The static meshes in the scene when the ray scene is built,
+  which happens on the first frame that needs it and again after `s3d::forget()`. Each
+  triangle carries one color (base color times the texture's average times the vertex
+  color) and the material's metalness, roughness and glow.
+* **Glowing surfaces and GI.** With `s3d::gi_on`, a material's `emissive` color now
+  lights the scene through the probes.
+* **In the browser.** The same on WebGPU: `scene_rtr` in webgputest matches the native
+  frame.
+
+### Decals (E7)
+
+A decal presses a picture, a normal map or both onto whatever lies inside a box, like a
+sticker pushed straight down: markings, dirt, labels and damage without touching the
+meshes' own textures.
+
+```
+let img = gltf::add_texture_rgba(px[..], 128, 128, 33071);
+let d = s3d::add_decal(s3d::Decal { pos: float3 { 0.2, 0.0, -0.1 }, rot: linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.35), size: float3 { 1.5, 1.0, 1.5 }, base: img, .. });
+```
+
+| field | default | what it does |
+| --- | --- | --- |
+| `pos`, `rot`, `size` | (none), identity, 1 x 1 x 1 | the box: center, turn and full size. It projects along its own -y, onto surfaces facing its +y; its x runs along the image's width (u) and its z along the image's height (v). |
+| `base` | -1 | color image (a `gltf` texture index, read as sRGB); its alpha is the coverage. -1: none. |
+| `normal` | -1 | tangent-space normal map (glTF convention: green points up the image). On its own its alpha is the coverage; with `base`, the color image's alpha covers both. |
+| `opacity` | 1 | multiplies the coverage. |
+| `normal_scale` | 1 | strength of the normal map's tilt. |
+| `rough`, `metal` | -1, -1 | when 0 or more, replace the surface's roughness or metalness under the decal, by coverage. |
+| `fade_lo`, `fade_hi` | 0.1, 0.3 | the decal fades on surfaces turned away from it: full where the cosine between the surface normal and the box's +y is at least `fade_hi`, gone below `fade_lo`, so it does not smear down walls. |
+
+`clear_decals()` removes them all, and `s3d::decals[i]` can be changed in place (to move
+one each frame, for example). `gltf::add_texture_rgba(px, w, h, wrap)` adds raw RGBA8
+pixels as a texture (`wrap` is a glTF wrap code, 33071 for clamp); `add_texture_file`
+loads a PNG or JPEG.
+
+How it works: decal images go into the same 1024 x 1024 texture arrays as the material
+extension maps, registered and mip-mapped before the first pass of the frame. Each
+decal's box is written into the light record buffer after the lights (five vec4s: center
+and color layer; the three axes scaled by 2 / size, with the normal layer, the opacity and
+the normal strength; then the fades and overrides). The surface shader of every opaque
+surface walks the list after its own textures. A point inside a box gets its uv from the
+box's axes; the color is mixed over the base color by coverage before lighting, the
+normal is mixed toward the decal's normal (turned into the box's frame), and roughness
+and metal overrides chain in the order the decals were added. Lookups use gradients from
+the pixel's world position, so the mip level matches a texture painted onto the surface.
+Blended (transparent) and unlit surfaces take no decals. There is no extra pass and no
+G-buffer.
+
+### Rain and snow (E6)
+
+Rain and snow are `gfx.fx` particles kept in a box that rides along with the camera, so a few
+tens of thousands of drops fill the view wherever it goes.
+
+```
+fx::init(65536);
+fx::burst(fx::add(fx::rain()), 40000);   // or fx::snow()
+s3d::fx_dt = 1.0 / 60.0;                 // the step time, each frame
+s3d::wet = 0.7;                          // optional: wet surfaces (s3d::snow for snow cover)
+```
+
+`fx::rain()` and `fx::snow()` return ordinary emitters with these fields set, so any of them
+can be changed before `fx::add` (or later with `fx::set`):
+
+| field | rain | snow | what it does |
+| --- | --- | --- | --- |
+| `wrap` | true | true | particles stay inside the box `pos` +- `size`: one that leaves through a side comes back through the opposite side, so the count and the spread stay even |
+| `follow` | true | true | the box is centered on the camera; `pos` is then an offset from it |
+| `size` | 12, 8, 12 | 12, 8, 12 | half size of the box in meters |
+| `dir`, `speed_min`, `speed_max` | down, 9 m/s | down, 1 m/s | fall speed; gravity is off, so drops fall at their final speed |
+| `curl`, `curl_scale` | 0 | 0.6, 0.35 | swirling drift |
+| `stretch` | 1/30 s | 0 | draws each particle as a streak along its path over this many seconds (any emitter can use it, sparks too) |
+| `splash`, `splash_size`, `splash_rgba` | 0.12 s, 0.05 m, pale | 0 | how long a drop splashes where it lands, and the splash's size and color |
+| `colors`, `sizes` | pale blue-grey, 7 mm | white, 12 mm | as for any emitter; rain adds light, snow is blended |
+
+How it works: each frame, before the particles move, the scene is drawn once from straight
+above into a 512 x 512 height map around the camera (`s3d::shelter_res`; `s3d::shelter =
+false` turns it off). A particle above the height under it is falling. One that has just
+passed below it is splashing for `splash` seconds, drawn as a small fading blob on the
+surface, and after that it is hidden until the box brings it back in at the top. So rain
+never falls under roofs, trees or bridges, and the number of splashes matches the rain
+reaching the ground. Surfaces marked `no_shadow` do not stop rain. A streak is built on
+the screen: the drop's path over `stretch` seconds is projected, and the quad covers it
+exactly, as wide as the drop. Snowflakes are blended without sorting (they are all one
+color), so snow costs no sort.
+
+### Puddles, rain on the lens and camera feel
+
+Standing water with rain rings, water drops on the lens, a film-shaped frame and the sway
+of a hand-held camera. All of it is off by default.
+
+| Setting | What it does | Default |
+| --- | --- | --- |
+| `s3d::puddles` | Share of level ground under standing water, 0 to 1. A puddle is mirror smooth and darkens the ground under it the way `wet` 1 does. Puddles form only where the ground is within about 10 degrees of level. On a material with a height map (`height_tex`, `ext` on) the low parts of the map fill first and the high parts stand dry out of the water, and the surface may slope up to about 60 degrees. | 0 |
+| `s3d::puddle_size` | Typical puddle width in meters. | 1.7 |
+| `s3d::ripples` | Rain rings on the puddles, from 0 (still water) to 1 (heavy rain). Rings start at random points, spread, fade and move with `s3d::world_time`. | 0 |
+| `sealed` (material field) | How little the material soaks up water, 0 to 1. `wet` and puddles darken a porous surface such as stone or soil; set 1 for leaves, paint or plastic so they turn glossy without going dark. | 0 |
+| `look.lens_rain` | Water drops on the lens, 0 to 1. Each drop shows the scene behind it upside down, as a real drop does. Large drops run down the frame; small ones dry and new ones land. | 0 |
+| `look.letterbox` | Frame shape as width over height (2.39 is wide-screen film). Rows outside that shape are black. 0 turns it off. | 0 |
+| `s3d::handheld(camera, t, amount)` | Returns the camera with the small sway of a hand-held shot at time `t` in seconds. Amount 1 sways about a third of a degree. Amount 0 returns the camera unchanged, and the same `t` always gives the same camera. | |
+
+```
+s3d::wet = 0.7;
+s3d::puddles = 0.4;
+s3d::ripples = 0.8;
+s3d::look.lens_rain = 0.3;
+s3d::look.letterbox = 2.39;
+s3d::view = s3d::handheld(shot, s3d::world_time, 1.0);
+```
+
+Puddles and rings are part of the surface shader, so they need no extra pass and no
+texture. Rings are drawn where one pixel covers less than about 1 to 4 cm of ground;
+farther away a rained-on puddle is shown slightly rougher instead, which is how a
+rippled surface looks from a distance. Lens drops and the letterbox are part of the final
+grading pass.
+
+### Effects (E9)
+
+`gfx.fx` emitters can start other emitters, leave trails, draw meshes and be written as
+text.
+
+```
+let cube = fx::mesh(pos[..], nrm[..], idx[..]);   // once; -1 when there is no room
+let fire = fx::effect(text[..]);                  // once; -1 with the reason in fx::error
+let h = fx::play(fire, float3 { 3.0, 0.0, -2.0 });
+fx::stop(h);                                      // its emitter slots are free again
+```
+
+| field | what it does |
+| --- | --- |
+| `on_death`, `on_death_n` | when a particle's life ends, start `on_death_n` particles of emitter `on_death` where it was |
+| `on_hit`, `on_hit_n` | the same when a particle hits a surface at more than 0.5 m/s (needs `collide`) |
+| `inherit` | share of the parent's velocity a started particle gets on top of its own |
+| `trail` | seconds of path drawn behind each particle as a ribbon that narrows and fades to its end |
+| `mesh` | a mesh from `fx::mesh` drawn at each particle in place of a square; it is lit by the sun and the sky and hidden by scene geometry |
+| `spin` | turn rate of a mesh particle in radians a second, about an axis of its own |
+
+An effect is a list of emitters, one setting per line. `#` starts a comment line.
+
+```
+emitter shell
+burst 40
+shape sphere
+volume 0.5 0 0
+at 0 1 0
+spread 0.6
+speed 4 7
+life 0.4 0.8
+on_death star 6
+emitter star
+speed 2
+life 0.5
+trail 0.2
+on_death ember 2
+emitter ember
+speed 0
+life 3
+color 1 0.5 0.2 1
+size 0.05
+```
+
+| word | values |
+| --- | --- |
+| `emitter` | a name; the lines after it describe this emitter |
+| `rate`, `burst` | particles a second; particles started at once when the effect plays |
+| `shape` | `point`, `sphere` or `box` |
+| `at`, `volume`, `dir` | x y z: offset from the play point, size of the shape, direction |
+| `spread`, `gravity`, `drag`, `soft`, `stretch`, `trail`, `spin`, `inherit` | one number, as the emitter field of the same name |
+| `speed`, `life` | lowest and highest; one number sets both |
+| `curl` | strength, then scale (1 if left out) |
+| `collide` | bounce, 0 to 1; turns collisions on |
+| `blend` | `add` or `alpha` |
+| `color` | r g b a; the first line sets the whole life, each later line sets the next of the four stops and the ones after it |
+| `size` | up to four sizes over the particle's life |
+| `mesh` | the number `fx::mesh` returned |
+| `on_death`, `on_hit` | the name of an emitter in the same effect, then how many particles (1 if left out) |
+
+`fx::effect` refuses a text it cannot read: it returns -1 and `fx::error` says why, with
+the line (`line 3: unknown word sped`). `fx::play` returns -1 when fewer emitter slots are
+free than the effect needs, and adds nothing.
+
+How it works: the simulation pass writes one record per event into a buffer (place,
+velocity, emitter, count), and a second spawn pass in the same frame starts the children
+from it. Each particle with a trail keeps 9 past positions, one every `trail / 7` seconds,
+and the ribbon is built from them facing the camera. Mesh particles are listed by the
+simulation pass and drawn with one indirect draw per mesh. A small compute pass writes the
+draw counts, so nothing is read back to the CPU.
+
+Limits: 32 emitters, 2,048 events a frame, 32 particles per event, 8 meshes with 120,000
+vertices in all.
+
+### Many lights (E4)
+
+```
+for p in lamps { s3d::add_light(p, float3 { 2.0, 1.6, 1.0 }, 1.5); }
+```
+
+Any number of point, spot and area lights can be in the scene. Each frame they are sorted
+into a grid of 16 x 9 x 24 cells that follows the camera, and a pixel shades only the
+lights listed in its own cell, skipping any it is out of range of. A cell lists up to 1,023
+lights; `clusters::dropped` counts entries that did not fit in the last frame and
+`clusters::top` is its fullest cell. The cost follows how many lights reach each pixel, so
+keep ranges short: 4,900 lights of range 1.5 m add about 4 ms to a 1280 x 720 frame. The
+first 16 lights can cast shadows and light the fog.
+
+### Rect area lights (E4)
+
+A rect light is a flat glowing rectangle: a softbox, a window, a ceiling panel or a TV.
+
+```
+s3d::add_rect(float3 { 0.0, 2.5, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 1.0, 0.0, 0.0 }, 2.0, 1.0, float3 { 8.0, 8.0, 8.0 }, 12.0, true);
+```
+
+`add_rect(pos, target, axis, width, height, rgb, range, shadows)` centers the rectangle
+at `pos` and turns it to face `target`. `width` runs along `axis` (taken flat onto the
+panel; when `axis` points the way the panel faces, a sideways axis is picked) and
+`height` across it. It lights only the side it faces. `rgb` is the intensity straight
+out of the panel: from far away it lights like a point light with the same `rgb`, and
+up close it gives the broad, soft falloff and the long, shaped highlights of a real
+panel. Its brightness per square meter is `rgb / (width x height)`, so a smaller panel
+with the same `rgb` is brighter to look at. `range` fades it out as for point lights.
+The fields are `Light.width`, `height` and `axis`; any light with both `width` and
+`height` above 0 is a rect light. With `kind` 1 and a `cone` it is also cut to a cone
+like a spot (barn doors), and a shadowed one then takes one atlas layer instead of six.
+
+How it works, with no lookup tables: the panel is first cut to the part above the
+surface's horizon. Diffuse light is exact: Lambert's form factor of that polygon,
+summed edge by edge. Specular light is computed in the GGX slope plane, where the share
+of microfacets that reflect the view toward a straight-edged region has a closed form
+(one `atan` per edge). The panel is split into 3 x 3 pieces, and each edge is also split
+where it passes closest to the mirror direction, so the straight edges follow the curved
+outline the panel makes in that plane. Fresnel and masking come from each piece's
+lobe-weighted center. The method was chosen on a CPU sweep of 1829 panel, view and
+roughness setups against brute-force integration: worst error 5.2 %, one setup over 5 %.
+
+`s3d::rect_detail` (3) sets that split: 3 is the 3 x 3 pieces above, 2 uses 2 x 2 and 1
+uses the whole panel as one piece. Diffuse light is the same at every setting; only the
+shape of highlights changes. On a lit character the frame differs from setting 3 by at
+most 7 of 255 at setting 2 and 19 of 255 at setting 1 (a thin metal edge), and a face
+close-up with five panels draws in 14 ms and 9 ms instead of 23 ms. A panel that is
+wholly below a surface's horizon, and a light that is fully shadowed there, cost that
+pixel nothing.
+
+### Cut-out edges, mip bias, morph motion and light falloff
+
+```
+s3d::alpha_to_coverage = true;
+s3d::mip_bias = -0.5;
+s3d::lights.push(s3d::Light { pos: float3 { 0.0, 2.0, 0.0 }, range: 6.0, rgb: float3 { 400.0, 400.0, 400.0 }, kind: 0, falloff: 1, .. });
+```
+
+* **Smooth cut-out edges.** `s3d::alpha_to_coverage = true` gives materials with the
+  glTF `MASK` alpha mode (leaves, fences, hair cards) a smooth edge: each pixel on the
+  edge covers 0 to 4 of its 4 samples by how far the texture's alpha is past
+  `alpha_cutoff`, measured in pixels. Off (the default) every pixel is fully in or out.
+  It works on native and in the browser and costs nothing where no such material is on
+  screen.
+* **Mip bias.** When the scene renders below the output size (`s3d::init(w, h, out_w,
+  out_h)`), textures are now read at the level the output size would pick, so the
+  upscaled image keeps its texture detail. `s3d::mip_bias_auto = false` turns that off.
+  `s3d::mip_bias` adds a bias of your own on top (in levels: -1 is one level sharper,
+  +1 one level softer). It covers every material texture.
+* **Morph motion.** Motion vectors now follow morph-target changes: each mesh keeps last
+  frame's weights, so faces and blend shapes get correct TAA, upscaling and motion blur.
+* **Light falloff.** `Light.falloff = 1` gives a point or spot light the glTF
+  KHR_lights_punctual falloff (also what three.js uses): `1 / d^2`, faded to zero at
+  `range` by `sat(1 - (d / range)^4)^2`. Lights that come in with a glTF file use it.
+  The default (`falloff = 0`) stays `(1 - d^2 / range^2)^2 / (1 + d^2)`, which is softer
+  up close.
+
+### Instancing, grass and wind (E24)
+
+```
+let grass = shapes::blade(0.5, 0.03, 0.0, 3, shapes::material(linalg::v3(0.25, 0.55, 0.2), 0.0, 0.7));
+let set = s3d::add_instances(grass, mats[..]);
+s3d::instances[set].sway = 1.0;
+s3d::instances[set].lod_asset = low_grass;
+s3d::instances[set].lod_distance = 15.0;
+s3d::wind = s3d::Wind { dir: float3 { 1.0, 0.0, 0.3 }, strength: 0.2, speed: 2.0, time: now };
+s3d::pushers.push(float4 { player.x, player.y, player.z, 0.5 });
+```
+
+* **Many copies in one draw.** `s3d::add_instances(asset, mats)` draws one copy of the
+  asset per matrix and returns the set's index. Each primitive of the asset is one draw
+  call for the whole set, in every pass (shadows, depth, color, motion). Copies are lit,
+  shadowed and fogged like items. `s3d::set_instance(set, k, m)` moves one copy,
+  `s3d::instances[set].visible = false` hides the set, `s3d::clear_instances()` removes
+  every set. Skinned assets cannot be instanced; use items for those.
+* **Culling.** Every frame each copy is tested on the CPU against the camera's six
+  planes with a sphere around it (the asset's box, scaled by the copy's largest axis
+  scale). A copy wholly behind one plane is not drawn in the camera passes. Shadow
+  passes draw every copy, so a copy behind the camera still casts its shadow.
+  `s3d::instance_cull = false` turns the test off. For a set that sways, the sphere
+  grows by `1 + 2 * sway * wind.strength`, plus the largest pusher radius.
+  `s3d::instance_drawn(set, level)` gives the number of copies drawn last frame,
+  `s3d::instance_list(set, level)` their indices and `s3d::instance_triangles(set)` the
+  triangles sent.
+* **Two levels of detail.** With `lod_asset` set, a copy whose sphere center is
+  `lod_distance` meters or more from the eye is drawn with that asset instead. Both
+  assets should have the same size and node layout.
+* **Wind.** `sway` above 0 bends the copies in the wind, in the vertex stage, so it
+  costs no CPU time per copy. With `o` the copy's origin, `H` the asset's top (its
+  highest y at rest) times the copy's y scale, and `t = sat((y - o.y) / H)` for a
+  vertex at world height `y`:
+
+  `offset = wind_dir * strength * (0.6 + 0.4 * sin(time * speed + 0.7 * (o.x + o.z))) * t^2 * sway * H`
+
+  `wind_dir` is `wind.dir` flattened to the ground and normalized. The base stays put
+  and the tip moves most; each copy is out of step with its neighbors by its place.
+  Advance `s3d::wind.time` yourself (in seconds). Motion vectors follow the sway, so
+  TAA, upscaling and motion blur stay sharp. `s3d::sway(item, amount)` gives the same
+  sway to a single item.
+* **Pushing grass aside.** Each entry of `s3d::pushers` is a sphere (center and radius;
+  the first 4 are used). For a vertex of a swaying copy, take the point `a` on the
+  copy's upright axis at the vertex's height. When `a` is inside a sphere, at distance
+  `l` from its center, the vertex also moves by
+
+  `offset = away * (radius - l) * t^2 * min(sway, 1)`
+
+  where `away` is the level direction from the sphere's center to `a`. Clear and
+  refill `s3d::pushers` each frame as things move.
+* **`shapes::blade(height, width, tip, segments, material)`** makes one blade of grass:
+  a two-sided strip standing on the ground, `width` wide at the base and `tip` wide at
+  the top.
+
+### Caustics and sunlight under water (E7)
+
+```
+s3d::place(s3d::add(shapes::water(7.0)), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+s3d::caustics.on = true;
+s3d::world_time = now;
+```
+
+* **What it does.** With `s3d::caustics.on`, everything below the water's surface that
+  the sun reaches gets the moving bright lines the waves focus onto it, and the sun's
+  light is absorbed along its path down through the water. The pattern comes from the
+  same waves the water surface shows, so the two always agree. It is worked out per
+  pixel in the color pass: no extra pass, no texture.
+* **Where the water is.** By default the first water item in the scene (a material with
+  `extras.amni = "water"`, or `shapes::water(half)`) gives the surface level, its
+  footprint, its waves and its absorption; they can be read back from `s3d::caustics`
+  after a frame. Set `s3d::caustics.manual = true` to give `level`, `lo`, `hi`,
+  `waves` and `absorb` yourself, for example when the water is drawn some other way.
+  The surface is taken as level, and only one body of water is used.
+* **The formula.** `L` is the unit direction to the sun, `eta` is 0.75 (air to water).
+  A sun ray entering at surface point `s` bends by the surface normal there,
+  `n(s) = normalize(-g.x, 1, -g.y)` with `g` the wave slope, into
+  `r = refract(-L, n(s), eta)`, and travels `b(s) = r.xz / -r.y` sideways per meter
+  of depth. Flat water gives the constant `b0`. A point `P` at depth
+  `d = level - P.y` would be lit through `s0 = P.xz - b0 * d` under flat water. With
+  `k = d * focus`, the entry point is refined twice,
+  `s = s0 - (b(s) - b0) * k` starting from `s0`, and the brightness is one over the
+  area stretch of the rays there:
+
+  `J = I + k * db/ds` (by differences 0.01 m apart), `c = 1 / max(|det J|, 1 / cap)`
+
+  `sun light at P = sun * exp(-absorb * d / -r0.y) * (1 + strength * (c - 1))`
+
+  where `r0` is the flat-water `r`. Nothing changes above the surface, where `s0` falls
+  outside the footprint (`lo` to `hi` in x and z), or with the sun below the horizon.
+* **Knobs.** `strength` (0 to 1) fades the pattern without touching the absorption.
+  `focus` scales how fast the pattern sharpens with depth: 1 is physical, larger gives
+  pool-like lines in shallow water with gentle waves. `cap` (7 by default) is the
+  brightest a line can get. `s3d::world_time` moves the waves.
+
+### Water: swell, foam, reflections and the view from below (E6 and E7)
+
+```
+let sea = shapes::sea(40.0, 257);
+gltf::materials[gltf::materials.len - 1].shade_c.w = 1.0;
+s3d::place(s3d::add(sea), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+s3d::world_time = now;
+```
+
+* **Swell.** `shapes::sea(half, n)` is a sheet of `n` x `n` vertices that rise and fall
+  with the waves; `shapes::water(half)` stays a flat plane that only shows the waves in
+  its normals. Both use one sum of 11 waves, the same one the caustics use, so the
+  surface, its normals and the light pattern below always agree. In a material of
+  your own, `shade_a.w = 1` turns the swell on and `shade_b` holds frequency, amplitude,
+  speed and shoreline foam. The highest a crest can reach is
+  `amplitude / frequency * 2.944` (0.17 m with the preset).
+* **Crest foam.** `shade_c.w` (0 to 1) whitens the crests: it fades in from 0.3 to 0.7
+  of the highest possible crest and is broken up by a moving pattern.
+* **Reflections.** The water follows its mirrored ray through the frame's opaque color
+  and depth and shows what the ray hits; where the ray leaves the picture or passes
+  behind something it shows the sky as before. `s3d::sea.reflect` turns this off,
+  `s3d::sea.steps` (24) is the number of steps along the ray.
+* **From below.** The underside of the surface reflects the scene under it, turns into
+  a mirror past the critical angle (48.6 degrees from the vertical for water), and
+  inside that angle shows the sky and the scene above, bent by the surface.
+* **The underwater view.** With the camera below the surface and inside the water's
+  footprint, one extra pass over the frame absorbs each pixel's light along its path
+  through the water (`exp(-absorb * distance)` per channel) and adds the light the
+  water scatters toward the camera: sky light and sunlight, both absorbed on their way
+  down. The sunlight term reads the sun's shadow map where each ray entered the water,
+  so things floating on the surface cut dark shafts, and it is focused by the waves
+  like the caustics, so bright shafts drift through open water. `s3d::sea.under` turns
+  the pass off, `s3d::sea.march` (24) is the number of steps, `s3d::sea.shafts` (0 to
+  1) fades the wave pattern in the shafts. Absorption and scatter come from the water
+  material (`shade_a.rgb`, `shade_c.rgb`); with `s3d::caustics.manual` the scatter is
+  `s3d::sea.scatter`.
+
+### Compressed textures (E10)
+
+```
+s3d::tex_compress = true;
+s3d::set_texture_cache("cache/textures");
+let a = gltf::load("model.glb");
+```
+
+* **What it does.** With `s3d::tex_compress`, every model texture whose sides are
+  multiples of 4 is packed to BC7 with its whole mip chain the first time it is drawn.
+  The GPU then holds 8 bits a pixel instead of 32, a quarter of the memory, and decodes
+  the blocks itself while sampling. Textures with other sizes stay RGBA8.
+* **The cache.** `s3d::set_texture_cache(dir)` saves each packed texture as a `.ktx2`
+  file named from a hash of the image, its size and whether it is sRGB. The next load
+  reads the file and packs nothing. A file that is cut short or damaged is packed again
+  and written over. `set_texture_cache("")` turns the cache off.
+* **KTX2 in models.** A glTF image may be a KTX 2.0 file, by uri or in a buffer view,
+  holding RGBA8, BC1, BC3, BC4, BC5 or BC7 with its mip levels, stored plain or as zlib
+  streams; it goes to the GPU as it is. `gltf::add_texture_ktx2(file, wrap)` adds one
+  from bytes. Files packed with BasisLZ or Zstandard are counted in `gltf::bad_images`
+  and draw white.
+* **Devices without BC.** When `gfx::format_supported(gfx::BC7)` is false (most phones),
+  the blocks are decoded on the CPU into RGBA8 on load: the same picture, with no memory
+  saved. `s3d::tex_gpu_bc = false` forces that path.
+* **Numbers to read.** `s3d::texture_bytes()` is the GPU memory the scene's model
+  textures take, mips included. `s3d::tex_encoded` and `s3d::tex_cached` count textures
+  packed and textures read from the cache; `s3d::tex_ns` is the time spent making
+  textures, in nanoseconds.
+* **By hand.** `gfx.bc` packs and unpacks blocks: `bc::encode(kind, rgba, w, h, out)`,
+  `bc::decode(kind, blocks, w, h, out)` and `bc::halve(rgba, w, h, srgb, out)` for the
+  next mip, with `kind` one of `bc::BC1`, `BC3`, `BC4`, `BC5`, `BC7`. `gfx.ktx2` reads
+  and writes the files: `ktx2::write`, `ktx2::read`, `ktx2::level`. On the GPU side the
+  formats are `gfx::BC1`, `BC1_SRGB`, `BC3`, `BC3_SRGB`, `BC4`, `BC5`, `BC7` and
+  `BC7_SRGB`: make one with `gfx::texture2d(w, h, gfx::BC7, gfx::SAMPLED)` and give
+  `gfx::update_texture` one whole mip of blocks at a time. Block textures are sampled
+  only, their sides are multiples of 4, and they cannot be read back or have mips
+  generated.
+* **The encoders.** BC7 blocks use mode 6: one color line per block with 7-bit red,
+  green, blue and alpha ends plus a shared low bit each, and 16 steps along it. The line
+  starts on the main axis of the block's colors, then two least-squares rounds move the
+  ends to where the chosen steps fit best. BC1 does the same with RGB565 ends and 4
+  steps; BC4 and BC5 take the smallest and largest value as ends and 8 steps.
+* **BC4 and BC5 values.** The steps between the two ends sit halfway between the exact
+  fraction and the 6-bit weights some GPUs use, so the CPU decode is within 1/255 of
+  either kind of hardware.
+### Texture streaming (E10)
+
+```
+s3d::tex_compress = true;
+s3d::tex_stream = true;
+s3d::set_texture_cache("cache/textures");
+s3d::tex_budget = 256 * 1024 * 1024;
+```
+
+* **What it does.** With `s3d::tex_stream`, a compressed texture starts at a small size
+  (its mips from 128 pixels down) and the larger sizes are loaded when the camera gets
+  close enough to show them, and dropped again when it has been far away for a while.
+  The picture is the same as with every texture fully loaded: a size is in memory
+  before any pixel can sample it.
+* **Which textures.** Textures packed by `s3d::tex_compress` and KTX2 images in models,
+  256 pixels or larger. Plain RGBA8 textures (sides not multiples of 4) are loaded
+  whole, as are textures on skinned or morphed meshes, on materials with a height map,
+  and textures whose sampler has mips off.
+* **Where the bytes come from.** With a cache folder, only the start of each `.ktx2`
+  file is read on load and each larger size is read from the file when it is wanted
+  (`read_file_range`). With no cache folder the packed file is kept in memory. KTX2
+  images in a model are read from the model's bytes.
+* **`s3d::tex_budget`** is a limit in bytes on `s3d::texture_bytes()`; 0 means no limit.
+  When the wanted sizes do not fit, the largest textures in memory give up one size at a
+  time until they do. The smallest sizes always stay, so a budget below their total
+  still draws. `s3d::tex_starved` counts the textures drawn smaller than wanted.
+* **`s3d::tex_upload_cap`** (4 MiB) limits the bytes sent to the GPU in one frame, so a
+  camera cut spreads its loading over a few frames; until a size arrives the texture
+  draws from the size it has. A frame may always make one step, so a size larger than
+  the cap still loads.
+* **`s3d::tex_hold`** (30) is the number of frames a size stays in memory after the
+  camera stops needing it.
+* **`s3d::tex_wait`** loads everything a frame wants before drawing it, whatever the
+  cap: use it for stills and offline frames. Probe captures always wait.
+* **`s3d::tex_stream_bias`** shifts every wanted size by whole steps: 1 loads half the
+  size, 2 a quarter.
+* **Numbers to read.** `s3d::tex_streamed` and `s3d::tex_steps` are the bytes uploaded
+  and the size changes made in the last frame, `s3d::tex_pending` the textures still on
+  their way to the wanted size, `s3d::tex_read` the bytes read from cache files so far,
+  and `s3d::tex_stream_ns` the time the last frame spent deciding and loading.
+* **How a size is chosen.** For each drawn mesh: the distance from the camera to its
+  bounding box, the size of a pixel at that distance, and the mesh's densest UV mapping
+  give the fewest texels one pixel can cover. The size loaded is one step larger than
+  that calls for. The view direction is not used, so turning the camera loads nothing
+  new.
+* **By hand.** `ktx2::head(prefix)` reads the header and level table from the first
+  bytes of a file, `ktx2::span(prefix, info, n)` gives the offset and stored length of
+  level `n`, and `ktx2::unpack(stored, info, n, out)` turns one level's stored bytes
+  into blocks. `read_file_range(path, offset, count, out)` reads part of a file.
+
+### Meshlets and cluster LOD (E1)
+
+```
+s3d::meshlets = true;
+s3d::meshlet_px = 1.0;
+```
+
+* **What it does.** A large static mesh is cut into clusters of at most 128 triangles,
+  and coarser versions of it are built as levels of cluster groups. Each frame a compute
+  pass picks, cluster by cluster, the coarsest triangles whose error is at most
+  `s3d::meshlet_px` pixels on screen, drops the clusters outside the view and the ones
+  facing away, and writes the index list that the passes draw with one indirect draw
+  per mesh. Clusters at different levels meet without cracks.
+* **Which meshes.** Opaque and cut-out meshes of at least `s3d::meshlet_min` (4,000)
+  triangles placed with `s3d::add`. Skinned and morphed meshes, blended and
+  transmissive materials and instance groups draw as before.
+* **When it is built.** On the first frame that draws the mesh with `meshlets` on:
+  2.6 s for 261,120 triangles on one core. The coarser levels use new vertices added
+  after the mesh's own (0.92 times as many for that mesh).
+* **Shadows.** Shadow passes draw the level of detail the camera picked, without the
+  view and facing tests, so a mesh out of view still casts its shadow. A probe capture
+  picks its own level for each face.
+* **Leaves and blades.** A cut-out mesh made of many separate cards (leaves, needles,
+  grass blades) has no shared edges to collapse, so the usual simplifier cannot reduce
+  it. For those cluster groups the coarser level keeps every other card (of each pair,
+  the one with more area per triangle) and widens the kept ones so the covered area
+  stays the same. Its error is the area-weighted mean width of the kept cards divided
+  by `s3d::meshlet_thin` (1): a larger value thins sooner, 0 turns thinning off. Solid
+  meshes are never thinned.
+* **`s3d::meshlet_px`** (1) is the largest error allowed, in pixels. A larger value
+  draws fewer triangles.
+* **`s3d::meshlet_cone`** (on) drops clusters that face away from the camera, for
+  single-sided materials on meshes placed without mirroring or uneven scale.
+* **`s3d::meshlet_budget`** (8,000,000) is the room for one frame's index list, in
+  indices of 4 bytes. A mesh whose list does not fit is not drawn in that frame. With
+  `s3d::meshlet_grow` (on) the room is then raised to fit, up to
+  `s3d::meshlet_budget_max` (250,000,000): on the second frame after a scene or budget
+  change and within 70 frames otherwise. A material marked `no_shadow` stays out of
+  the shadow list.
+  `s3d::meshlet_stats()` returns the triangles in the camera's list, the triangles in
+  the shadow list, and the number of lists that did not fit.
+* **`s3d::meshlet_cpu`** makes the same selection on the CPU instead of in the compute
+  pass. The tests use it as the reference.
+* **How a level is chosen.** Every cluster carries its own error with a sphere around
+  it, and the error and sphere of the coarser group above it. A cluster is drawn when
+  its own error, seen from the camera, is at most `meshlet_px` and its parent's is
+  larger. All clusters of a group share the parent's numbers, so a group switches as
+  one and its outer edges do not move.
+* **By hand.** `meshlet::build(pos, stride, at, nv, indices)` builds the clusters of
+  any mesh; `meshlet::cut(e, out)` returns the triangles for an error `e` in the
+  mesh's units and `meshlet::cut_tris(e)` counts them. `meshlet::tab`, `meshlet::rng`
+  and `meshlet::idx` hold the cluster table. `gfx::draw_indexed_indirect(args, offset)`
+  draws with the five numbers of an indexed draw read from a buffer.
+* **Web.** The same passes run on WebGPU.
+
+### Skin scattering (E7)
+
+Light that enters skin comes back out a few millimeters away, farther for red than for
+blue. That softens shadow edges on a face and gives them a red rim.
+`s3d::sss_on = true` turns this on for every opaque material that uses the skin shading
+model.
+
+```
+var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5);
+skin.shading = 1;
+skin.shade_a = gltf::shade_preset(1, 0);
+skin.shade_b = gltf::shade_preset(1, 1);
+skin.shade_c = gltf::shade_preset(1, 2);
+s3d::sss_on = true;
+```
+
+* **What it does.** The diffuse light on skin is drawn into its own target, spread with
+  the normalized Burley diffusion profile and the material's three scatter distances
+  (2.1, 0.8 and 0.45 mm for red, green and blue in the preset), and put back in the
+  main pass. The spread is measured on the surface, in world units, so it keeps its
+  size when the camera moves or the surface turns away. Highlights and everything that
+  is not skin stay as they were.
+* **`s3d::sss_taps`** (64) is the number of samples per pixel. 16 costs less and shows
+  more noise up close.
+* **`s3d::sss_depth`** (on) keeps light from crossing a step in depth, so a hand in
+  front of a face does not bleed onto it.
+* **Distance.** The pass fades out as the scatter distance gets smaller than a pixel:
+  at 1280 x 720 with a vertical field of view of 0.75 it is at full strength closer
+  than about 1.3 m and off beyond about 3.8 m. With no skin close enough, the pass does
+  not run and the frame is the same as with `sss_on` off. `s3d::sss_ran` tells whether
+  it ran in the last frame.
+* **Reading it back.** `s3d::sss_plain()` is the diffuse light before the pass and
+  `s3d::sss_target()` the same light after it.
+* **Web.** The same passes run on WebGPU.
+
+### Skin pores and fuzz (E7)
+
+A skin material can carry its fine surface relief and a soft rim of fine hair without any texture:
+
+```
+var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5);
+skin.shading = 1;
+skin.shade_a = gltf::shade_preset(1, 0);
+skin.shade_b = gltf::shade_preset(1, 1);
+skin.shade_c = gltf::shade_preset(1, 2);
+skin.shade_c.y = 0.7;
+skin.shade_c.z = 0.35;
+```
+
+`shade_c.y` is the relief strength (0 is off, the preset value). The relief is computed
+in the shader from the material's UV space: cells scattered at random, 700 a
+UV unit on average along each axis, plus a coarser set at 175, with a soft furrow along the
+borders between cells. Each border has its own depth, from a tenth of the full depth up, so the
+furrows form a broken net of small polygons, as skin shows up close.
+They tilt the normal that highlights use
+and darken their floors; about three cells in five also have a round pore opening
+in the middle that darkens the same way. The mean diffuse light does not change. The
+darkening multiplies the surface after subsurface scattering, the way albedo does, so
+scattering softens the light but not the pores. The same strength also varies the skin
+color: two layers of smooth noise, about 41 and 131 cells a UV unit, mostly in green
+and blue, so the blotches read as small changes in blood color, not gray dirt. The detail map's
+transform (`detail.m`, `detail.o`) scales and moves the pattern, so a mesh whose UV
+unit is not about 0.3 m can bring the cells back to skin scale (fine cells about 0.25 mm
+wide read as facial skin; a scanned head with a 0.4 m UV unit uses `detail.m` 2.5). Where a cell covers
+fewer than 4 pixels the furrows fade, and by 2 pixels they are gone and their slopes
+widen both highlight lobes instead, so skin does not sparkle at a distance and the
+highlight keeps the brightness it has up close.
+
+`shade_c.z` is the fuzz strength (0 is off). It adds the rim term the cloth model
+uses: white light along the outline on the lit side, nothing where the surface faces
+the camera.
+
+A skin, cloth or eye material without a detail map keeps the roughness it was
+given.
+
+### Cloth (E13)
+
+Any mesh can be simulated as cloth. `shapes::sheet(n, corner, u, v, material)` makes
+a flat sheet of n x n vertices that spans the edges `u` and `v` from `corner`:
+
+```
+var m = shapes::material(linalg::v3(0.2, 0.35, 0.8), 0.0, 0.8);
+m.double_sided = true;
+let flag = shapes::sheet(33, float3 { -0.5, 2.0, 0.0 }, float3 { 1.0, 0.0, 0.0 }, float3 { 0.0, -1.0, 0.0 }, m);
+let k = s3d::add_cloth(flag);
+let _ = s3d::add(flag);
+for i in 33 { cloth::pin(s3d::cloths[k].c, i, i as real / 32.0 - 0.5, 2.0, 0.0); }
+cloth::ball(0.0, 1.2, 0.3, 0.25);
+cloth::ground(0.0);
+```
+
+and once a frame, before `s3d::render`:
+
+```
+s3d::step_cloth(k, 1.0 / 60.0, float3 { 0.0, 0.0, 3.0 });
+```
+
+`s3d::add_cloth(asset)` turns the asset's first mesh part into cloth and returns the
+cloth's number in `s3d::cloths`, or -1 for a skinned or morphed mesh. Vertices at the
+same position share one particle, so texture seams do not tear. `s3d::step_cloth(k,
+dt, wind)` advances the cloth by `dt` seconds in a wind given in m/s and hands the new
+shape to the renderer. The cloth draws in every pass a mesh draws in: depth, sun and
+local-light shadow maps, and motion vectors, so TAA and motion blur follow it.
+
+* Pins: `cloth::pin(c, vertex, x, y, z)` holds a vertex at a point and
+  `cloth::unpin(c, vertex)` lets it go, with `c = s3d::cloths[k].c`. Pin again with a
+  new point each frame to carry the cloth along. A pinned cloth keeps every particle
+  within its rest distance of the nearest pin, which stops it from stretching under
+  fast moves.
+* Colliders: `cloth::ball(x, y, z, r)`, `cloth::pill(ax, ay, az, bx, by, bz, r)` and
+  `cloth::ground(y)`, shared by every cloth. To move them, call
+  `cloth::clear_colliders()` and add them again before the step.
+* Settings, on `cloth::cloths[c]`: `density` (kg per square meter), `gravity`,
+  `thickness`, `damping`, `air` and `drag` for the wind, `friction`, `stretch` and
+  `bend` (0 is rigid), `substeps` and `limit` (the distance limit to the pins).
+
+The simulation runs in the item's own space: leave the item's placement at identity,
+or give pins, colliders and wind in that space. One step of a 65 x 65 sheet takes
+about 2.4 ms on one core. The solver, `gfx.cloth`, does not depend on the renderer
+and can be used alone: `cloth::make`, `cloth::step` and `cloth::write`.
+
+### Time of day (E6)
+
+```
+var day = s3d::Day { hour: 17.5, day: 172, latitude: 40.0 };
+day.hour += dt / 3600.0;
+let _ = s3d::time_of_day(day);
+```
+
+`s3d::time_of_day(day)` sets the sun's direction and color and the baked sky for a clock
+time, and returns true when it baked the sky. Call it every frame: the sun's direction and
+color follow the clock exactly, and the sky is baked again only after the light has moved
+by `step` degrees or its strength, the haze or the cloud cover has changed.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `hour` | 12 | local solar time in hours; 12 is the sun's highest point |
+| `day` | 172 | day of the year (172 is June 21) |
+| `latitude` | 40 | degrees north; negative for south |
+| `north` | 0 | degrees north is turned from -z toward +x; east is +x at 0 |
+| `power`, `haze`, `clouds` | 3.5, 1, 0.3 | the same as in `s3d::atmosphere` |
+| `moon` | 0.02 | strength of the moon relative to the sun; 0 gives a black night |
+| `step` | 0.5 | degrees the light may move before the sky is baked again |
+| `size` | 0 | cube size of the baked sky; 0 uses `envmap::size` |
+| `samples` | 128 | samples a pixel the blur of the baked sky uses (`s3d::atmosphere` uses 512); the diffuse level uses 4 times as many |
+
+The sun fades as its disc crosses the horizon. Once the disc has set, a full moon opposite
+the sun is the scene's one directional light, dim and red while it is low. The sky keeps
+the glow of the sun until the sun is 7 degrees below the horizon; after that the moon
+lights the sky, at full strength once the sun is 14 degrees below.
+`s3d::sun_at(hour, day, latitude, north)` gives the direction to the sun alone. There are no stars and the moon has no phases.
+
+### Hair (C11, E13)
+
+`import gfx.hair;` draws hair and fur as strands. A groom is a set of guides; each guide is
+a chain of up to 32 points with a width, and the rasterizer draws a chosen number of
+strands across every guide in a compute pass, so no strand mesh is built. The points are
+simulated on the GPU every frame. One call draws every groom:
+
+```
+if s3d::render_begin() { hair::draw(dt); s3d::render_end(target); }
+```
+
+`hair::draw(dt)` simulates `dt` seconds and adds the hair to the scene's HDR frame, hidden
+by the scene's depth. A `dt` of 0 shows the styled shape as it was made. The module asks
+the scene for its depth pass on its own.
+
+A groom comes from one of three places and is named by the index the call returns (-1 when
+the data is refused):
+
+| Call | What it does |
+| --- | --- |
+| `hair::mesh_roots(node, lo, hi, count, seed, rp, rn)` | scatters `count` root points and normals over the triangles of a mesh node that lie inside a box in the mesh's own space |
+| `hair::groom(rp, rn, style, data)` | grows a guide from every root (`hair::Style`: `steps`, `length`, `vary`, `width`, `droop`, `curl`, `turns`, `clumps`, `clump`, `seed`) and writes the groom's bytes; the same input gives the same bytes |
+| `hair::fur()` | a `Style` for short fur |
+| `hair::load(data, strands)`, `hair::load_file(path, strands)` | makes a groom from those bytes with `strands` strands a guide |
+| `hair::cards(asset, mesh, anchor, strands)` | reads a card mesh from a loaded glTF asset (two vertices a point, the way hair cards are exported) and makes a groom of it; skin weights become bones the guides follow |
+| `hair::card_mesh(data, material)` | the reverse: an ordinary mesh of cards for targets that cannot run the strand passes |
+| `hair::unload(g)` | frees a groom |
+
+Placing and moving it:
+
+| Call | What it does |
+| --- | --- |
+| `hair::follow(g, item, anchor)` | the groom follows a scene item, or one node of it when `anchor` is a node index; bones follow the item's pose |
+| `hair::place(g, m)` | sets the groom's place directly when it follows nothing |
+| `hair::solid(g, node)` | makes a mesh node a collider: its signed distance field is baked once and hair is pushed out of it |
+| `hair::body(g, asset, skin, joints, solids)` | the same for a skinned character: up to 8 parts, each moving with one joint |
+| `hair::points(g, out)` | reads the simulated points back (48 bytes a point, model space) |
+
+`hair::grooms[g].show` hides a groom; a hidden groom starts from its styled shape when it
+is shown again. `hair::grooms[g].look` (`hair::Look`) holds the appearance:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `color` | 0.58, 0.38, 0.14 | the hair's color; it is turned into the two melanin amounts the fiber model absorbs with |
+| `roughness` | 0.42 | width of the highlights along the strand |
+| `width` | 0.00007 | strand width in meters |
+| `gain` | 1.7 | strength of the sun and the lamps on the hair |
+| `shade` | 1.0 | how much one full layer of strands blocks the direct sun; 0 turns self-shadowing off |
+| `scatter` | 0.7 | strength of the light that reaches a strand through other strands |
+| `density` | 1.0 | how many real fibers a drawn strand stands for in that scattered light |
+| `ambient` | 0.22, 0.22, 0.22 | share of the scene's sky light (the mean of zenith and horizon times `sky.ambient`) the hair picks up |
+| `falloff` | 40 | how fast the hair darkens with depth below its nearest strand, per meter. This works inside one layer of hair: hair more than 4 cm behind the nearest strand is a layer of its own (a lock in front of the hair down the back) and is back to full brightness by 8 cm, so a lock or a stray hair in front draws no dark outline on the hair behind it |
+| `frizz` | 0 | stray single hairs: at 1, about one strand in seven leaves the surface in an arc that reaches about 1.5 cm at the tip, which catches back light the way real flyaways do |
+| `dye` | 0 | 0 colors the hair with natural pigment, which suits blacks, browns, reds, blondes and grays; 1 absorbs light by `color` directly, for dyed colors such as blue, green or pink |
+| `cast` | 1 | how strongly the hair shades the meshes around it (face, shoulders, floor) from the sun and the first four lamps; 0 turns that off |
+
+`hair::grooms[g].phys` (`hair::Physics`) holds the motion: `gravity`; `styled` (1 cancels
+gravity so the styled shape is the rest shape, 0 lets the hair hang); `root` and `tip`
+(pull toward the styled shape at the root and at the tip; `bone_root` and `bone_tip` for
+guides bound to bones); `bend` (stiffness against bending); `carry` (how much of a turn of
+the head the hair follows at once); `damping`; `gap_min` and `gap_max` (distance kept from
+a collider at the root and at the tip).
+
+The sun's light on the hair is the three-lobe fiber model (reflection, transmission and
+the internal bounce) plus scattered light from the strands in front; the hair's own shadow
+comes from a 512 x 512 map of four depth layers drawn from the sun for each groom, and the
+scene's shadow map shadows the hair too. Up to four lamps from `s3d::lights` light it the
+same way, each with its own map of four depth layers drawn from the lamp (made when the
+first lamp appears, about 5 MB a lamp), and a sphere fitted to the strand roots stands in
+for the head, so a lamp behind the head lights the outline and not the hair in front. A
+rect, sphere or tube lamp widens the highlights by its size as seen from the strand.
+
+The same maps shade the scene's meshes: each frame a smoothed 128 x 128 copy of every map
+goes to the surface shader, which dims the sun and the first four lamps where hair stands
+in the way, so a fringe shades the forehead and long hair shades the shoulders. The shade
+follows the hair one frame late. Up to four grooms cast this way.
+
+Three module knobs trade detail for speed:
+
+| Knob | Default | Meaning |
+| --- | --- | --- |
+| `hair::detail` | 2 | strands drawn on screen per pixel of a guide's strand spread; far hair draws fewer, each covering more, and fills the same area. 0 draws every strand |
+| `hair::light_detail` | 1 | the same for the light maps |
+| `hair::light_turns` | true | the lamps' maps are redrawn one per frame in turn instead of all every frame; a map stays valid while the head moves because it is kept in the hair's own space. A sun that is off draws no map |
+
+On a Radeon RX 9060 XT at 900 x 1100 with five rect lamps, a long wavy style of 3,260
+guides takes about 10 ms a frame with these defaults and 26 ms with every strand and every
+map drawn every frame; the two detail knobs change the picture by 0.3% RMS.
+
+### Default hairstyles
+
+`import gfx.hairdo;` puts a ready-made hairstyle on any character, with no groom file and
+no fitting by hand:
+
+```
+let g = hairdo::wear(item, "head", ["skin", "face"], "long waves", "auburn", 7);
+```
+
+`item` is the scene item of a skinned character, `"head"` the name of its head joint and
+the list names the meshes of its bare body (an empty list takes every mesh). The call
+measures the head, grows the style on it, loads it as a groom that follows the head joint
+and returns the groom's index, or -1 when it finds no head. The last number is a seed: the
+same seed gives the same hair. Hide the character's own hair meshes first.
+
+The 30 styles: `buzz`, `crew`, `crop`, `side part`, `slick back`, `spiky`, `curly top`,
+`afro`, `pixie`, `bowl`, `bob`, `bob bangs`, `lob`, `shag`, `wavy`, `curly`,
+`long straight`, `long side part`, `long layers`, `long waves`, `long curls`, `long bangs`,
+`ponytail`, `low ponytail`, `ponytail bangs`, `top bun`, `low bun`, `twin tails`,
+`pigtails`, `space buns`.
+
+The 22 shades: `black`, `soft black`, `dark brown`, `brown`, `chestnut`, `auburn`,
+`copper`, `strawberry`, `dark blonde`, `blonde`, `golden`, `platinum`, `gray`, `silver`,
+`white`, and the dyed `pink`, `red`, `blue`, `teal`, `green`, `purple`, `lavender`.
+
+| Call | What it does |
+| --- | --- |
+| `hairdo::count()`, `hairdo::name_of(i)` | the number of styles and the name of style `i`, for a picker |
+| `hairdo::tones()`, `hairdo::tone_name(i)` | the same for the shades |
+| `hairdo::style(name)`, `hairdo::tone(name)` | one style (`hairdo::Do`) or shade (`hairdo::Shade`) to read or change before growing it |
+| `hairdo::measure(asset, joint, meshes)` | measures the head: its center, its size (`hairdo::unit`, about 0.1 m on an adult) and its shape in every direction, plus stand-ins for the neck, shoulders and chest that long hair falls around |
+| `hairdo::ball(center, r)` | a plain ball as the head, for heads without a mesh |
+| `hairdo::grow(style, seed, data)` | grows the style on the measured head and writes the groom's bytes for `hair::load`; returns the guide count |
+| `hairdo::wear(item, joint, meshes, style, shade, seed)` | all of it in one call |
+
+A style is a row of numbers, in head units so it fits a small or a large head alike:
+`length`, `cut` (a blunt cut that many units below the head's center), `part`, `fringe`,
+`comb` (falling from the part, back, forward, standing out, gathered, or falling all
+around), `curl` and `wave`, `tie` (one or two tails or buns, with their place and length),
+`frizz` and more; the rows are the table at the top of `hairdo.gold`. Hair grows above a
+hairline fitted to adult heads, lies flat on the scalp, stays outside the head, the neck
+and the shoulders, and its roots are drawn thicker so the scalp does not show through.
+A fringe ends above the brows, and long loose hair is combed to the sides from the
+hairline down (`face`, the half width kept clear, in head units), so the eyes stay clear.
+
+### Foliage
+
+Leaves, needles and grass blades are thin, so light goes through them. A foliage
+material (`shading = 5`) adds that to the standard surface:
+
+```
+var leaf = shapes::material(linalg::v3(0.12, 0.3, 0.06), 0.0, 0.7);
+leaf.double_sided = true;
+leaf.shading = 5;
+leaf.shade_a = float4 { 0.8, 1.0, 0.4, 0.5 };
+leaf.shade_b = float4 { 0.6, 0.0, 0.0, 0.0 };
+```
+
+| Field | Meaning |
+|---|---|
+| `shade_a.rgb` | Color of the light that passes through, as a share of the base color. Leaves pass yellow-green: about 0.8, 1.0, 0.4. |
+| `shade_a.w` | Wrap: how far around the leaf the through-light reaches. 0.5 is a good start. |
+| `shade_b.x` | How much of the screen-space occlusion is lifted, 0 to 1. Dense grass and needles occlude each other on screen until they turn black; 0.5 to 0.7 keeps them readable. |
+
+The sun and other lights behind a leaf light the side that faces the camera, strongest
+when looking toward the light (a wide forward lobe, 0.36 / (pi (1 - 0.64 c^2)^2) with c
+the cosine between the view and the light direction, times the wrapped angle to the
+light). Sky and environment light from behind come through with the same color. The
+sun's shadow is looked up from the lit side, so a back-lit leaf does not shadow itself.
+The side that faces the light looks as it did. Foliage shading does not combine with
+`ext` materials.
+
+**Cut-out textures far away.** A leaf or blade texture is mostly empty, so averaging it
+into smaller mip levels pulls the alpha under the cutoff and thin shapes vanish with
+distance. For the base color texture of a cut-out material (`alpha_mode =
+gltf::ALPHA_MASK`), the alpha of each smaller mip level is scaled (between 0.5 and 8
+times) so the share of texels at or above the material's `alpha_cutoff` stays the same
+as in the full-size image. It lives in the texture, so it holds in every pass, shadows
+included. `s3d::cut_keep` (on) turns it off when set to false before the texture is
+first drawn. Cached BC7 files of these textures carry the cutoff in their name.
+
+### Fabric weave (E13)
+
+A cloth material (`shading = 3`) can show its threads without any texture:
+
+```
+var denim = shapes::material(linalg::v3(0.05, 0.1, 0.35), 0.0, 0.8);
+denim.shading = 3;
+denim.shade_a = float4 { 0.25, 0.3, 0.3, 0.0 };
+denim.shade_c = float4 { 0.7, 700.0, 3.0, 0.8 };
+```
+
+`shade_a` holds the cloth model's wrap, fuzz and specular scale. `shade_c` is the
+weave:
+
+* `shade_c.x`: strength (0 is off, the default). The threads tilt the normal and
+  darken the gaps between them; the mean diffuse light does not change.
+* `shade_c.y`: threads a UV unit (700 when it is 0). The detail map's transform
+  (`detail.m`, `detail.o`) scales and moves the pattern as well.
+* `shade_c.z`: how many cells a warp thread (running along v) passes over before it
+  goes under one. 1 is a plain weave; 2 and 3 are twills with diagonal ribs, as in
+  denim.
+* `shade_c.w`: the weft's lightness. The weft threads (running along u) take the
+  base color mixed toward white by this amount, or toward black when it is negative.
+
+Each thread differs a little in brightness from its neighbors, and from very close
+(a cell wider than 14 pixels) the fibers' twist shows as fine slanted streaks. Where
+a cell covers fewer than 4 pixels the threads fade, and by 2 pixels they are gone:
+the color is then the two thread colors mixed by the share of each that shows, and
+the slopes across the threads widen the highlight, so cloth does not shimmer at a
+distance and keeps the color and highlight it has up close. The weave costs no
+measurable frame time.
+
+### Volumetric clouds (E6)
+
+```
+s3d::atmosphere(to_sun, 3.5, 1.0, 0.5);
+s3d::clouds = s3d::Clouds { on: true, cover: 0.6, wind: float3 { 10.0, 0.0, 0.0 } };
+s3d::world_time = t;
+```
+
+With `clouds.on` a pass marches a layer of cloud for every sky pixel and the sky is
+drawn clear behind it. A second pass keeps a map of how much sunlight gets through
+the clouds around the camera; opaque surfaces and fog multiply their sunlight by it,
+so the ground carries moving cloud shadows and fog shows light shafts. The
+environment map keeps its own baked cloud layer for ambient light and reflections,
+built from the same cloud shape. Settings on `s3d::clouds`:
+
+* `cover` (0.5): 0 is a clear sky, 1 is overcast. At 0 the frame is the same as with
+  clouds off.
+* `base` (1500) and `thick` (2000): the bottom of the layer above y = 0 and its
+  thickness, in world units. `scale` (0.001) is the number of kilometers in a world
+  unit: 0.001 for a scene in meters.
+* `density` (120): how opaque the clouds are. Higher gives harder edges and darker
+  bases.
+* `wind`: world units a second along x and z. Clouds and their shadows move with
+  `s3d::world_time`.
+* `sun` (1): scales the sunlight on the clouds. `air` (0.05): how fast distant
+  clouds fade into the sky, per kilometer.
+* `shadow` (1): strength of the cloud shadows on surfaces and in fog; 0 skips the
+  map. `shadow_size` (512) and `shadow_span` (4000) are the map's side in texels and
+  the world units it covers, centered on the camera; `ground` (0) is the height the
+  map is laid at.
+* `steps` (34): march steps for a sky pixel, up to 128, with two samples a step
+  inside cloud. `res` (0.75): the cloud pass's size as a share of the frame's; the
+  sky pass scales it up with a bicubic filter.
+
+With `s3d::temporal` on, the march start is jittered from frame to frame and the
+temporal pass averages it. A sky full of clouds costs about 1.5 ms at 1280 x 720 on
+an RX 9060 XT.
+
+### Volumetric fog (E6)
+
+```
+s3d::fog_on = true;
+s3d::fog_density = 0.03;
+s3d::fog_noise = 0.7;
+s3d::fog_wind = float3 { 0.5, 0.0, 0.2 };
+s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { 0.0, 0.5, 0.0 }, half: float3 { 4.0, 0.5, 4.0 }, density: 0.4, soft: 0.5, round: true });
+s3d::world_time = t;
+```
+
+With `fog_on` a full-screen pass marches each pixel's ray from the camera to the
+surface it sees and adds the light the fog scatters toward the camera: sunlight
+through the sun's shadow maps and the cloud shadow map, ambient light, and the first
+16 local lights, each with its range, its spot cone and its shadow maps. A shadowed
+spot light draws a visible beam, and objects cut dark shafts out of it. Settings:
+
+* `fog_density` (0.03): how much light a world unit of fog takes out, at and below
+  `fog_height` (0). Above that height the density falls by `fog_falloff` (0.25) per
+  world unit, as an exponential; 0 gives the same fog at every height.
+* `fog_far` (60): where the march ends when no surface is nearer. `fog_steps` (32):
+  samples a ray, up to 64.
+* `fog_g` (0.6): how much of the sunlight the fog scatters forward, toward a viewer
+  facing the sun; 0 scatters it evenly. Local lights scatter evenly. `fog_sun` (1)
+  scales the sunlight in fog and `fog_lights` (1) the local lights, to make beams
+  stronger or weaker without changing the light on surfaces.
+* `fog_ambient`: ambient light on the fog. With an environment map on, the fog takes
+  the environment's light instead.
+* `fog_noise` (0): 0 is even fog. At 1 a noise pattern thins the fog to nothing in
+  places and doubles it in others. `fog_noise_size` (20) is the size of the
+  pattern's fine layer in world units; a second layer is four times larger.
+  `fog_wind` is how far the pattern drifts each second of `s3d::world_time`, in
+  world units.
+* `fog_volumes`: local fog on top of the global fog, which may be 0. The first 8 are
+  used. A `FogVolume` has a center `pos`, a `half` size along x, y and z, a
+  `density` (0.5), the color `rgb` (white) its fog scatters, `soft` (0.25) and
+  `round` (false). A volume is a box along the world axes, or the ellipsoid inside
+  that box with `round`. `soft` is the share of the way from the edge to the center
+  over which the density rises to full; 0 is a hard edge. The noise applies to
+  volumes too.
+
+When a ray crosses volumes, half of its samples are placed between the first and
+the last volume it touches (all of them when the global density is 0), so a small
+volume stays sharp in a long view. With `s3d::temporal` on, the sample positions are
+jittered from frame to frame and the temporal pass averages them. Noise, four
+volumes and a shadowed spot light together add 0.3 to 0.6 ms at 1280 x 720 with 32
+steps on an RX 9060 XT.
+
+## Materials, light and finish
+
+`gltf` reads the core metal-rough model plus `KHR_materials_clearcoat`, `sheen`,
+`transmission`, `volume`, `ior`, `specular`, `iridescence`, `anisotropy`,
+`emissive_strength`, `unlit`, and `KHR_lights_punctual`. Two Helium extras sit on
+a material: `extras.amni = "water"` gives animated water, and
+`extras.height = {index, scale}` gives parallax occlusion from a height map.
+`gltf::bad_images` counts textures that failed to decode.
+
+```
+s3d::look.curve = 1;                  // 0 Reinhard, 1 ACES, 2 AgX, 3 Neutral
+s3d::look.vignette = 0.2;             // also chroma, grain, sharpen, saturation, contrast, warmth
+envmap::load("/m/studio.hdr");        // or envmap::set_equirect(rgba, w, h)
+envmap::rotation = 0.5;               // also on, intensity, blur, size, samples
+s3d::atmosphere(to_sun, 3.5, 1.0, 0.3);   // to_sun, power, haze, clouds: sky, sun color and light
+s3d::lights.push(s3d::Light { pos: p, range: 5.0, rgb: c, radius: 0.1, length: 0.5, .. });   // sphere and tube lights
+s3d::wet = 0.5; s3d::snow = 0.0; s3d::world_time = t;
+```
+
+The final pass adds triangular dither of up to one 8-bit level, in the encoded image,
+so slow gradients such as a clear sky don't show bands.
+
+Lights use clustered forward shading, so thousands of unshadowed lights are allowed;
+the first 16 get shadow maps and fog. The sun convention matches three.js: the shader
+divides by pi, so `sun.rgb` equals a three.js directional light's intensity times its
+color.
+
+Extra lights cost little until there are hundreds. `look_bench` with Holo at 1920 x 1080
+on an RX 9060 XT, with another program using about half the card, median wall time per
+frame: base lights 2.5 ms, 8 more 3.2 ms, 64 more 5.2 ms, 512 more 16.1 ms.
+
+For a still image, set `s3d::temporal = 1` and render about 32 times. The temporal
+pass only anti-aliases when it is on, and a single frame leaves jagged silhouettes.
+Raise `look.ao_samples` and `gtao_steps` too: the default 4 slices leave faint radial
+streaks under a model on a plain floor. Keep the scene near unit size: shadow bias and
+contact shadow lengths are in meters.
+
+### Browser memory
+
+Each growable array gets a fixed region on first growth, since a `wasm32` memory has
+only 4 GiB of address space and regions never move. An array's first growth gets a
+region that fits it (32 MiB minimum while over 2 GiB remains, less after that). Later
+growth past the region stops the program with "array grew past its region". So pre-size
+large arrays on their first use: `T.resize(n, 0); T.clear();`. `read_file`,
+`codec_hdr` and `gltf` already do. Models up to about 2.7 million triangles load, since
+`gltf` still grows some per-primitive arrays one element at a time.
+
 ## Where later features attach
 
 * **Motion blur, reprojection for SSR/GI**: `motion_target()` already holds per-pixel
@@ -84,13 +1465,11 @@ they do not move with the jitter; the look+taa test checks that.
   (`nd`, `lin_depth`), and GTAO (`ao_mode = 1`) writes bent normals (`bent_target()`). The ambient
   term is a single function (`ambient_light()` in `surface.frag`) fed by `Sky`; probe
   irradiance (SH) or a prefiltered cube replaces it without touching the lights.
-* **More cascades, point/spot shadows, PCSS, contact shadows**: `CASCADES` sizes
-  the shadow array and `FrameU.cascade_mat`; `Light.kind` reserves spot lights;
-  the shadow lookup is one function (`sun_visibility()` in `surface.frag`) where a
-  blocker search (PCSS) or a screen-space contact ray can be added.
-* **GPU (meshlet) culling**: `gather()` flattens items into `batch`, one record per
-  primitive draw with its matrix, bounds centre and sort depth; a compute pass can
-  consume that list and write indirect draws instead of the CPU loop in the passes.
+* **More cascades**: `CASCADES` sizes the shadow array and
+  `FrameU.cascade_mat`; the sun lookup is `sun_visibility()` / `sun_pcss()` and the
+  local-light lookup `local_visibility()` in `surface.frag` (see the E3 section); virtual pages are looked up in `sun_vsm()`.
+* **Occlusion culling**: `meshlet_cull.comp` tests each cluster's sphere against the
+  view planes; a test against a depth pyramid goes next to that one.
 
 ## Shading notes
 
@@ -235,6 +1614,69 @@ they do not move with the jitter; the look+taa test checks that.
      the shipped look must settle (< 0.5/255) and stay within 2/255 mean of the
      TAA-off frame (bloom then reads the temporal result); 720p -> 1080p with the
      shipped look must settle and reach >= 30 dB against native 1080p TAA.
+   * **Submit length.** Loops that render many frames submit each frame on its own
+     (`gfx::flush()` after `s3d::render`), so no check queues a long GPU job. After
+     each group of checks the run prints its number of GPU submits, the longest one
+     and how many took more than 100 ms, read from the gputime log, and the longest
+     submit of the whole run is gated (B1 below). `tools/hc/ci.sh` keeps the run's
+     output (`gfx_smoke.txt`, `gputime.log`, `results.txt`, the PNGs) in its work
+     directory under `gfx/`.
+
+### Submit length bars (registered before the first measured run)
+
+A GPU submit is one job for the driver, and the driver limits how long one job may
+run (2 s by default in current Linux amdgpu; past that it resets the queue and the
+application loses its device). The test run keeps every job far below that limit.
+
+* **B1.** The longest single GPU submit of the whole run, read from the gputime log,
+  is at most 500 ms. Control: the same reading of a log the test writes itself, holding
+  one 900 ms submit between two short ones, must fail the bar.
+* **B2 (control for the method).** Twelve frames of the 1280x720 sphere grid recorded
+  into one command buffer must read as exactly one submit, at least 4 times as long as
+  the longest submit of the same twelve frames flushed one by one. This shows that the
+  log reports a batched job as one long submit.
+* Reported, not gated: per group of checks, the number of submits, the longest submit
+  and the number above 100 ms.
+* A full run with no gputime log fails. A `GFX_ONLY` run without the layer prints
+  "not measured" and passes.
+
+### Submit length results (2026-11-09, RX 9060 XT, RADV; `results/2026-11-09_rx9060xt_radv_b25ffcd_submit.txt`, clean worktree, full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| B1 longest submit of the run | 63.82 ms among 116,010 submits; none above 100 ms | at most 500 ms |
+| B1 control, a log holding one 900 ms submit | reads 900.0 ms: fails as it must | fails |
+| B2 twelve frames in one command buffer | 1 submit of 5.057 ms; flushed one by one 13 submits, the longest 0.39 ms: 13 times | one submit, at least 4 times |
+
+Per group of checks, the number of submits and the longest one in ms (none above 100 ms):
+
+| Group | Submits | Longest | Group | Submits | Longest |
+| --- | --- | --- | --- | --- | --- |
+| furnace | 102,472 | 0.58 | dof | 73 | 0.47 |
+| goldens, timing, frame | 783 | 1.22 | fx | 514 | 29.9 |
+| motion | 57 | 0.39 | probe | 90 | 34.53 |
+| taa | 389 | 1.17 | ssgi | 325 | 1.84 |
+| tsr | 808 | 1.4 | decal | 675 | 1.06 |
+| shadow | 600 | 0.97 | weather | 1,581 | 1.32 |
+| look_taa | 539 | 2.16 | rect | 744 | 3.0 |
+| ghost | 1,151 | 1.17 | small | 218 | 2.58 |
+| t8_still | 104 | 0.8 | instance | 255 | 8.55 |
+| s5_inflight | 39 | 0.87 | caustic | 291 | 0.83 |
+| s6_layers | 22 | 0.07 | texture | 352 | 0.98 |
+| gtao | 34 | 1.0 | stream | 1,034 | 11.52 |
+| gi | 234 | 63.82 | rtr | 1,573 | 27.42 |
+| mb | 164 | 0.32 | meshlet | 888 | 11.68 |
+
+Frame-time bars read in the same run, every frame its own submit:
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| TSR resolve, 1280x720 to 1920x1080, GPU p95 | 0.236 ms | below 0.5 ms |
+| F6 speed, 20,000 spheres in view at 1280 x 720 with shadows | one set 7.6 ms a frame, 20,000 items 145.51 ms: 19.14 x | at least 10 x |
+| K8 cost, 1280 x 720 floor under water | 0.64 ms a frame without, 1.07 ms with: 0.43 ms added | at most 1.0 ms |
+| T8 frame, 1280 x 720 | 0.64 ms uncompressed, 0.65 ms compressed | at most 0.2 ms added |
+| R7 cost at 1280 x 720 | scene M off 0.529 ms, on 0.678 ms: 0.149 ms; 20,014-triangle sphere off 0.519 ms, on 0.954 ms: 0.434 ms | at most 1 ms and 4 ms |
+| N9 cost, 64 balls | 8.10 ms off, 2.37 ms on: 0.29 | at most 0.5 |
 
 ### Pre-registered bars (gfx-review2)
 
@@ -494,8 +1936,8 @@ geometry (soft particles). `s3d::fx_dt` runs it after the prepass each frame.
 | F5 control: unsorted | 0.65 | must be > 0.05 | fails |
 | F6 soft particles | step ratio 0.42 | <= 0.5 | PASS |
 
-Reported: 1 000 000 live particles, 3.2 ms per 640 x 360 frame for spawn, simulate and draw
-(2.1 ms with the simulation off), wall clock including a readback sync.
+Reported: 1 000 000 live additive particles, 3.2 ms per 640 x 360 frame for spawn, simulate
+and draw (2.2 ms with the simulation off), wall clock including a readback sync.
 
 The first F5 run measured 0.088: the test drew 0.05 m squares, so the far ones covered under a
 pixel and the centre 3 x 3 the reference composites over was not covered. The bar names no
@@ -530,6 +1972,1841 @@ thin lens, scatter-as-gather disk). Test aperture 0.15, focus 7.5 (the middle sp
 * **D2 focal plane stays sharp.** Pixels whose depth gives a circle of confusion under
   0.5 px: mean |dof - sharp| <= **1 %** of their mean luminance.
 * **Must-fail control.** The same frame with the focus distance doubled must fail D1.
+
+### Pre-registered bars (local reflection probes, E2)
+
+Written before the first GPU run of the probe checks (`probe_checks` in `gfx_smoke.amni`).
+Scene: a closed room 6 x 3 x 6 m with four walls in distinct colours and a white ceiling,
+lit by one point light near the ceiling; outside, a bright sky with ambient 1 and the sun
+off. Floor: metal, base colour 1.0, roughness 0.05. SSR, AO, bloom and temporal off. One
+probe at (0, 1.5, 0) whose box is the room interior, fade 0.25 m. Camera inside at
+(0, 1.6, 2.5) looking down toward the far wall. Compared in linear HDR (`hdr_target`).
+* **R1 mirror match.** Reference: the room seen from the camera mirrored through the floor
+  plane, floor hidden, probes off, columns flipped (a perfect mirror). Region: rows 60-95 %,
+  columns 15-85 % (floor only). Metric: sum |probe - ref| / sum ref over RGB. Bar: **<= 0.15**.
+* **R2 parallax correction earns its place.** The same frame with `probe_parallax = false`:
+  its R1 metric must be **>= 1.5 x** the corrected one.
+* **R3 nothing changes without probes.** gfxtest's sphere goldens keep PSNR > 40 dB,
+  `webgputest.mjs` and `wgsltest.mjs` 0 failures (the env cube is now a cube array).
+* **Must-fail control.** Probes off (the floor reflects the sky through the walls) must
+  fail R1.
+* Reported, no bar: capture time for one probe at `probe_res` 256, frame time with the
+  probe on and off.
+
+Added after the first run (R1 0.0304, R2 15.68 x, control 1.6734, all with a one-bounce
+capture), before the multi-bounce run. The first run's frames showed the floor reflecting
+walls brighter than the walls themselves: the probe lights the walls' diffuse inside its
+box, while the capture saw them lit by the sky. Captures now repeat `probe_bounces` times
+(default 3), each pass shaded with the previous one's probes. R1, R2 and the control run
+with `probe_bounces = 1`, as registered.
+* **R1b consistency at the default bounces.** Reference: the mirrored camera with the
+  probe on (floor hidden, probe not recaptured). Same region and metric. Bar: **<= 0.15**.
+* **R4 bounces earn their place.** The R1b metric with `probe_bounces = 1` must be
+  **>= 1.5 x** the default's.
+
+Results (RX 9060 XT, RADV, 640 x 360, `GFX_ONLY=probe`):
+
+| check | value | bar | result |
+| --- | --- | --- | --- |
+| R1 mirror match, 1 bounce | 0.0304 | <= 0.15 | pass |
+| R2 no parallax / parallax | 0.4761 / 0.0304 = 15.68 x | >= 1.5 x | pass |
+| control, probes off | 1.6734 | must fail R1 | fails (good) |
+| R1b, 3 bounces vs lit mirror | 0.0485 | <= 0.15 | pass |
+| R4, 1 bounce vs lit mirror | 0.9058 = 18.69 x | >= 1.5 x | pass |
+
+The first 3-bounce run failed R1b (0.3121): every pass also refilters the probe's diffuse
+level, so the last capture saw walls lit by the second bounce's irradiance while the frame
+lit them with the third's, and the reflection came out darker than the walls. The last
+bounce now keeps the previous bounce's diffuse level (`envmap::filter(..., irr)` skips the
+irradiance mip), so the frame lights walls with the same irradiance the capture used. Same
+bar, second run 0.0485. Capture plus first frame: about 80 ms at 1 bounce, 109 ms at 3;
+frame time 0.338 ms with the probe and 0.31 ms without (30-frame mean, 640 x 360).
+
+R3: `gfxtest.sh` sphere golden 44.92 dB and shipped-look golden 41.7 dB (bar > 40), CPU
+output unchanged; `wgsltest.mjs` 59 modules, 50 pipelines, 0 failures (its own view
+dimension table needed `cube-array`, like `gpu.js`); `webgputest.mjs` 0 failures, plus a new
+`scene_probe` (the e2 floor with one probe) that matches native exactly. In that gfxtest run
+T7 (TSR resolve GPU p95 < 0.5 ms) failed at 1.39 ms while two other processes kept the GPU
+about 100 % busy; an A/B of T7 alone under the same load gave main dc74467f 0.45, 0.61, 1.16
+and 1.50 ms and this branch 1.09, 1.16, 0.45, 0.45 and 1.12 ms, so T7 is re-run on a quiet
+GPU before merging.
+
+### Pre-registered bars (screen-space GI, E2)
+
+Written before the first GPU run of the SSGI checks (`ssgi_checks` in `gfx_smoke.amni`).
+Scene, reference, gate and regions are GI part 1's (the Cornell box against the
+65536 spp path tracer, 512 x 512 box-filtered to 128 x 128, G1/G2a/G2b as defined
+there). Direct light is the same as GI part 1's control (`rt_shadows` on, `gi_on` off,
+black sky, bloom off, 32 frames); the only change is `ssgi_on = true` with its defaults
+(4 rays per half-resolution pixel, 32 steps, `ssgi_dist` 10, thickness 0.25). On record
+from GI part 1, that control scores G1 0.5633, G2a 0.6867, G2b 0.9789; the BVH probe
+GI scores 0.0561 / 0.065 / 0.0882. Screen-space GI cannot see surfaces that are off
+screen or hidden, so its bars sit between the two:
+
+* **S1 overall.** G1 <= **0.20**.
+* **S2 ceiling.** G2a <= **0.25** (its bounce light comes from the floor and walls, all
+  on screen).
+* **S3 shadowed.** G2b <= **0.5 x** the control's (light behind the blocks comes partly
+  from faces the camera cannot see).
+* **S4 nothing changes without SSGI.** gfxtest goldens > 40 dB; `webgputest.mjs` 0
+  failures with `scene_e2` (SSR now shares its ray march with SSGI) still matching
+  native; a new `scene_ssgi` must match native under webgputest's usual bar.
+* **Must-fail control.** SSGI with `ssgi_intensity = 0` (its occlusion still applied,
+  no bounce light) must fail S1.
+* Reported, no bar: wall-clock frame time at 1280 x 720 with SSGI on and off.
+
+The first run changed nothing: SSGI scored exactly the control's numbers. Clearing a
+scene sets `temporal_reset`, and only the TAA pass cleared it, so with TAA off it stayed
+set and last frame's colour never counted as valid. `temporal_pass` now clears it when TAA
+is off too (this also brings SSR back in TAA-off renders after a scene clear). Then, before
+the final run: the march starts at Hi-Z level 1 and returns why it stopped, rays out of
+steps are left out instead of counted as dark (a third of rays ran out at 32 steps),
+`ssgi_steps` 32 -> 64, thickness 0.25 scene units -> 0.05 x depth, and SSGI got its own
+edge fade (0.02; it had borrowed `ssr_edge` 0.07). The history fetch also read a quarter
+of a half-resolution texel off, so every frame's bilinear read moved the stored light down
+and right; with 17 frames of history the bounce light sat about 8 pixels from the
+geometry that cast it. Bars unchanged.
+
+Results (RX 9060 XT, RADV, `GFX_ONLY=ssgi`, cold start, 32 frames):
+
+| check | value | bar | result |
+| --- | --- | --- | --- |
+| S1 overall G1 | 0.1721 | <= 0.20 | pass |
+| S2 ceiling G2a | 0.2322 | <= 0.25 | pass |
+| S3 shadowed G2b | 0.3402 = 0.35 x control 0.9789 | <= 0.5 x | pass |
+| control, no bounce light | 0.5633 | must fail S1 | fails (good) |
+
+Bounces keep building after 32 frames: at 128 frames G1 0.1299, G2a 0.1834, G2b 0.2326
+(shadowed signed error -0.34 at 32 frames, -0.22 at 128). The BVH GI still does better
+(0.0561 / 0.065 / 0.0882): the shadowed floor beside the blocks gets light from faces
+the camera cannot see. GPU time at 1280 x 720 (Cornell, 60 frames, timestamp layer)
+while another process held the GPU about 100 % busy, so read the differences, not the
+totals: off 5.28 ms per frame, on 10.16; 1 step 6.85 (the fixed passes, about 1.6 ms),
+16 steps 7.39, 32 steps 9.11; 1 ray 7.61, 2 rays 8.71. To be re-measured on a quiet GPU.
+
+S4: `gfxtest.sh` sphere golden 44.92 dB and shipped-look golden 41.7 dB (bar > 40, both
+the same as before SSGI), S1-S3 again in the full run (0.1724 / 0.2324 / 0.3406);
+`wgsltest.mjs` 62 modules, 53 pipelines, 0 failures; `webgputest.mjs` 12 scenes, 0
+failures, with `scene_e2` (SSR through the shared march) and the new `scene_ssgi` (the
+e2 scene with SSGI on, 7 frames) both matching native exactly. T7 failed again at
+1.66 ms with the GPU busy, as in the probe run; the decal gate run (below) passed it at
+0.448 ms with the GPU quieter.
+
+### Pre-registered bars (deferred decals, E7)
+
+Written before the first GPU run of the decal checks (`decal_checks` in `gfx_smoke.amni`).
+Scene: a 4 x 4 m floor (`shapes::plane`, roughness 0.6, metal 0) under the default sun
+and sky; AO, SSR, SSGI, bloom and temporal off; camera at (0, 2.2, 2.7) looking at the
+origin; 640 x 360. The floor's base color is a 1024 x 1024 grey checker (16 cells a
+side). Decal: a 128 x 128 RGBA image made in the test (a colored disc with a soft alpha
+edge, a darker ring and a hard-edged cut-out bar), projected straight down by a box
+1.5 m wide and deep and 1 m tall, centred at (0.2, 0, -0.1), turned 20 degrees about y.
+Compared in linear HDR (`hdr_target`).
+* **D1 color decal match.** Reference: no decal; the floor's texture is instead the
+  checker with the decal composited over it on the CPU (each texel's floor point taken
+  into the decal box, the image sampled bilinearly, alpha over in linear color), same
+  size and sampling as the plain checker. Region: pixels whose floor point lies inside
+  the box's footprint by at least 2 pixels. Metric: sum |decal - ref| / sum ref over RGB.
+  Bar: **<= 0.04**.
+* **D2 nothing outside the box.** Pixels whose floor point lies more than 2 pixels
+  outside the footprint: max |decal - no decal| over RGB **== 0** (bit for bit).
+* **D3 normal decal match.** The same box with a normal-only decal (a 128 x 128
+  tangent-space map of round bumps, alpha 1 inside a disc, 0 outside). Reference: the
+  floor with a normal texture that is flat except where the decal's normals are
+  composited in the same way, turned into the floor's tangent frame. Same region and
+  metric. Bar: **<= 0.05**.
+* **D4 nothing changes without decals.** gfxtest goldens > 40 dB and `webgputest.mjs` 0
+  failures; a new `scene_decal` (the e2 scene with one color decal on the floor) must
+  match native under webgputest's usual bar.
+* **Must-fail control.** Decals off must fail D1.
+* Reported, no bar: GPU time of the decal pass at 1280 x 720 with 1, 16 and 64 decals
+  over the view.
+
+### Decal results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | result | bar |
+| --- | --- | --- |
+| D1 color decal | 0.0023 (worst pixel 0.046) | <= 0.04: PASS |
+| D2 outside the box | 0, bit for bit over 204,514 pixels | == 0: PASS |
+| D3 normal decal | 0.0008 (worst pixel 0.0066) | <= 0.05: PASS |
+| must-fail control, decals off | 0.2842 | fails D1, as required |
+| D4 | goldens 44.92 / 41.7 dB; `wgsltest.mjs` 62 modules, 53 pipelines, 0 failures; `webgputest.mjs` 13 scenes, 0 failures, `scene_decal` identical to native | PASS |
+
+The D1 and D3 region holds 22,587 pixels. The normal decal moves the image by 0.068
+(plain floor against its reference), so D3's match is about 85 times tighter than the
+effect it measures. The comparison image is `decal_cmp.ppm` in the gfxtest output folder
+(rows: color, normal; decal, reference, signed error). Frame time at 1280 x 720 with the
+decals in a grid over the floor (wall clock, best of 2 x 60 frames, GPU shared with other
+jobs; reported): 0 decals 1.29 ms, 1 decal +0.06 ms, 16 +0.14 ms, 64 +0.31 ms. At 64 the
+boxes overlap so most floor pixels sit inside about 14 of them. The same run passed T7
+(TSR resolve GPU p95 0.448 ms, bar < 0.5 ms).
+
+### Pre-registered bars (rain and snow, E6)
+
+Written before the first GPU run of the weather checks (`weather_checks` in
+`gfx_smoke.amni`). Scene: a 40 x 40 m ground at y = 0 and a 4 x 4 m roof slab 0.2 m
+thick with its top at y = 3, centered over (5, 0); camera at (0, 1.7, 8) looking at
+(0, 1.5, 0), fov 0.75, 960 x 540, 1/60 s steps. Rain: 40,000 drops falling straight down
+at 9 m/s in a box 24 x 16 x 24 m centered on the camera, splashes lasting 0.12 s, shelter
+on. "Falling" drops are those not splashing.
+* **W1 even after the camera moves.** After 2 s of rain the camera flies 30 m along x and
+  15 m along z in 2 s at constant height. Then the open air of the box (above y = 0.5,
+  below 0.5 m under its top) is cut into 2 x 2 x 2 equal cells: every cell's count of
+  falling drops within **+-10 %** of the cells' mean. Control: wrapping off must fail W1.
+* **W2 shelter.** Camera still, after 2 s of rain, at 10 frames 6 frames apart: falling
+  drops under the roof (its footprint shrunk by 0.25 m on each side, 0 < y < 2.8)
+  **== 0** at every frame, and an open column of the same size centered over (-5, 0)
+  holds on average **at least 0.8 x** the open-air density times its volume. Control:
+  shelter off must fail W2.
+* **W3 splashes match the rain.** Same frames: the mean number of splashing drops within
+  **+-10 %** of rho x v x A x tau (rho the mean density of falling drops in the box's
+  open air, v = 9 m/s, A = 24 x 24 m, tau = 0.12 s), which is how many land per second
+  times how long each splash lasts. Control: splashes off must fail W3.
+* **W4 streak length.** A single drop rendered alone on black with a 1/30 s streak: the
+  streak's half length measured from the image (sqrt(8) times the standard deviation of
+  brightness along its long axis, which is exact for the particle's (1 - r^2)^2 falloff)
+  within **+-5 %** of the drop's half length projected to the screen, for drops 3, 6 and
+  12 m away falling straight down and one 6 m away blown sideways (velocity (5, -9, 0)).
+  Control: no streak must fail W4.
+* **W5 snow keeps its speed.** 20,000 snowflakes falling at 1 m/s with curl turbulence:
+  over 1 s the mean downward speed from their positions, flakes that wrapped or landed
+  left out, within **+-5 %** of 1 m/s.
+* **W6 nothing changes without weather.** gfxtest goldens > 40 dB and the existing fx
+  checks pass; `wgsltest.mjs` and `webgputest.mjs` 0 failures, with a new `scene_rain`
+  (rain over the e2 scene) matching native under webgputest's usual bar.
+* Reported, no bar: frame time at 1280 x 720 with and without the 40,000-drop rain.
+
+### Rain and snow results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| W1 even after the camera moves | worst cell 3.6 % off the mean (2610 .. 2764 drops) | <= 10 % | PASS |
+| W1 control: wrap off | every cell empty | must fail | fails |
+| W2 under the roof | 0 drops at every frame | == 0 | PASS |
+| W2 open column | 1.02 x expected | >= 0.8 | PASS |
+| W2 control: shelter off | 182 drops under the roof | must fail | fails |
+| W3 splashes | 1.003 x rho v A tau (2700 vs 2693) | 0.9 .. 1.1 | PASS |
+| W3 control: splashes off | 0 | must fail | fails |
+| W4 streak 3 m | 34.29 px vs 34.29 px (+0.01 %) | +-5 % | PASS |
+| W4 streak 6 m | 17.08 px vs 17.14 px (-0.34 %) | +-5 % | PASS |
+| W4 streak 12 m | 8.24 px vs 8.57 px (-3.9 %) | +-5 % | PASS |
+| W4 streak 6 m, blown sideways | 19.62 px vs 19.61 px (+0.03 %) | +-5 % | PASS |
+| W4 control: no streak | 4.6, 2.3, 1.4, 2.3 px | must fail | fails |
+| W5 snow speed | 0.972 m/s (10 388 flakes) | 0.95 .. 1.05 | PASS |
+| W6 goldens | 44.9 dB, shipped look 41.7 dB | > 40 dB | PASS |
+| W6 fx checks F1 .. F6 | all pass | as before | PASS |
+| W6 `wgsltest.mjs` | 63 modules, 54 pipelines, 0 failures | 0 | PASS |
+| W6 `webgputest.mjs` | 14 scenes, 0 failures; `scene_rain` identical to native | 0 | PASS |
+
+Open-air density (4.33 drops per m3) is counted between y = 3.5 and 9.2 m, which is 0.5 m
+above the roof and 0.5 m under the box's top. The 12 m streak is about 1 px wide, so its
+brightness profile is sampled the most coarsely of the four.
+
+Reported: 1280 x 720 frame 2.78 ms without weather and 3.50 ms with 40 000 drops of rain
+(+0.72 ms: height map, simulation and streaks), wall clock, best of 2 x 60 frames.
+
+### Cut-out and thinning bars (registered before the first GPU run)
+
+512 x 512, unlit white cards on black, camera straight down. Covered pixels are the
+ones with a green level above 60 of 255.
+
+* **CK1** A 512 x 512 texture of 2,600 dashes of 1 x 12 texels, cutoff 0.5, on a 2 m
+  plane: the covered share of the plane at 12 m (one eighth the size on screen) is
+  within 25% of the share at 1.5 m. Measured 0.103 against 0.113. Control: with
+  `cut_keep` off the far share is under half of the close one (0.006).
+* **CK2** At 1.5 m the same pixels are covered with and without it (29,698 both).
+* **TH1** 20,000 cut-out cards of 0.1 x 0.02 m on a 10 m square seen from 60 m:
+  thinning draws at most a quarter of the triangles and the covered pixel count stays
+  within 15%. Measured 9,957 of 40,000 triangles, 8,414 against 9,141 pixels.
+* **TH2** From 4 m the triangles drawn and the pixels covered are equal with and
+  without thinning (9,582 triangles, 102,360 pixels).
+* **TH3** The same cards with a solid material are never thinned: 40,000 triangles
+  at 60 m.
+
+### Foliage bars (registered before the first GPU run)
+
+Foliage scene: one 1 m double-sided leaf (base 0.12, 0.3, 0.06, roughness 0.7,
+through-color 0.8, 1.0, 0.4, wrap 0.5), sun overhead, sky ambient 0.05, 512 x 512, values
+are the mean green level over the middle 64 x 64 pixels unless stated.
+
+* **FL1 back light.** Seen from the dark side, the foliage leaf must be at least 3
+  times as bright as the plain one, with green above red above blue. Measured 10.8
+  plain, 164.2 as foliage (red 99.3, blue 46.5).
+* **FL2 lit side.** Seen from the lit side, foliage and plain must differ by at most 1
+  level on average. Measured 0.07.
+* **FL3 view angle.** Looking toward the sun through the leaf must be at least 1.5
+  times as bright as from 60 degrees off, and that must still be above plain. Measured
+  164.2 and 91.3.
+* **FL4 sky from behind.** With sky light only (ambient 1, sun off), the underside must
+  be at least 1.5 times as bright as plain. Measured 70.5 plain, 163.6 as foliage.
+* **FL5 occlusion lift.** A leaf beside a 1 m wall under sky light: screen occlusion
+  must darken the strip next to the wall by at least 3 levels at lift 0, lift 1 must be
+  within 1 level of occlusion off, and lift 0.5 must land between. Measured 166.2 off,
+  153.2 on, 160.2 at 0.5, 166.2 at 1.
+
+### Puddle, lens drop and camera bars (registered before the first GPU run; U1 uses 0.2 m puddles so the view holds about 2,000 of them, U5 and N6 compare the fastest of 255 alternating frames because another program was using the GPU, and N5 also checks the direction)
+
+Puddle scene: a 20 m matte floor (albedo 0.4, roughness 0.8), sun near overhead, sky
+ambient 0.05, no post effects, 512 x 512, camera 12 m straight above unless stated.
+
+* **U1 puddle share.** `puddles` 0.25, 0.5 and 0.75: the share of floor pixels on the
+  puddle side of the midpoint between the dry and the all-puddle brightness is within 0.05
+  of the setting. Control: `puddles` 0 gives the dry frame exactly.
+* **U2 level ground only.** The same floor tilted 20 degrees at `puddles` 0.75: share at
+  most 0.02.
+* **U3 ripples move.** Camera at eye height looking along the floor toward the sun, all
+  puddle: two frames 0.1 s apart differ by a mean of at least 0.5 (of 255) over the floor
+  at `ripples` 1, by exactly 0 at `ripples` 0, and `ripples` 0.3 changes less than
+  `ripples` 1.
+* **U4 ripples stay in puddles.** `puddles` 0, `wet` 1, `ripples` 1: two frames 0.1 s
+  apart are identical.
+* **U5 cost.** The floor filling a 1280 x 720 frame, all puddle, `ripples` 1 against
+  `puddles` 0: at most 0.3 ms more a frame.
+* **U6 low ground fills first.** A floor whose height map is 0 on one half and 1 on the
+  other, `puddles` 0.5: the puddle share of the two halves differs by at least 0.4.
+  Control: without a height map the halves differ by at most 0.05.
+* **U7 sealed surfaces.** `wet` 1: the floor is at most 0.85 of its dry brightness;
+  with `sealed` 1 it stays within 0.07 of dry.
+* **N1 off is off.** `look.lens_rain` 0 and `look.letterbox` 0 leave every golden image
+  unchanged (the GPU test group passes).
+* **N2 share.** Sky filling a 640 x 360 frame as a vertical ramp: the share of pixels a
+  drop changes rises from `lens_rain` 0.25 to 0.5 to 1 and is between 0.15 and 0.6 at 1.
+* **N3 a drop shows the scene upside down.** In the same frame the mean vertical
+  brightness slope over pixels inside drops has the opposite sign to the slope outside.
+* **N4 drops sit on the lens.** Turning the camera 30 degrees leaves the set of changed
+  pixels at least 0.9 the same (intersection over union).
+* **N5 drops run.** The set of changed pixels is at least 0.9 the same 1/60 s later and at
+  most 0.8 the same 3 s later. After 0.25 s it matches better moved 5 rows down than moved
+  5 rows up.
+* **N6 cost.** `lens_rain` 1 at 1280 x 720: at most 0.2 ms more a frame.
+* **H1 hand-held camera.** `s3d::handheld(camera, t, 1.0)` at 60 samples a second for
+  20 s: the view direction is between 0.2 and 0.7 degrees (root mean square) from the
+  steady one, moves at most 0.05 degrees between samples, and averages within 0.1 degrees
+  of steady. Amount 0 returns the camera unchanged, and the same `t` gives the same camera.
+* **H2 letterbox.** `look.letterbox = 2.39` at 1280 x 720: the top 92 and the bottom 92
+  rows are black and every other pixel is unchanged.
+* **X1 nothing else moved.** gfxtest passes; wgsltest and webgputest report 0 failures.
+
+### Puddle, lens drop and camera results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| U1 puddle share | 0.247, 0.497 and 0.741 at 0.25, 0.5 and 0.75 | within 0.05 |
+| U1 control, `puddles` 0 | the dry frame exactly, whatever the size, ripples and time | identical |
+| U2 floor tilted 20 degrees | 0 | at most 0.02 |
+| U3 ripples move | 0.772 at 1 over the whole frame, 0.194 at 0.3, 0 at 0 | at least 0.5; less; 0 |
+| U4 ripples stay in puddles | 0 | 0 |
+| U5 cost | 0.16 to 0.32 ms in seven runs with another program holding the GPU at 100 % | at most 0.3 ms |
+| N2 share of the frame | 0.049, 0.108 and 0.198 at 0.25, 0.5 and 1 | rising; 0.15 to 0.6 at 1 |
+| N3 upside down | slope 0.019 outside drops, -1.761 inside | opposite signs |
+| N4 camera turned 30 degrees | 1.0 the same | at least 0.9 |
+| N5 drops run | 0.948 the same after 1/60 s, 0.323 after 3 s; 0.265 moved down against 0.117 moved up | at least 0.9; at most 0.8; down |
+| N6 cost | 0.07 to 0.13 ms in seven runs with another program holding the GPU at 100 % | at most 0.2 ms |
+| H1 hand-held camera | 0.325 degrees, largest step 0.043, mean off by 0.008; amount 0 unchanged; repeats | 0.2 to 0.7; at most 0.05; at most 0.1 |
+| H2 letterbox | 184 black rows, the rest unchanged | 184; unchanged |
+| N1 and X1 | gfxtest passes; wgsltest 84 modules, 71 pipelines, 0 failures; webgputest 26 scenes, a window and a compute check, 0 failures | all pass |
+
+With 0.4 m puddles the same view holds a quarter as many and U1 reads 0.289, 0.554 and
+0.773: the share is exact over a large area and varies over a small one.
+
+### Pre-registered bars (rect area lights, E4)
+
+Written before the first GPU run of the rect-light checks (`rect_checks` in
+`gfx_smoke.amni`). Scene: a 40 x 40 m floor with its top at y = 0, camera at (0, 1.6, 5)
+looking at (0, 0, -1), fov 0.75, 960 x 540, black sky, no sun, no ambient, every screen
+effect off. One light at a time, range 1000 m:
+* L1: 2 x 1 m facing straight down at (0, 2, -1), long side along x.
+* L2: 1 x 1 m at (0, 1.5, -3), tilted 45 degrees to face the camera side.
+* L3: 1 x 1 m standing upright through the floor at (-1.5, 0.3, -1), facing +x, so its
+  lower 0.2 m is below the floor.
+* L4: 0.25 x 0.25 m facing down at (0.5, 1, 0).
+
+Materials: white metal (F = 1) at roughness 0.1, 0.2, 0.35, 0.5, 0.75 and 1, and a
+dielectric at roughness 0.5 and 1 rendered twice, with albedo 0.8 and with albedo 0.
+Pixels are sampled on a grid every 40 px. The reference for a pixel is a CPU brute-force
+integral over the light's surface of the shader's own lighting for that pixel's floor
+point and view: GGX, Smith with Schlick-GGX, Schlick Fresnel, and the multiple-scatter
+factor and diffuse weight replayed from the LUT the way N3 does. It uses 600 x 600
+samples for roughness <= 0.2 and 300 x 300 otherwise, times the range window. A pixel is
+kept when its reference is at least 5 % of the render's highest reference.
+* **R1 diffuse.** The dielectric's albedo 0.8 render minus its albedo 0 render (the
+  specular cancels exactly), all four lights: every kept pixel within **+-2 %**. Control:
+  the light treated as one point at its center sending I cos(theta) must fail R1.
+* **R2 specular.** The six metals and the dielectric's albedo 0 renders, all four lights:
+  every kept pixel within **+-10 %**, and at least **95 %** of kept pixels within
+  **+-5 %**. Control: the light's half-vector region taken as one straight-edged polygon
+  (no sub-rects, no edge tessellation) must fail R2.
+* **R3 one-sided.** L3 with the roughness 0.5 metal and with the albedo 0.8 dielectric:
+  every sampled floor pixel behind the light's plane (x < -1.501) reads **exactly 0**.
+* **R4 nothing else changes.** gfxtest goldens > 40 dB and every existing check passes;
+  `wgsltest.mjs` and `webgputest.mjs` 0 failures, with a new `scene_rect` (one rect light
+  over the e2 scene) matching native under webgputest's usual bar.
+* Reported, no bar: frame time at 1280 x 720 with one rect light and with one point
+  light in the same place.
+
+### Rect area light results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| R1 diffuse, all four lights | worst 0.17 % | +-2 % | PASS |
+| R1 control: one point at the center sending I cos(theta) | worst 61.35 % | must fail | fails |
+| R2 specular, worst kept pixel | 8.69 % | +-10 % | PASS |
+| R2 specular, kept pixels within +-5 % | 99.7 % of 1652 | >= 95 % | PASS |
+| R2 control: one straight-edged polygon | worst 237.76 %, 66.34 % within +-5 % | must fail | fails |
+| R3 behind L3 | 237 pixels, every one exactly 0 | == 0 | PASS |
+| R4 goldens | 44.92 dB, shipped look 41.7 dB | > 40 dB | PASS |
+| R4 every other gfxtest check | all pass | as before | PASS |
+| R4 `wgsltest.mjs` | 63 modules, 54 pipelines, 0 failures | 0 | PASS |
+| R4 `webgputest.mjs` | 15 scenes, 0 failures; `scene_rect` 105.84 dB vs native | 0 | PASS |
+
+Worst error per light, over its materials:
+
+| light | diffuse | diffuse control | specular | specular control |
+| --- | --- | --- | --- | --- |
+| L1 2 x 1 m facing down | 0.10 % | 18.15 % | 2.93 % | 237.76 % |
+| L2 1 x 1 m tilted 45 deg | 0.17 % | 8.39 % | 1.80 % | 59.57 % |
+| L3 1 x 1 m upright through the floor | 0.10 % | 61.35 % | 8.69 % | 58.93 % |
+| L4 0.25 x 0.25 m facing down | 0.08 % | 2.00 % | 0.43 % | 4.86 % |
+
+The largest specular errors are under L3, the panel standing on the floor, where the
+floor sees it nearly edge-on. `scene_rect` puts two rect lights (a warm 1.5 x 0.7 m
+panel with shadows overhead and a cool 0.8 x 0.8 m panel at the side) over the e2
+scene with the sun dimmed.
+
+Reported: 1280 x 720 with the floor filling most of the view under L1, one rect light
+3.02 ms and one point light at its center 0.92 ms on an idle card (3.34 and 2.43 ms
+during the full gfxtest run).
+
+### Pre-registered bars (eye catchlights from area lamps)
+
+The eye's cornea lobe (roughness `shade_b.w`, about 0.035) is far sharper than the
+eye's base lobe, so under a rect, sphere or tube lamp it gets its own closest point on
+the lamp and its own energy scale, and a softbox leaves a catchlight the shape of the
+lamp. Registered on
+2026-11-11 before the first GPU run. Scene: a 12 mm eye sphere (eye shading, albedo
+0.02, roughness 1, cornea weight 1 at roughness 0.035) at the origin, black sky, sun
+off, one lamp of radiance 20 about 1 m away toward (0.4, 0.4, 0.8), the camera 8 cm in
+front, 256 x 256; brightness is the HDR target's luminance.
+
+| bar | measured | passes when |
+| --- | --- | --- |
+| EY1 a rect lamp leaves a catchlight | a 0.3 m square rect lamp facing the eye: pixels at brightness 0.1 or more | at least 20 |
+| EY1 control, cornea off | the same with cornea weight 0 | below 5 |
+| EY2 a sphere lamp leaves a catchlight | a sphere lamp of radius 0.15 m in its place: pixels at brightness 0.1 or more | at least 20 |
+| EY2 control, cornea off | the same with cornea weight 0 | below 5 |
+| EY3 the catchlight is not a spike | the brightest pixel in EY1 and in EY2 over 0.02 times the lamp radiance | between 0.5 and 2.5 |
+
+### Eye catchlight results (2026-11-11, RX 9060 XT, RADV)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| EY1 rect lamp | 316 pixels | at least 20 | PASS |
+| EY1 control, cornea off | 0 pixels, peak 0.047 | below 5 | fails as it should |
+| EY2 sphere lamp | 260 pixels | at least 20 | PASS |
+| EY2 control, cornea off | 0 pixels, peak 0.037 | below 5 | fails as it should |
+| EY3 peak over 0.02 times the radiance | rect 1.041, sphere 1.152 | 0.5 to 2.5 | PASS |
+| EY3 with the cornea lit at the base lobe's point | rect 179, sphere 1764 | 0.5 to 2.5 | fails |
+| `wgsltest.mjs` | 84 modules, 71 pipelines, 0 failures | 0 | PASS |
+
+### Pre-registered bars (dome normals for dished eyes)
+
+Many stylized eye meshes dish the iris inward to fake depth. A dish is a concave mirror, so
+the cornea's catchlight lands on the side away from the lamp and breaks into pieces.
+`gltf::dome_normals(asset, mesh name)` splits the named mesh into its connected pieces,
+fits a sphere to each (a second fit leaves out the points that sit off the first sphere,
+which is the dish), and points every normal away from its piece's center. Scene: a
+synthetic eye, the front half of a 12 mm sphere at (0.031, 1.5, 0.1) in 25 rings of 48
+points, whose points within 4.5 mm of the front axis sit up to 1 mm back in a dish and
+carry that dish's normals; error is the angle between a vertex normal and the direction
+from the true center to the vertex. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| DN1 one dished eye is domed | largest error after `dome_normals` | below 2 degrees |
+| DN1 control, not domed | largest error before the call | above 10 degrees |
+| DN2 two eyes in one mesh are fit apart | the same with a second eye at x -0.031 in the same primitive | below 2 degrees |
+| DN2 control, one shared center | the error measured from the midpoint between the two true centers | above 10 degrees |
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| DN1 after `dome_normals` | 1.187 degrees, 1 piece fit | below 2 | PASS |
+| DN1 control, before the call | 21.543 degrees | above 10 | fails as it should |
+| DN2 two eyes in one primitive | 1.187 degrees, 2 pieces fit | below 2 | PASS |
+| DN2 control, midpoint center | 178.813 degrees | above 10 | fails as it should |
+
+On the Holo and Dex companion models (eye meshes dished about 1 mm, iris normals tilted
+inward) the call fits 4 pieces per model and moves the key lamp's catchlight from the
+lower-left of the pupil to the upper-right, the side the lamp is on.
+
+### Pre-registered bars (updo: strands gathered into a bun)
+
+`hair::Style` gains `head` (an ellipsoid: center xyz and radius w, stretched per axis by
+`head_scale`; radius 0 keeps the old gravity growth), `gather` (the bun's center) and `bun`
+(the bun's radius). With a head, each strand runs over the ellipsoid from its root to the
+gather point, lifted a few millimeters off the surface at mid-length, then coils into a bun
+around the gather point. Scene: 2000 roots on the top and front of a 9 cm sphere at
+(0, 1.6, 0) (directions with y above 0.15 and z above -0.4), root normals radial, gather
+point 9.5 cm from the center toward (0, 0.5, -0.87), bun 0.03, 24 points per strand.
+CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| UP1 strands reach the bun | share of strands whose last point is within 1.5 x bun of the gather point | at least 0.95 |
+| UP1 control, no head | the same with head radius 0 (gravity growth, length 0.3) | below 0.2 |
+| UP2 strands hug the head | share of points before the coil that sit between -1 mm and 15 mm outside the sphere | at least 0.95 |
+| UP2 control, straight lines | the same for 16 evenly spaced points on the straight line from each root to the gather point | below 0.5 |
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| UP1 strands reach the bun | 1.0 | at least 0.95 | PASS |
+| UP1 control, no head | 0.0 | below 0.2 | fails as it should |
+| UP2 strands hug the head | 1.0 | at least 0.95 | PASS |
+| UP2 control, straight lines | 0.174 | below 0.5 | fails as it should |
+
+### Pre-registered bars (tails: twin tails and ponytails)
+
+`hair::Style` gains `tail`, a tail's length below the gather point (0, the default, keeps the
+bun). With a tail, two thirds of each strand's points hang from the gather point instead of
+coiling: the tail first swings out away from the head, then falls the full length, spreading
+from a tight tie to a few centimeters wide, with `curl` and `turns` waving each strand. A
+twin-tail groom is two grooms, one per side. Scene: the updo scene's 2000 roots, gather point
+12 cm from the center toward (1, 0.6, -0.3) (3 cm off the side of the head), tail 0.3, bun
+0.03, 24 points per strand. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT1 tails hang their length | share of strands whose last point is at least 0.8 x tail below the gather point | at least 0.99 |
+| TT1 control, tail 0 (the bun) | the same | below 0.2 |
+| TT2 tails clear the head | share of tail points outside the 9 cm sphere | at least 0.99 |
+| TT2 control, gather on the crown | the same with the gather point 12 cm straight above the center | below 0.99 |
+| TT3 tied at the gather | share of strands whose first tail point is within 1.5 x bun of the gather point | at least 0.99 |
+| TT3 control, the tips | the same for each strand's last point | below 0.2 |
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT1 tails hang their length | 1.0 | at least 0.99 | PASS |
+| TT1 control, tail 0 (the bun) | 0.0 | below 0.2 | fails as it should |
+| TT2 tails clear the head | 1.0 | at least 0.99 | PASS |
+| TT2 control, gather on the crown | 0.461 | below 0.99 | fails as it should |
+| TT3 tied at the gather | 1.0 | at least 0.99 | PASS |
+| TT3 control, the tips | 0.0 | below 0.2 | fails as it should |
+
+### Pre-registered bars (tail waves and drape: hair that falls over the head)
+
+Tail waves: each tail is split into 7 wedges around its axis, and every strand in a wedge
+waves with the same phase, so a tail reads as wavy ribbons instead of crossing corkscrews.
+Scene: the tails scene with `curl` 0.02 and `turns` 2.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT4 neighbors wave together | share of strands whose last point is within 0.25 x curl of the last point of the strand nearest to it at the first tail point | at least 0.7 |
+| TT4 control, random partner | the same with the next strand in the list as the partner | below 0.2 |
+
+Drape: `hair::Style` gains `drape`, a gap in meters. With a head and a positive drape,
+strands grow with gravity (starting downward, along the scalp) and every point is kept at
+least that gap outside the head ellipsoid: a point that lands inside moves straight out from
+the center and the strand's direction follows, so hair falls and slides over the head instead
+of passing through it. Tail points are kept outside the same way. Scene: the updo scene's 2000
+roots on the 9 cm sphere, head = that sphere, drape 0.004, length 0.25, droop 3, 24 points per
+strand. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| DR1 strands stay outside the head | share of all points no more than 1 mm inside the sphere | at least 0.99 |
+| DR1 control, straight down | the same for 24 evenly spaced points on the straight line from each root to 25 cm below it | below 0.9 |
+| DR2 strands lie on the head | share of points above the sphere's center that sit between -1 mm and 15 mm outside it | at least 0.95 |
+| DR2 control, a 3 cm gap | the same with drape 0.03 | below 0.2 |
+| DR3 strands fall | share of strands whose last point is below the sphere's center | at least 0.95 |
+| DR3 control, no gravity | the same with droop 0 | below 0.2 |
+
+The DR1 control is the straight-down line: gravity growth with head radius 0 measured 1.0 on the first run, because those strands turn away from the head without entering it, so it cannot show the measure catching points inside.
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT4 neighbors wave together | 0.886 | at least 0.7 | PASS |
+| TT4 control, random partner | 0.013 | below 0.2 | fails as it should |
+| DR1 strands stay outside the head | 1.0 | at least 0.99 | PASS |
+| DR1 control, straight down | 0.609 | below 0.9 | fails as it should |
+| DR2 strands lie on the head | 1.0 | at least 0.95 | PASS |
+| DR2 control, a 3 cm gap | 0.102 | below 0.2 | fails as it should |
+| DR3 strands fall | 1.0 | at least 0.95 | PASS |
+| DR3 control, no gravity | 0.0 | below 0.2 | fails as it should |
+
+### Pre-registered bars (tail rise and fan: tails that spring up from high ties)
+
+`Style.rise` (meters, default 0) makes a tail spring up and out from its tie before it
+falls: the tail's vertical offset becomes a*tt-b*tt*tt with a = 2*rise+2*sqrt(rise*rise+rise*tail)
+and b = a+tail, so it peaks rise above the tie and still ends tail below it. `Style.fan`
+(default 0.12) sets how fast the tail widens: the spread radius term is tail*fan*tt*sqrt(tt).
+Defaults keep every earlier tail unchanged. Scene: the tails scene (2000 roots on the 9 cm
+sphere, gather 12 cm out along (1, 0.6, -0.3), tail 0.3, 24 points per strand). CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT5 tails spring up | share of strands with a tail point at least 1.5 cm above the gather point, with rise 0.03 | at least 0.9 |
+| TT5 control, rise 0 | the same with rise 0 | below 0.1 |
+| TT6 fan widens tails | mean distance of the tail tips from their centroid with fan 0.3, divided by the same with fan 0.12 | at least 1.8 |
+| TT6 control, at the tie | the same ratio for each strand's first tail point | below 1.3 |
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT5 tails spring up | 1.0 | at least 0.9 | PASS |
+| TT5 control, rise 0 | 0.0 | below 0.1 | fails as it should |
+| TT6 fan widens tails | 2.2 | at least 1.8 | PASS |
+| TT6 control, at the tie | 1.088 | below 1.3 | fails as it should |
+
+### Pre-registered bars (tail sweep and inner spread: tails that frame the face)
+
+`Style.sweep` (default 0.2) is how far a tail swings out from the head along its length, as a
+share of the tail's length (the outward term becomes gh*(tail*sweep*e)). `Style.inner`
+(default 1) scales the part of a tail's spread that points back toward the head, so a wide
+tail can fan out sideways without crossing the face. Defaults keep every earlier tail
+unchanged. Scene: the tails scene (2000 roots on the 9 cm sphere, gather 12 cm out along
+(1, 0.6, -0.3), tail 0.3, 24 points per strand); gh is the horizontal direction from the
+head's center to the gather point. CPU only.
+
+| bar | measured | pass |
+| --- | --- | --- |
+| TT7 sweep moves tails out | mean horizontal distance of the tail tips from the head's vertical axis with sweep 0.4, divided by the same with sweep 0.2 | at least 1.25 |
+| TT7 control, at the tie | the same ratio for each strand's first tail point | below 1.15 |
+| TT8 inner pulls in the head side | with sweep 0 and fan 0.3, the mean of max(0, -dot(tip - gather, gh)) over the tail tips with inner 0.2, divided by the same with inner 1 | at most 0.3 |
+| TT8 control, the outer side | the same ratio for max(0, dot(tip - gather, gh)) | above 0.3 |
+
+Results (2026-11-11, CPU):
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| TT7 sweep moves tails out | 1.36 | at least 1.25 | PASS |
+| TT7 control, at the tie | 1.065 | below 1.15 | fails as it should |
+| TT8 inner pulls in the head side | 0.2 | at most 0.3 | PASS |
+| TT8 control, the outer side | 1.0 | above 0.3 | fails as it should |
+
+### Default hairstyle bars and results (2026-11-13, RX 9060 XT, RADV; `GFX_ONLY=hairdo`)
+
+Every check grows the styles on a ball of 0.1 m with seed 7.
+
+| Check | Measured | Bar | Result |
+| --- | --- | --- | --- |
+| HD1 every default grows | 30 of 30 styles give a well-formed groom; the fewest guides are 1.006 x the asked count; 22 shades | all styles, at least 0.7 x | PASS |
+| HD2 no point inside the head | nearest point of any style is 1.0 radii from the center | at least 0.999 | PASS |
+| HD2 control, hair on the skin | 290,061 points lie within 5% of the skin | above 1,000 | PASS |
+| HD3 the same seed gives the same bytes | equal for seed 7 twice, different for seed 8 | equal, then different | PASS |
+| HD4 blunt cut | the bob ends 1.331 units below the center (cut 1.25); 3,251 of 3,260 tips are at the cut | at most cut + 0.15; at least 30% | PASS |
+| HD4 control, long straight | reaches 6.546 units below | above 3 | PASS |
+| HD5 fringe | 209 tips in front of the brow with `bob bangs` | at least 40 | PASS |
+| HD5 control, `bob` | 0 | at most 5 | PASS |
+| HD6 ponytail | 1.0 of the tips end in the tail behind the head | at least 0.8 | PASS |
+| HD6 control, loose long hair | 0.0 | at most 0.6 | PASS |
+| HD7 a default draws | 23,197 pixels of bob on the ball at 1280 x 720 | above 15,419 | PASS |
+| HD8 dye | the blue shade draws 1.88 x more blue than red | above 1.3 | PASS |
+| HD8 control, natural pigment | 1.76 x with `dye` 0 | at least 3% less | PASS |
+
+### Pre-registered bars (cut-out edges, mip bias, morph motion, light falloff)
+
+Written before the first GPU run of `small_checks` in `gfx_smoke.amni`. Black sky, no
+sun unless stated, every screen effect off.
+* **U1 alpha to coverage.** A 2 x 2 m unlit white card with a 512 x 512 texture whose
+  alpha falls linearly from 1 at the center to 0 at the card's edge, alpha mode MASK,
+  cutoff 0.5, facing the camera and filling a 240 x 240 target. The reference is the same
+  card rendered at 1920 x 1920 with the plain alpha test and averaged over 8 x 8 blocks.
+  Edge pixels are those whose reference lies in 0.02 .. 0.98. With
+  `s3d::alpha_to_coverage = true`: mean absolute error over edge pixels **<= 0.10**,
+  every pixel whose reference is exactly 1 reads **>= 0.99** and exactly 0 reads
+  **<= 0.01**. Control: `alpha_to_coverage = false` (the alpha test) must have a mean
+  absolute error **>= 0.18** on the same pixels.
+* **U2 mip bias.** A floor with a texture whose mip k is the flat gray k / 8 (uploaded
+  per level), unlit, seen at a slant. The sampled level is 8 x the red channel. Rendered
+  at 640 x 360 it gives a level per pixel, L0. Rendered at 320 x 180 for a 640 x 360
+  output (temporal upscaling) the level at the matching point must be within **+-0.1**
+  of L0 on every pixel with 0.5 <= L0 <= 5. Control: `s3d::mip_bias_auto = false` must
+  read L0 + 1 within +-0.1 on those pixels, which fails the bar.
+* **U3 morph motion.** A 1 x 1 m plane whose one morph target moves every vertex by
+  (0.3, 0.2, 0). The weight goes 0 to 0.5 between two frames, nothing else moves. The
+  motion vector at the plane's center must be within **0.15 px** of the projected
+  displacement at 320 x 240, and on a third frame with the weight unchanged within
+  **0.01 px** of zero. Control: `s3d::test_morph_still = true` (last frame's weights
+  taken as this frame's) must read under 0.01 px on the second frame, which fails.
+* **U4 light falloff.** A point light 2 m above a rough white floor, range 6 m, rendered
+  once with `falloff: 1` and once with the default. For floor pixels on a line through
+  the point under the light, with distance d from the light between 2 and 5.4 m, the
+  ratio of the two renders must be within **+-1 %** of
+  `[sat(1 - (d/r)^4)^2 / max(d^2, 0.01)] / [(1 - d^2/r^2)^2 / (1 + d^2)]`, three.js's
+  and KHR_lights_punctual's curve over the engine's default one. Every floor pixel
+  farther than the range reads **exactly 0** in both. A light loaded from a glTF file's
+  KHR_lights_punctual block has `falloff == 1` (CPU check).
+* **U5 nothing else changes.** gfxtest goldens > 40 dB and every existing check passes;
+  `wgsltest.mjs` and `webgputest.mjs` 0 failures.
+
+### Cut-out edge, mip bias, morph motion and falloff results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| check | measured | bar | result |
+| --- | --- | --- | --- |
+| U1 alpha to coverage, mean error over 372 edge pixels | 0.070 | <= 0.10 | PASS |
+| U1 pixels the reference fills (11,088) / leaves empty (46,100) | at least 1.000 / at most 0.000 | >= 0.99 / <= 0.01 | PASS |
+| U1 control: plain alpha test | 0.224 | >= 0.18 | PASS |
+| U2 mip level at half resolution vs full, 57,600 pixels (levels 0.83 to 3.0) | within 0.055 | +-0.1 | PASS |
+| U2 control: `mip_bias_auto = false` reads one level higher | within 0.063 | +-0.1 | PASS |
+| U3 morph motion at the plane's center (moved 10.21 px) | error 0.010 px | 0.15 px | PASS |
+| U3 next frame, weight unchanged | 0.000 px | 0.01 px | PASS |
+| U3 control: last frame's weights off | 0.000 px | under 0.01 px | PASS |
+| U4 falloff ratio over 506 pixels from 2 to 5.4 m (ratio 1.54 to 3.39) | worst 0.081 % | +-1 % | PASS |
+| U4 pixels past the range (39,916) that are lit | 0 | 0 | PASS |
+| U4 glTF light has `falloff == 1` | true | true | PASS |
+| U5 goldens | 44.92 dB and 41.70 dB | > 40 dB | PASS |
+| U5 wgsltest / webgputest | 0 failures / 0 failures | 0 | PASS |
+
+The U1 and U2 test textures are float textures (RGBA32F and RGBA16F), so 8-bit steps in
+the slow alpha ramp and the gray levels do not move the numbers. The web host now also
+treats a texture as filterable when a shader passes it to a helper function together
+with its sampler.
+
+### Pre-registered bars (instancing and foliage, E24)
+
+Written before the first GPU run of `instance_checks` in `gfx_smoke.amni`.
+* **F1 same picture.** 512 copies of a 16 x 8 sphere of radius 0.12 on a jittered grid
+  with random turn and scale, sun with shadows, SSAO on. Drawn as one
+  `s3d::add_instances` item against 512 separate items, 640 x 360: the 8-bit outputs
+  differ by **at most 2 / 255** in any channel of any pixel, PSNR **>= 60 dB**.
+* **F2 culling.** 4,096 copies spread over a 60 x 60 m field around a camera that sees
+  part of it. Every copy whose center projects inside the screen and in front of the
+  near plane is drawn (**0 missed**), fewer than **60 %** of the copies are drawn, and
+  the image with `s3d::instance_cull = false` is **identical** (max difference 0).
+* **F3 level of detail.** The same field with a second, coarser mesh beyond 15 m:
+  the counts drawn at each level equal the CPU's count of in-view copies nearer and
+  farther than 15 m **exactly**, and the triangles submitted fall below the single-level
+  count.
+* **F4 wind.** One blade 1 m tall and 4 cm wide, `sway` 1, wind along +x with strength
+  0.2, viewed side on at 640 x 360. The blade's top row of covered pixels moves from its
+  still position by the CPU value of the documented sway formula within **+-0.5 px** at
+  three times, its bottom row by **<= 0.1 px**, and the motion vector at the tip between
+  two frames 1/60 s apart is within **0.15 px** of the CPU displacement. Control:
+  `sway` 0 moves the tip by under 0.1 px, which fails.
+* **F5 interaction.** A pusher sphere of radius 0.5 m centered 0.2 m from the same blade
+  (no wind) moves its tip away by the CPU value of the documented formula within
+  **+-0.5 px**; a second blade 1 m outside the sphere moves **0 px**.
+* **F6 speed.** 20,000 copies of the F1 sphere in view at 1280 x 720, shadows on: the
+  instanced frame is at least **10 x** faster than the same copies as separate items
+  (wall clock, best of 2 x 20 frames). Reported: 100,000 blades with wind.
+* **F7 nothing else changes.** As U5, with a new `scene_inst` (a field of instanced
+  blades with wind over the test scene) matching native under webgputest's usual bar.
+
+### Pre-registered bars (caustics, E7)
+
+Written before the first GPU run of `caustic_checks` in `gfx_smoke.amni`. Scene K: a
+white matte floor under water whose surface is at y = 0, the `water` preset's waves,
+the sun 30 degrees off vertical as the only light, viewed straight down at 640 x 360.
+The factor is the floor's color with `s3d::caustics.on` divided by its color without.
+* **K1 formula.** Floor 1 m and 3 m deep: at 99 % of pixels or more, each color channel
+  of the factor is within 2 % of the CPU's value of the documented formula at that
+  pixel's world position, and the median error is at most 0.5 %.
+* **K2 energy.** The mean of the factor (absorption divided out) over the view is
+  within 2 % of 1 at 0.5 m and 1 m, and within 5 % at 3 m.
+* **K3 focus.** The factor's standard deviation grows with depth (0.5 m < 1 m < 3 m)
+  and is at least 0.05 at 1 m.
+* **K4 scope.** With the water's footprint set to 8 x 8 m, floor pixels whose sun ray
+  crosses the surface more than 0.1 m outside it, and the top of a block standing above
+  the surface, are identical with caustics on and off (largest difference 0).
+* **K5 sun absorption.** Flat water (wave slope 0), floor 2 m deep: each channel of the
+  factor equals `exp(-absorb * 2 / cos(refracted angle))` within 1 %. Control: the same
+  check against a straight-down path (`exp(-absorb * 2)`) must fail.
+* **K6 time.** Two frames at the same water time are identical (largest difference 0);
+  the factor images at times 2 s apart correlate below 0.5.
+* **K7 water item.** With a water item in the scene and nothing set by hand, the floor
+  seen from under water matches the picture drawn with the same numbers set by hand
+  (8-bit, at most 1 / 255), the surface level and waves read back equal the item's, and
+  the factor's standard deviation is above 0.02.
+* **K8 cost.** A floor filling a 1280 x 720 view 1 m under water: caustics add at most
+  1.0 ms a frame (wall clock, best of 2 x 40 frames each way).
+* **K9** as U5 (goldens, existing checks, wgsltest, webgputest unchanged) plus a new
+  `scene_caust` (the test scene under 1.2 m of water) matching native under
+  webgputest's usual bar.
+
+### Pre-registered bars (compressed textures, E10)
+
+Written before the first GPU run of `texture_checks` in `gfx_smoke.amni`. Image M is a
+1024 x 1024 marble made in the test: `n` is five octaves of value noise, the color is
+`mix((0.75, 0.6, 0.45), (0.2, 0.25, 0.35), n)` times a grain of 0.9 to 1.0, the height
+is `n`, and the normal map is the height's slope. PSNR is over the 8-bit channels a
+format stores.
+* **T1 hardware decode.** 4,096 random blocks per format, drawn 1:1 from a GPU texture
+  and read back, against `bc::decode` on the CPU. BC7 (512 blocks of each of its eight
+  modes): identical. BC4 and BC5: at most 1 / 255 apart. BC1 and BC3: at most 2 / 255.
+  Control: the same compare with the CPU blocks shifted by one must fail.
+* **T2 encoders.** `bc::encode` then `bc::decode` on image M: BC7 at least 40 dB, BC1
+  at least 32 dB and at least 3 dB below BC7, BC3 alpha (the height as alpha) and BC4
+  (the height) at least 40 dB, BC5 normal map at most 1 degree mean angular error. On
+  the golden spheres picture: BC7 at least 40 dB, BC1 at least 33 dB. 4,096 random
+  solid colors: BC7 within 1 / 255 on every channel, BC4 exact, BC1 within 4 / 255.
+* **T3 KTX2.** Each format with a full mip chain written by `ktx2::write` and read back:
+  size, format, level count and every level's bytes identical. A file whose levels are
+  zlib streams reads identical too. Cut short at 64 places, with a wrong first byte, a
+  level count of 0 or 99, a level offset past the end, and marked BasisLZ or Zstandard:
+  `ktx2::read` or `ktx2::level` says no and nothing crashes. Control: the untouched
+  file reads.
+* **T4 scene.** A lit scene of objects wearing image M (color and normal map) at
+  1280 x 720, textures compressed on load against uncompressed: at least 40 dB, with
+  `s3d::texture_bytes()` at most 0.26 of the uncompressed figure. Control: the same
+  compare with the textures replaced by flat gray must fail.
+* **T5 no BC on the device.** The T4 picture with the GPU's BC support switched off
+  (blocks decoded on the CPU into RGBA8) against the picture with it on: at most
+  2 / 255 at every pixel.
+* **T6 cache.** With a cache folder set, a first load encodes and writes one file per
+  texture; a second load encodes nothing, draws the identical picture (difference 0)
+  and readies its textures at least 5 times faster. Control: with one cache file cut
+  short, that texture alone is encoded again and the picture is still identical.
+* **T7 KTX2 in glTF.** A model whose image is a KTX2 file (BC7 with mips) draws
+  identical (difference 0) to the same file loaded from the cache; one marked BasisLZ
+  counts as a bad image, draws white and nothing crashes.
+* **T8 speed.** One thread: image M to BC7 with all mips in at most 2 s, to BC1 in at
+  most 1 s. The T4 frame with compressed textures takes at most 0.2 ms longer than
+  with uncompressed ones (best of 2 x 40 frames each way).
+* **T9 gates.** As U5, plus a new `scene_bc` (the test scene with textures compressed on
+  load) in webgputest.
+
+### Texture streaming bars (E10, registered before the first run)
+
+Scene R: 8 boxes 1 m wide in a row running away from the camera, 4 m apart, each
+wearing its own 1024 x 1024 color image and its own normal map (image M with a different
+tint per box): 16 textures, packed to BC7 on load. Four camera spots at 1280 x 720:
+near (3 m in front of the first box), middle (20 m), far (80 m) and side (beside the
+row, looking along it at a flat angle). "Full" means the same scene with streaming off.
+"Settled" means `s3d::tex_wait` is on, so every level a frame wants is loaded before it
+is drawn.
+
+* **S1 same picture.** Streamed and settled against full at all four spots: at most
+  2 / 255 at every pixel. At the far spot `s3d::texture_bytes()` is at most 0.1 of the
+  full figure. Control: with every texture held at its smallest size the near spot must
+  differ by more than 2 / 255.
+* **S2 memory follows the camera.** Near, then far: for `s3d::tex_hold - 1` frames the
+  memory stays at the near figure; one frame later it equals the figure of a scene
+  started at the far spot. Back at the near spot and settled, the picture is again
+  within 2 / 255 of full.
+* **S3 budget.** With `s3d::tex_budget` at 0.4 of the near spot's settled memory, a
+  120-frame flight from far to near never has `texture_bytes()` above the budget, and
+  ends with `s3d::tex_starved` above 0. With a budget below what the smallest sizes
+  take, memory equals the smallest sizes' total and the frame still draws. Control: the
+  same flight with no budget must go above that figure.
+* **S4 upload cap.** With `s3d::tex_upload_cap` at 1 MiB, after a jump from far to near
+  every frame either uploads at most the cap or makes exactly one step of one texture,
+  and everything wanted is loaded within 40 frames. Control: the same jump settled in
+  one frame must upload more than the cap in more than one step.
+* **S5 first frame.** Started at the far spot with a warm cache, the first frame reads
+  at most 0.1 of the cache files' bytes, uploads at most 0.1 of the bytes a full load
+  uploads, and spends no more time making textures than a full load. Control: the full
+  load reads every byte.
+* **S6 damaged cache.** One cache file cut to 0.6 of its length (its start is intact):
+  moving near packs that one texture again (`s3d::tex_encoded` up by exactly 1), and
+  the settled picture is within 2 / 255 of full. Control: with untouched files nothing
+  is packed again.
+* **S7 cost.** Settled at the near spot, the streaming work takes at most 0.1 ms a
+  frame (mean of 100 frames).
+* **S8 other sources.** With no cache folder, and with a model whose images are KTX2
+  files: settled pictures at the near and far spots within 2 / 255 of full, far memory
+  at most 0.1 of full.
+* **S9 reading part of a file.** `read_file_range` on a 100,000-byte file: 10 bytes
+  from the start, 10 from the middle, a range that runs 5 bytes past the end (5 bytes
+  come back), a start past the end (no bytes), a missing file (false); every result
+  equals the same bytes from `read_file`. Run on the native, C and web backends.
+* **S10 gates.** As U5, plus a new `scene_stream` (textures compressed, streamed and
+  settled) in webgputest.
+
+### Ray-traced reflection bars (E2, registered before the first run)
+
+Scene M: a mirror floor (metal, white, roughness 0) 12 m square under the sky and the
+sun, a red box 1 m wide standing on it in view, and a green box 1 m wide floating above
+the top edge of the frame, so the box is out of view and its reflection in the floor is
+on screen. The reference for a mirror is the same scene without the floor, drawn by a
+camera mirrored through the floor plane, with the rows flipped. 1280 x 720,
+`s3d::rt_reflect` on, SSR, AO and temporal AA off unless a bar says so. "Green" pixels
+have a green channel above both others by 40 / 255; "red" pixels the same for red.
+
+* **R1 an object out of view is reflected.** The green pixels of the frame and of the
+  reference overlap with IoU at least 0.9, and their mean colors differ by at most
+  16 / 255 in every channel. Control: with `rt_reflect` off the frame has no green
+  pixel.
+* **R2 the sky is still the sky.** Pixels that are neither green nor red in the
+  reference, nor within 2 pixels of one that is, and not red in the frame: at most
+  2 / 255 from the frame with `rt_reflect` off.
+* **R3 screen-space hits are kept.** With SSR on as well, R1 still holds, and of the
+  pixels where SSR alone draws the red box's reflection (red in the SSR-only frame, not
+  red with both off) at least 0.8 are within 2 / 255 of the SSR-only frame.
+* **R4 a closed room is reflected, not the sky.** A closed dark gray room with one lamp
+  and the mirror floor, the sky bright outside: over the floor's pixels the mean
+  brightness is within 0.25 of the mirrored reference's mean. Control: with
+  `rt_reflect` off and specular occlusion off it is more than 2 times the reference.
+* **R5 rough surfaces are left alone.** With the floor's roughness at `s3d::rt_rough`
+  or above, the frame equals the frame with `rt_reflect` off: 0 / 255. At half that
+  roughness the green box's reflection is still there (at least half as many green
+  pixels as at roughness 0) and blurred: in a band of 16 rows through its middle, the
+  columns where between 0.1 and 0.9 of the pixels are green are at least 2 times as
+  many as at roughness 0.
+* **R6 off is free.** With `rt_reflect` off both goldens stay above 40 dB and every
+  earlier check passes as before.
+* **R7 cost.** At 1280 x 720 on the RX 9060 XT, frame time with `rt_reflect` on minus
+  off (mean of 100 frames, best of 3): at most 1 ms on scene M, and at most 4 ms with a
+  20,000-triangle sphere in place of the green box.
+* **R8 gates.** gfxtest, wgsltest and webgputest pass, with a new `scene_rtr` in
+  webgputest that matches the native frame.
+* **R9 metal is not black in a reflection.** With a gold metal box (roughness 0.5) in
+  place of the green box, the mean brightness of its reflection is between 0.5 and 2
+  times the mirrored reference's. Control: with the box's color black it is below 0.5
+  times.
+* **R10 glowing surfaces light the scene through the probes.** Sky and sun off, GI on:
+  a 2 m square panel glowing at 4 units, 1.95 m above a gray floor (albedo 0.8) and
+  parallel to it. The floor's brightness under the panel's center is within 0.35 of the
+  closed-form value 0.8 x 4 x 0.2487 = 0.796 (the view factor from a point to a
+  parallel square). Control: with the glow at 0 it is below 0.05 of that value.
+
+### Meshlet and cluster LOD bars (E1, registered before the first GPU run)
+
+Mesh B: a ball of radius 1 with smooth bumps 0.04 high, 512 by 256 quads: 262,144
+triangles, 261,120 of them with area. 1280 x 720, `s3d::meshlets` on and
+`s3d::meshlet_px` at 1 unless a bar says so. A "cut" is the set of clusters picked for
+one error value.
+
+* **N1 clusters.** Every cluster has at most 128 triangles. Level 0 holds every
+  triangle with area exactly once. The coarsest cut has at most 1 / 100 of them.
+  Building mesh B takes at most 5 s on one core.
+* **N2 no cracks.** Mesh B is closed. For 16 error values spread evenly on a log scale
+  from the smallest cluster error above 0 to the largest, every edge of the cut is
+  shared by exactly two triangles. Control: a cut made with error 0 on one side of the
+  plane x = 0 and the largest error on the other has open edges.
+* **N3 the error is honest.** On a 128 by 64 ball with the same bumps, for 4 of those
+  error values `e`, every 4th vertex of the mesh is at most `2 e` from the cut's
+  surface.
+* **N4 same picture close up.** Mesh B 480 pixels tall, lit by the sun and the sky:
+  against `s3d::meshlets` off the mean difference is at most 1 / 255 and at most 0.005
+  of the pixels are more than 8 / 255 apart, with at most 1 / 4 of the triangles drawn.
+  Control: at `s3d::meshlet_px` 64 the picture fails those.
+* **N5 far away.** Mesh B 40 pixels tall: at most 1 / 100 of the triangles are drawn,
+  the ball's pixels overlap those of the full mesh with IoU at least 0.9, and their
+  mean colors differ by at most 4 / 255 in every channel.
+* **N6 the GPU pass picks what the CPU picks.** From 8 camera spots, the frame drawn
+  from the GPU's list equals the frame drawn from the same selection made on the CPU
+  (`s3d::meshlet_cpu`): 0 / 255.
+* **N7 culling.** With mesh B behind the camera nothing of it is in the camera's list,
+  and its shadow on the floor in view overlaps the full mesh's shadow with IoU at
+  least 0.97. With mesh B in view, `s3d::meshlet_cone` on draws at most 0.9 of the
+  triangles it draws when off, and the frame is the same: 0 / 255.
+* **N8 shadows.** Mesh B in view over a floor: its shadow overlaps the full mesh's
+  shadow with IoU at least 0.97.
+* **N9 cost.** 64 copies of mesh B (16.7 million triangles) standing 3 to 60 m from the
+  camera on the RX 9060 XT: the frame time with meshlets on is at most half of the
+  frame time with them off (mean of 100 frames, best of 3).
+* **N10 no_shadow.** Marking the mesh's material `no_shadow` empties the shadow list and
+  leaves the camera list unchanged.
+* **N11 room grows.** `meshlet_budget` 3000 with `meshlet_grow` off drops lists
+  (control); with it on, the third frame drops none and both lists match the full
+  ones.
+* **N10 off is free, and gates.** With `s3d::meshlets` off both goldens stay above
+  40 dB and every earlier check passes as before. gfxtest, wgsltest and webgputest
+  pass, with a new `scene_meshlet` in webgputest that matches the native frame.
+
+### Skin scattering bars (E7, registered before the first GPU run)
+
+Sheet P: a flat sheet with the skin preset (scatter distances 2.1, 0.8 and 0.45 mm for
+red, green and blue), white, roughness 1, lit by one white spot light 0.1 m in front of
+it. The light's disc on the sheet has a radius of 19.7 mm and an edge 0.4 mm wide. No
+sun, no sky, bloom off. 1280 x 720, vertical field of view 0.75, `s3d::sss_on` on, 64
+taps. "Plain" is the diffuse light that reaches a pixel before scattering
+(`s3d::sss_plain()`), "scattered" is the same light after the pass
+(`s3d::sss_target()`), and the plateau is the plain value at the middle of the disc.
+
+The reference is made on the CPU from the plain frame: around each probe pixel's point
+on the sheet, the normalized Burley profile `(e^(-r/d) + e^(-r/(3 d))) / (8 pi d r)` is
+integrated in world space over 240 rings `d / 8` wide with up to 160 samples per ring.
+Probe pixels come from a grid with x stride 6, 3 and 2 at 0.15, 0.3 and 0.6 m (y stride
+one more), kept where the pixel's point on the sheet is within 8.4 mm of the disc's
+edge.
+
+* **X1 the profile.** Facing the sheet from 0.15, 0.3 and 0.6 m, and from 0.3 m with
+  the camera swung 60 degrees off the sheet's normal: in every channel the scattered
+  frame is within 0.04 of the plateau of the reference at every probe pixel, and within
+  0.01 of the plateau on average. Controls, each failing both limits in every channel:
+  the plain frame in place of the scattered one; a reference made with twice the
+  scatter distances; in the swung view, `s3d::sss_depth` off.
+* **X2 energy.** Facing the sheet from 0.3 m, over the 340 by 340 pixels around the
+  disc the scattered frame sums to the plain frame's sum within 1% in every channel.
+  Control: with the light 5% dimmer for the scattered frame it does not.
+* **X3 no bleeding across a gap.** A skin card about 20 mm wide at 0.3 m in front of a
+  skin wall at 0.35 m, lit from the left at 45 degrees so the card is lit and the wall
+  next to the card's left edge is dark. On the 41 rows around the card's middle, each
+  of the 10 wall pixels left of the card's edge reads at most 0.02 of the scattered red
+  at the card's middle. Control: with `s3d::sss_depth` off those pixels read more than
+  0.1 of it on average.
+* **X4 only skin changes.** A skin ball next to a ball and a floor of ordinary
+  material, sun and sky light on, bloom, screen-space reflections and GI off: every
+  pixel that shows no skin has the same 8-bit color with `s3d::sss_on` on and off,
+  0 / 255. Control: more than 1,000 skin pixels change.
+* **X5 free when it has nothing to do.** With no skin in view the pass does not run
+  (`s3d::sss_ran` is false) and the frame is the same as with `s3d::sss_on` off,
+  0 / 255. With sheet P 5 m away, where the scatter distance is under half a pixel, on
+  and off differ by at most 1 / 255. Control: at 0.3 m some pixel differs by more than
+  8 / 255.
+* **X6 the look.** Facing the sheet from 0.3 m, in the final picture before tone
+  mapping, 3 pixels past the first dark pixel beside the disc on the middle row (dark:
+  plain below 0.001 of the plateau): red is at least 0.15 of the red at the middle of
+  the disc and at least 2 times blue. Control: with `s3d::sss_on` off red there is at
+  most 0.01 of the middle.
+* **X7 cost.** Sheet P filling the frame from 0.3 m on the RX 9060 XT: the frame time
+  with `s3d::sss_on` on minus off (mean of 100 frames, best of 3) is at most 4 ms at 64
+  taps. The time at 16 taps is reported.
+* **X8 off is free, and gates.** With `s3d::sss_on` off both goldens stay above 40 dB
+  and every earlier check passes as before. gfxtest, wgsltest and webgputest pass, with
+  a new `scene_sss` in webgputest that matches the native frame.
+
+### Skin pore and fuzz bars (E7, registered before the first GPU run)
+
+Skin relief is a pattern computed in the shader, in the material's UV space: jittered cells,
+700 per UV unit, and a coarser set at 175 per UV unit, with a soft furrow along the borders
+between cells, so the lines form the net of small polygons that skin shows up close. A
+furrow is 0.4 of a cell wide on each side of the border, and each border has its own depth,
+from 0.1 to 1 of the full depth, which breaks the net up. `detail.m` scales the cells, which
+sets their size on a given model: fine cells about 0.25 mm wide read as facial skin. The furrows
+tilt the normal that highlights use and darken their floor; the darkening averages 1,
+so the pattern does not change the mean diffuse light. `shade_c.y` of a skin material
+is the strength. Where a cell covers fewer than 4 pixels its furrows fade out, gone at 2
+pixels, and their slopes widen the highlight instead. A negative `shade_c.y` keeps the
+furrows at every distance; the tests use it as a control. Fuzz is the rim term of the
+cloth model with `shade_c.z` as its strength.
+
+Sheet Q: a flat square sheet 0.3 m wide (one UV unit) with the skin preset, base color
+0.02 so that the highlight carries the picture, roughness 0.4, lit by one white spot light 0.2 m from the sheet's middle, swung 30
+degrees from the sheet's normal, wide enough to light the whole view. No sun, no sky,
+bloom off, `s3d::sss_on` off. 1280 x 720, vertical field of view 0.75, the camera on
+the normal through the middle. "Near" is 0.05 m away (a fine cell covers 7.8 pixels),
+"far" is 1.2 m away (a coarse cell covers 1.3 pixels). Values are the red channel of
+the frame before tone mapping (`s3d::hdr_target()`).
+
+* **Y1 furrows show up close.** Near, over the middle 400 x 400 pixels split into
+  4 x 4 pixel blocks: the root mean square of each pixel's difference from its
+  block's best-fit plane, over the mean of the region, is at least 0.05 with
+  `shade_c.y` 0.7. Control: at most 0.005 with strength 0.
+* **Y2 the mean diffuse light stays.** Near, the plain diffuse light
+  (`s3d::sss_plain()`, `sss_on` on) summed over the middle 400 x 400 pixels with
+  strength 0.7 is within 1% of the sum with strength 0. Control: a light 5% dimmer
+  must fail.
+* **Y3 no noise far away.** Far, over the middle 100 x 100 pixels: the standard
+  deviation over the mean with strength 0.7 is at most 0.002 above the value with
+  strength 0. Control: strength -0.7 (no fade) is at least 0.01 above the value with
+  strength 0.7.
+* **Y4 the far highlight follows the near one.** Over the middle 20 mm square, `near`
+  is the mean with strength 0.7 over the mean with strength 0 at 0.05 m, and `far` the
+  same ratio at 1.2 m. `near` is at least 0.05 away from 1, and `far` is closer to
+  `near` than to 1. Control: strength 0 at 1.2 m gives a ratio of 1, which fails.
+* **Y5 fuzz lights the rim only.** The X4 scene (skin ball 0.1 m in radius, 0.7 m from
+  the camera, sun and sky), `sss_on` off, `shade_c.z` 0.35 against 0. Skin pixels
+  within 4 pixels of the ball's outline rise by at least 3 / 255 on average; skin
+  pixels within 48 pixels of the ball's middle change by at most 1 / 255; pixels
+  without skin change by 0 / 255. Control: `shade_c.z` 0 twice gives 0 / 255
+  everywhere, so the rim bar fails.
+* **Y6 cost.** Sheet Q near, filling the frame, strength 0.7 and fuzz 0.35 against
+  both 0: at most 0.3 ms more a frame.
+* **Y7 nothing else moved.** With both strengths 0 (the preset), the goldens stay above
+  40 dB and X1 to X7 pass. gfxtest, wgsltest and webgputest
+  pass, with `scene_sss` drawn with strength 0.7 and fuzz 0.35.
+
+### Cloth bars (E13, registered before the first run)
+
+Cloth is a position-based simulation (XPBD with small steps). Every welded vertex of a
+mesh is a particle. Every triangle edge keeps its rest length, and every pair of
+triangles sharing an edge keeps the distance between its two opposite corners, which
+resists bending. Particles can be pinned to points that move, and a pinned cloth also
+keeps every particle within its rest distance of the nearest pin. Spheres, capsules and
+a ground plane push particles out, with friction. Wind pushes each triangle by the air
+speed along its normal. The solver, `cloth`, does not depend on the renderer.
+`scene3d` draws the result through two morph targets, this step's positions and
+normals and the last step's positions, so depth, shadows and motion vectors follow the
+cloth.
+
+Defaults: 0.2 kg per square meter, gravity 9.81 m/s2, thickness 0.005 m, damping 1 per
+second, air density 1.2 kg/m3 with drag coefficient 1.28, friction 0.5, 60 steps a
+second with 8 substeps each.
+
+Sheet C: a square sheet 1 m wide with 33 x 33 vertices and the defaults. "Hanging" is
+in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge pinned.
+"Flat" is horizontal with its middle at (0, 0.85, 0) and no pins.
+
+* **Z1 edges keep their length.** Sheet C hanging for 3 s: at the end no edge is longer
+  than 1.03 times its rest length. Control: 1 substep a step, without the distance
+  limit to the pins, has an edge longer than that.
+* **Z2 it comes to rest.** Sheet C with the top edge pinned, starting horizontal (in
+  the plane y = 2, reaching toward +z), let go: after 10 s the mean particle speed is
+  below 0.02 m/s and every position is a finite number. Control: 0.5 s after the start
+  the mean speed is above 0.02 m/s.
+* **Z3 nothing passes through a sphere.** Sheet C flat, dropped on a sphere of radius
+  0.3 m at (0, 0.5, 0) over a ground plane at y = 0, for 3 s: after every step every
+  particle is at least radius + thickness - 0.001 m from the sphere's center, and at
+  the end at least 100 particles are within 0.002 m of that distance. Control:
+  without the sphere a particle comes within 0.2 m of where its center was, and at the
+  end every particle lies between 0.004 m and 0.02 m above the ground.
+* **Z4 nothing passes through a capsule.** The same drop on a capsule of radius 0.1 m
+  from (-0.3, 0.5, 0) to (0.3, 0.5, 0): after every step every particle is at least
+  radius + thickness - 0.001 m from the segment. Control: without the capsule a
+  particle comes within 0.05 m of the segment.
+* **Z5 pins hold and the cloth follows.** Sheet C hanging, the pins moving along +x at
+  0.5 m/s for 2 s: after every step every pinned particle is within 0.000001 m of its
+  target, and at the end the mean x of the bottom row has moved at least 0.8 m.
+  Control: without pins the mean x of the sheet moves less than 0.01 m.
+* **Z6 wind.** Sheet C hanging in a wind of 5 m/s along +z for 3 s: the mean z of the
+  bottom row is at least 0.2 m. Control: without wind its absolute value is at most
+  0.001 m.
+* **Z7 normals follow the shape.** At the end of Z3, over the particles within
+  0.002 m of touching the sphere: the angle between the particle's normal and the
+  direction from the sphere's center is at most 15 degrees on average. Control: the
+  sheet's rest normals fail this.
+* **Z8 the picture is the simulated shape.** At the end of Z3, 1280 x 720, sun and
+  sky, shadows on: the frame with the cloth against a frame with a plain mesh built
+  from the particles' positions and normals of that step is at least 50 dB, with no
+  pixel more than 2 / 255 apart. Control: the sheet in its rest shape against the
+  same frame is below 30 dB.
+* **Z9 motion vectors.** Sheet C hanging with every particle pinned, moved 0.02 m
+  along +x between two frames, the camera still on the sheet's normal: over the
+  sheet's pixels the motion vector is within 0.05 pixels of the shift's length on
+  screen on average. Control: with the last step's positions ignored
+  (`s3d::test_morph_still`) the mean error is above 1 pixel.
+* **Z10 cost.** A hanging sheet of 65 x 65 vertices (4,225 particles) in a wind of
+  5 m/s: one step of 8 substeps, with the morph data written, takes at most 4 ms on
+  one core (median of 120 steps).
+* **Z11 nothing else moved.** With no cloth in the scene the goldens stay above 40 dB.
+  gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
+  30 dB against the native frame.
+
+### Effects bars (E9, registered before the first GPU run; the V3 scene was restated to render at 1280 x 720 and the V5 scene to a sky ambient of 0.05 after it, bar values unchanged)
+
+`gfx.fx` gains particle events, trails, mesh particles and effects written as text.
+dt = 1/60 s throughout. `GFX_ONLY=vfx` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| V1 death events | 64 particles leave a point at 2 m/s in random directions with no gravity and live 0.5 s; each one's death starts 8 particles of a second emitter that stand still. After 60 steps: live particles; each one's distance from the point | 512; within 0.1 m of 1 m |
+| V1 control | the same with no death event: live particles | 0 |
+| V2 inherited speed | V1 with the second emitter taking all of its parent's velocity: each live particle's distance from the point after 60 steps | within 0.1 m of 2 m |
+| V3 hit events | 200 particles fall 2 m onto the floor with depth collision and no bounce; each hit starts 4 standing particles of a second emitter that live 100 s. After 120 steps: particles of the second emitter; share of them within 0.15 m of the floor | within 5 % of 800; at least 0.99 |
+| V3 control | the same with collision off: particles of the second emitter | 0 |
+| V4 trails | one particle crosses the view at 4 m/s, 5 m from the camera, with a 0.35 s trail: length of the lit run along its path against 1.4 m; brightness of the tail quarter of the run over the head quarter | within 15 %; at most 0.5 |
+| V4 control | the same with no trail: length of the lit run | at most 0.3 m |
+| V5 mesh particles | one still cube particle 0.5 m wide, 5 m from the camera, facing it: pixels it covers against the 6,150 its front face projects to; the same with a sphere of the scene in front of its left half; mean brightness lit from the camera side over lit from behind | within 10 %; 0.4 to 0.6 of the first count; at least 2 |
+| V6 effects as text | an effect of three linked emitters read from text and played at a point, against the same emitters built by hand, after 90 steps: live particles; largest position difference. A text with an unknown word | equal; 0; refused, with the line number in `fx::error` |
+| V7 cost | 100,000 live particles with trails against the same without: added time of a simulated and drawn frame at 1280 x 720 | at most 7 ms |
+| V8 nothing else moved | the earlier particle bars F1 to F6, gfxtest, wgsltest and webgputest | all pass |
+
+### Many lights bars (E4, registered before the first GPU run; the camera, ambient light and light strength of the field scene and the range factor of the L2 control were restated after it, bar values unchanged)
+
+The light grid lists up to 1,023 lights in each of its 16 x 9 x 24 cells, and a pixel skips
+a listed light it is out of range of before any shading. `clusters::dropped` counts the
+entries that did not fit and `clusters::top` is the fullest cell, both for the last frame.
+
+The field scene is a gray floor with three spheres under 4,900 lights: a 70 x 70 grid 1 m
+apart, 0.4 m above the floor, range 1.5 m, colors by index, every fourth one a spot light
+aimed down. There is no sun and the sky is not drawn. The camera looks down across the field at
+1280 x 720. The crowd
+scene is 700 lights of range 4 m inside a disc 1 m wide, 1 m above the floor.
+`s3d::test_all_lights` makes every pixel test every light, with no grid.
+`GFX_ONLY=lights` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| L1 nothing is dropped | field scene: `clusters::dropped`; `clusters::top` | 0; at most 1,023 |
+| L2 the frame is right | field scene: largest difference of any channel from the frame that tests every light at every pixel; mean brightness against the same scene with no lights; share of pixels at full white | at most 1 / 255; at least 2 times; below a quarter |
+| L2 control | the grid built with every light's range cut to a twentieth (`s3d::test_cluster_range` 0.05): pixels that differ from the every-light frame by more than 8 / 255 | at least 1,000 |
+| L3 a crowded cell | crowd scene: `clusters::top`; `clusters::dropped`; largest difference from the every-light frame; mean brightness | at least 700; 0; at most 1 / 255; between 30 and 220 |
+| L4 cost | field scene: median frame with the 4,900 lights minus the median frame with none; median time on the CPU to pack the lights and build the grid; the every-light frame's time over the grid frame's | at most 17 ms; at most 4 ms; at least 10 times |
+| L5 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
+
+### Time of day bars (E6, registered before the first GPU run; the moon's takeover point in D6 was restated from 10 to 7 degrees after it, bar values unchanged)
+
+`s3d::time_of_day` turns a clock time, a day of the year and a latitude into the sun's
+direction, the sun's color and the baked sky, and into a full moon opposite the sun at
+night. The sky is baked again only after the light has moved by `step` degrees.
+
+The test scene is a gray ground and a sphere at latitude 40 on day 172 (June 21), seen
+toward the north at 1280 x 720 with fixed exposure. "Brightness" is the mean of the frame
+on the 0 to 255 scale. `GFX_ONLY=day` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| D1 sun position | `s3d::sun_at`: elevation at 12:00 on day 172; at 12:00 on day 80; direction and elevation at 06:00 on day 80; the same with north turned 90 degrees | 73.44 within 0.2 degrees; 50 within 1 degree; x at least 0.99 and within 1.5 degrees of the horizon; the same vector turned 90 degrees about up, within 0.001 |
+| D2 the day follows the clock | brightness at 12:00, 18:00 and 20:15 (sun 7.7 degrees below the horizon); at 00:00 with the moon; at 00:00 with `moon` 0 | each lower than the one before; between 0.02 and 0.35 of noon; at most 0.2 of the moonlit frame |
+| D3 dusk is warm | red over blue of `sun.rgb` at 19:00 (sun 4.2 degrees up), relative to noon | at least 2 |
+| D4 the night has a moon | at 00:00: elevation of `sun.to_sun`; mean of `sun.rgb` relative to noon | above 10 degrees; above 0 and at most 0.05 |
+| D5 no needless bake | the same time set twice; then 1 minute later; then 10 minutes later | one bake; no bake but a new sun direction; a bake |
+| D6 no jump | 18:00 to 23:00 in steps of 1 minute: largest change of brightness between two frames; brightness 1 minute before and 1 minute after the moon takes over the sky (sun 7 degrees below the horizon) | at most 7; within 3 |
+| D7 cost | median time of a frame that bakes the sky minus the median of one that does not, at the default 512 cube; the same at `size` 128 | at most 70 ms; at most 14 ms |
+| D8 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
+
+### Hair bars (C11, E13, registered before the first GPU run; the scenes of H5, H6, H8, H9 and H11 were restated after it, bar values unchanged; H20 and H21 added on 2026-11-11, also before their first run)
+
+Hair is drawn as strands, not as textured cards. A groom is a set of guide cards; every
+guide is a short chain of points, and the rasterizer draws a chosen number of strands
+across each card in a compute pass. The same points are simulated on the GPU (pinned
+roots, a pull toward the styled shape, gravity, collision with a signed distance field of
+the body), lit with a three-lobe fiber model with melanin color, and shadowed by a depth
+map of the hair itself as seen from the sun. Grooms come from three places: generated
+from a mesh region (`hair::mesh_roots` and `hair::groom`), read from a card mesh in a
+glTF file (`hair::cards`), or loaded from a file (`hair::load_file`).
+
+The test scene is a head-sized sphere (radius 0.1 m) with a generated groom of 700 guides
+of 14 points, 0.16 m long, 12 strands a guide, at 1280 x 720. "Changed" below means a
+pixel whose largest channel difference between two frames is above 8 / 255; "equal" means
+no pixel differs by more than 2 / 255. `GFX_ONLY=hair` runs only these checks.
+
+| Bar | What is measured | Bar value |
+| --- | --- | --- |
+| H1 the generator repeats | two grooms from the same roots, style and seed; one with another seed; the byte size | identical; different; exactly 16 + guides x points x 48 + guides x (points - 1) x 16 |
+| H2 bad data is refused | `hair::load` on empty data, a wrong magic and a truncated groom; a whole groom | -1 three times; an index for the whole one |
+| H3 the hair is there | changed pixels between hair shown and hidden, as a share of the head's disc on screen; changed pixels farther than 3.2 head radii from its center | at least 0.4; none |
+| H3 control, hidden twice | changed pixels between two hidden frames | none |
+| H4 a wall hides it | a wall between the camera and the head: frames with hair shown and hidden | equal |
+| H5 it keeps its style | a straight groom, fully styled, after 120 steps of 1/60 s: mean distance of the tips from the styled shape | at most 3 mm |
+| H5 control, no styling | the same with styling and the three hold strengths (root, tip, bend) at 0 | at least 10 mm |
+| H6 nothing passes through the head | hair lying flat on the crown with styling and hold at 0, 300 steps, with the head as a collider: the nearest simulated point to the head's center | at least 0.095 m |
+| H6 control, no collider | the same without the collider | at most 0.085 m |
+| H7 it lags and settles | the head jumps 0.1 m sideways in one step: mean tip distance right after; and 180 steps later | at least 5 mm; at most 3 mm |
+| H8 the hair shadows itself | black sky, the scene's shadow map off, the sun at the side (toward 1, 0.3, 0.2): mean brightness of the hair pixels at the default `shade` of 1 relative to `shade` 0 | at most 0.92 |
+| H9 the sun lights it | black sky: mean brightness of the hair pixels outside the head's disc with the sun off, relative to the sun on | at most 0.7 |
+| H10 two grooms | two heads 0.7 m apart: share of each head's disc that changes; then one groom is hidden | at least 0.4 each; the other head's half equal to before, the hidden one's half equal to no hair |
+| H11 size does not matter | head, groom and camera distance doubled, sun shadows off: PSNR against the frame at the original size, inside the square of 3.2 head radii around the head | at least 30 dB |
+| H11 control, hair hidden | PSNR between hair shown and hidden at the original size, same square | below 30 dB |
+| H12 the frame repeats | the same still frame drawn twice | equal |
+| H13 it follows its item | the head moves 0.3 m sideways (235 pixels at the head's depth): shift of the changed pixels' center; then the same with the groom anchored to the head's node | 235 within 15 pixels; within 1 pixel of the first |
+| H13 control, not following | the same move with the groom left where it was | a shift below 40 pixels |
+| H14 cards round trip | a card mesh built from a groom, read back with `hair::card_data`: guides, points, segments; largest distance between a point and its original | the same counts; at most 0.00001 m |
+| H15 bones move the hair | a card mesh skinned to two joints and followed, the second joint moved 0.05 m: points bound to it; points bound to the first; then a skinned collider built from the same mesh with `hair::body` | moved 0.05 m within 0.0005; moved less than 0.0005; 1 part, cells above 0, every point finite after 10 steps |
+| H16 cost | median time of a simulated and drawn frame with the test groom (8,400 strands of 13 segments) minus the median without | at most 14 ms |
+| H17 cards for low-end targets | `hair::card_mesh` drawn as an ordinary double-sided mesh: vertex count; changed pixels as a share of the head's disc | 2 x points; at least 0.3 |
+| H18 fur | the short-fur preset over the whole sphere, 12,000 guides of 12 strands: changed pixels as a share of the head's disc | at least 0.7 |
+| H19 nothing else moved | gfxtest, wgsltest and webgputest | all pass |
+| H20 lamps shadow the hair | the H8 scene with the sun off and a lamp 1 m from the head toward (1, 0.3, 0.2): mean brightness of the hair pixels at `shade` 1 relative to `shade` 0 | at most 0.92 |
+| H21 a lamp behind the head lights the outline | black sky, sun off, a lamp 1 m from the head away from the camera (toward 0, 0.3, -1): mean brightness of the hair pixels outside the head's disc relative to the same lamp in front (toward 0, 0.3, 1) | at least 0.1 |
+| H21 control, lamp off | the same with the lamp's color 0 | below 0.1 |
+| H22 hair shades meshes (added 2026-11-13, before its first run) | the H1 scene: share of the head's disc that is darker by more than 3 of 255 with `cast` 1 than with `cast` 0, and pixels brighter by more than 3 | at least 0.02 darker, 0 brighter |
+
+### Fabric weave bars (E13, registered before the first GPU run)
+
+The weave is a pattern computed in the shader for cloth materials (`shading = 3`), in
+the material's UV space: square cells, `shade_c.y` of them a UV unit (700 when it is
+0), each showing the thread that lies on top there. A warp thread (running along v)
+passes over `shade_c.z` cells in a row and under one: 1, or anything below 1, is a
+plain weave, 2 and 3 are twills with diagonal ribs. A weft thread (running along u)
+shows in the cells in between. Each thread is rounded across its width and dips at
+both ends of its pass. The threads tilt the normal for diffuse light and highlights
+and darken the gaps between them; neither changes the mean diffuse light.
+`shade_c.x` is the strength. `shade_c.w` is the weft's lightness: the weft's color is
+the base color mixed toward white by that amount (toward black when negative). Where
+a cell covers fewer than 4 pixels the threads fade out, gone at 2 pixels: the color
+becomes the two thread colors mixed by the share of each that shows, and the threads'
+slopes widen the highlight instead. A negative `shade_c.x` keeps the threads at every
+distance; the tests use it as a control. Strength 0 leaves a cloth material as it was.
+
+Sheet W: sheet Q of the pore bars (the same sheet, light, camera, frame size and the
+same two distances) with a cloth material: base color 0.2 gray, roughness 0.8, wrap
+0.25 (`shade_a.x`), fuzz 0, specular scale 0 (`shade_a.z`), 700 threads a UV unit. Near
+(0.05 m) a cell covers 7.8 pixels, far (1.2 m) it covers 0.33 pixels. Values are the
+red channel of the frame before tone mapping (`s3d::hdr_target()`).
+
+* **W1 threads show up close.** Near, plain weave, weft lightness 0, over the middle
+  400 x 400 pixels split into 8 x 8 pixel blocks: the root mean square of each
+  pixel's difference from its block's best-fit plane, over the mean of the region, is
+  at least 0.03 with strength 0.7. Control: at most 0.005 with strength 0.
+* **W2 the mean light stays.** Near, plain weave, weft lightness 0: the sum over the
+  middle 400 x 400 pixels with strength 0.7 is within 1% of the sum with strength 0.
+  Control: a light 5% dimmer must fail.
+* **W3 no noise far away.** Far, a 3/1 twill with weft lightness 0.8, over the middle
+  100 x 100 pixels: the standard deviation over the mean with strength 0.7 is at most
+  0.002 above the value with strength 0. Control: strength -0.7 (no fade) is at least
+  0.01 above the value with strength 0.7.
+* **W4 the far color is the mean of the near colors.** A 3/1 twill with weft lightness
+  0.8. Over the middle 20 mm square, `near` is the mean with strength 0.7 over the mean
+  with strength 0 at 0.05 m, and `far` the same ratio at 1.2 m. Both are at least 1.5,
+  and `far` is within 4% of `near`. Control: weft lightness 0 at 1.2 m gives a ratio of
+  1, which fails.
+* **W5 the far highlight follows the near one.** Sheet W with base color 0.02,
+  roughness 0.4, wrap 0 and specular scale 1, plain weave, weft lightness 0, with
+  `near` and `far` as in W4: `near` is at least 0.05 away from 1, and `far` is closer
+  to `near` than to 1. Control: strength 0 at 1.2 m gives a ratio of 1, which fails.
+* **W6 cost.** Sheet W near, filling the frame, a 3/1 twill with weft lightness 0.8
+  and strength 0.7 against strength 0: at most 0.3 ms more a frame.
+* **W7 nothing else moved.** With strength 0 (the preset), the goldens stay above
+  40 dB and Z8 and Z9 pass. gfxtest, wgsltest and webgputest pass, with `scene_cloth`
+  drawn as a 3/1 twill: strength 0.7, 28 threads a UV unit, weft lightness 0.5.
+
+### Volumetric cloud bars (E6, registered before the first GPU run)
+
+Real-time clouds (`s3d::clouds.on`): a pass marches the cloud slab for every sky
+pixel, a cloud shadow map holds the sun's transmittance `T` through the clouds for
+ground points, surfaces and fog take their sunlight times `T`. Unless stated: sky
+from `s3d::atmosphere(to_sun, 3.5, 1.0, 0.5)`, sun 45 degrees up, cover 0.5, slab
+from 1.5 km to 3.5 km above y = 0, 1,000 world units a km, shadow map 512 x 512
+over 4 km, 1280 x 720, glow and temporal off. Values are read from
+`s3d::hdr_target()` unless a bar names the final frame.
+
+* **V1 the shadow map matches the clouds seen.** For 25 ground points on a 5 x 5
+  grid 400 m apart, a camera at the point looks at the sun: the cloud pass's
+  transmittance at the middle pixel against the shadow map's value for that point.
+  Mean absolute difference at most **0.05**, with at least 7 points below 0.5 and
+  7 above (cover moves in steps of 0.05 from 0.5 until both groups exist; V2, V3 and
+  V4 run at that cover). Control: shadow map built with the clouds moved 1 km: mean
+  difference at least **0.15**.
+* **V2 ground shadows follow the map.** A ground plane seen from 1.4 km straight
+  above with a 1.6 rad field of view, sky ambient 0: red with cloud shadows over
+  red without, at each pixel of the middle 400 x 400, against `T` at that pixel's
+  ground point (bilinear from the read-back map): mean absolute difference at most
+  **0.02**, and the ratio's standard deviation at least **0.1**. Control: shadow
+  strength 0: ratio within 0.002 of 1 at every pixel.
+* **V3 wind moves the shadows.** Wind 10 m/s along +x, world time 31.25 s later
+  (40 texels): the later map shifted back by 40 texels against the earlier map,
+  mean absolute difference at most **0.02** over the overlap. Control: no shift,
+  at least **0.05**.
+* **V4 light shafts in fog.** No geometry, sky drawing off, fog density 0.002,
+  falloff 0, far 2,000 m, 64 steps, fog ambient 0, camera 2 m up looking level, at
+  right angles to the sun: the standard deviation of the column means over their
+  mean is at least **0.05** with cloud shadows and at most **0.005** without; with
+  cover 0 the frame's mean is within **1%** of the frame without clouds.
+* **V5 a clear sky is unchanged.** Cover 0 with clouds on against clouds off:
+  every pixel of the final frame within **1 / 255**.
+* **V6 only sky pixels change.** A box in front of the clouds, camera pitched 15
+  degrees up, cloud shadows off:
+  the box's pixels with clouds on against clouds off differ by **0 / 255** in the
+  final frame, and at least **30%** of the sky pixels differ by more than 8 / 255
+  from the same view under a clear sky.
+* **V7 clouds are lit, not gray.** Sun behind the camera, camera pitched 30 degrees
+  up: the mean luminance of thick cloud (pass transmittance below 0.1) is at least
+  **3 x** the mean luminance of clear sky in the same frame (transmittance above
+  0.99), and its 95th percentile is at most **1.2 x** the luminance of a white
+  diffuse surface facing the sun. Control: sunlight on the clouds 0 (sky light
+  only): below 3 x.
+* **V8 detail.** The V7 view, final frame: the mean absolute luma difference
+  between horizontally adjacent sky pixels is at least **2 x** that of the baked
+  cloud layer of the environment map at the same cover.
+* **V9 cost.** The V7 view and the V2 view each cost at most **2 ms** a frame more
+  with clouds on than off.
+* **V10 nothing else moved.** With `clouds.on` false: goldens above 40 dB and every
+  earlier check passes. gfxtest, wgsltest and webgputest pass, with a new
+  `scene_clouds` (clouds, their ground shadows and fog shafts over the test scene)
+  matching native under webgputest's usual bar. The cloud layer baked into the
+  environment map takes the same shape as the real-time clouds; no golden draws it.
+
+V1's group size (first 3 on each side), V6's view and its clear-sky comparison, and
+V7's factor were changed after the first runs; each change was committed before the
+run that used it.
+
+### Volumetric fog bars (E6, registered before the first GPU run)
+
+Fog upgrades: drifting noise in the fog's density (`s3d::fog_noise`), local fog
+volumes (`s3d::fog_volumes`), and local lights that keep their spot cone and their
+shadow maps inside fog. Unless stated: 1280 x 720, no geometry, sky drawing off
+with a black background, environment map off, sun color 0, glow and temporal off, camera at (0, 2, 0) looking
+along +z with a 1.0 rad vertical field of view, fog falloff 0, fog far 30, 64 steps,
+fog ambient (1, 1, 1), no noise. Values are read from `s3d::hdr_target()` and divided
+by one unit: the frame-center value with fog density 50 and nothing else (fog too
+thick to see through under the same ambient light). A block is the mean of a group
+of pixels, named by the column and row of its center and its size. "Within 5% of X"
+for a block means its value differs from its own reference by at most 0.05 x X.
+
+* **H1 a volume's optical depth.** Fog density 0, one box volume centered at
+  (0, 2, 10), half size (1, 1, 2), density 0.5, soft 0. The 8 x 8 block at the frame
+  center reads 1 - e^(-2) = 0.8647 within 1%; the 8 x 8 block 200 pixels to its
+  right reads at most 0.001. Control: with the volume's density 0 the center block
+  reads at most 0.001.
+* **H2 volume color inside global fog.** Fog density 0.05, the H1 volume with color
+  (1, 0.5, 0.25). The center block reads 0.9698 red, 0.6989 green and 0.5634 blue,
+  each within 2%: the closed form for 8 m of fog, 4 m of fog plus volume, then 18 m
+  of fog, where the share of each color scattered in the overlap is
+  (0.05 + 0.5 x color) / 0.55. Control: with a white volume, blue reads more than
+  10% from 0.5634.
+* **H3 round volume with soft edges.** Fog density 0, one round volume at
+  (0, 2, 10), half size (2, 1, 2), density 0.3, soft 0.5. The center block reads
+  1 - e^(-0.9) = 0.5934 within 2% (the density along the central ray integrates to
+  0.9). Along the center row, 8 x 8 blocks every 8 pixels from the center to 320
+  pixels right: no block is more than 0.005 above the block before it, and the last
+  reads at most 0.001. Control: with soft 0 the center reads 1 - e^(-1.2) = 0.6988.
+* **H4 noise.** Fog density 0.05, far 20, noise size 20, wind 0. Over the 3,600
+  blocks of 16 x 16 pixels: with noise 0 the standard deviation over the mean is at
+  most 0.005; with noise 1 it is at least 0.05 and the frame mean is within 10% of
+  the noise-0 frame's. Control: the noise-0 frame fails the 0.05 bar.
+* **H5 wind.** H4 with noise 1 and wind (1, 0, 0). Mean absolute difference of the
+  block values over the frame mean: time 80 against time 0 at most 0.01 (the noise
+  repeats every 4 x noise size = 80 m along x); control: time 40 against time 0 at
+  least 0.03.
+* **H6 spot cone in fog.** Fog density 0.05, far 20, fog ambient 0, one spot light
+  at (-3, 2, 7) aimed at (0, 2, 7), color (50, 50, 50), range 12, cone 0.3, edge
+  0.2, no shadows. Blocks of 24 x 4 pixels at column 640, rows 360, 320, 284 and
+  240, and at column 840, row 360, each against a CPU integral of the same
+  single-scattering model along the ray through the block's center (20,000 steps):
+  each within 5% of the row-360 reference, and row 240 (outside the cone) at most
+  1% of it. Control: the same light as a point light reads more than 1% at row 240.
+* **H7 local light shadows in fog.** H6 plus a box with center (-1.5, 2.6, 7) and
+  half size (0.05, 0.6, 1); the CPU integral tests the path from each sample to the
+  light against the box. Spot with shadows on: block (640, 320) reads at most 2% of
+  H6's row-360 reference, and block (640, 400) is within 5% of that reference. A
+  point light with shadows at the same place, same color and range: blocks
+  (640, 320), (640, 400) and (840, 320) are each within 5% of the largest of their
+  three CPU values. Control: the spot with shadows off reads more than 2% at
+  (640, 320).
+* **H8 cost.** The H7 spot scene with fog density 0.05, far 20 and 32 steps: the
+  frame with noise 1, four soft box volumes (half size 1, density 0.3, soft 0.5, at
+  x = -3 and 3, z = 10 and 15, y = 2) and the spot's shadows on costs at most 2 ms
+  more than the frame with noise 0, no volumes and shadows off.
+* **H9 browser.** `scene_fog` in `webgputest` (fog with noise, one volume and a
+  shadowed spot over the test scene) matches the native frame by that tool's bar.
+* **H10 the rest.** `gfxtest`, `wgsltest` and `webgputest` pass; the goldens do not
+  move.
+
+### Water bars (E6 and E7, registered before the first GPU run)
+
+Unless a bar says otherwise: 1280 x 720, black sky, no ambient, no post effects, the
+water preset (waves 1.1, 0.062, 1.0; absorption 0.45, 0.09, 0.07; scatter 0.012, 0.07,
+0.08), level 0, HDR target read back. "The CPU sum" is the same wave sum evaluated on
+the CPU in double precision.
+
+* **W1 wave height.** `shapes::sea(7, 129)` at time 3, camera 8 m above looking
+  straight down, field of view 0.9, world position written per pixel (debug view 11).
+  At 99% of the water pixels or more the height is within 5 mm of the CPU sum at that
+  pixel's x and z. Controls: against the CPU sum at time 0 fewer than 50% are within
+  5 mm; with swell 0 the largest height is at most 0.1 mm.
+* **W2 normals follow the waves.** The W1 frame's normals (debug view 1) against the
+  central-difference slope of the CPU height field: within 1 degree at 99% of the
+  water pixels or more. Control: against a flat normal fewer than 50% are within
+  1 degree.
+* **W3 crest foam.** The W1 view with sun (0.5, 0.866, 0), color 3, a black floor 3 m
+  down. With crest foam 1 the mean luminance of the pixels whose height is at least 0.6
+  of the largest possible height is at least 2 times that of the pixels at or below
+  0.2. Control: with crest foam 0 the ratio is at most 1.3.
+* **W4 scene reflections.** Flat water (wave amplitude 0, absorption 50, scatter 0),
+  an emissive panel 3 m wide from 0.2 m to 2.2 m above the water at z = 3, camera at
+  (0, 2, -6) looking at (0, 0.5, 0), field of view 0.9. Reference frame: no panel,
+  reflections off, a uniform sky of the panel's radiance. Every water pixel at least
+  3 pixels inside the panel's mirror image (its corners mirrored through the surface
+  and projected on the CPU) is within 5% of the reference frame's same pixel; every
+  water pixel at least 3 pixels outside it reads at most 5% of that. Control: with
+  `sea.reflect` off the pixels inside read at most 10%.
+* **W5 Snell's window.** Flat water, a uniform sky of radiance 1, camera 1 m below the
+  surface looking straight up, field of view 2.0, `sea.under` off. Along the center
+  column: pixels 10 to 35 degrees from the vertical read at least 0.9; pixels at 45
+  degrees read at least 0.5; pixels at 51 degrees or more read at most 0.05. Control:
+  with index of refraction 1.5 the pixels at 45 degrees read at most 0.05.
+* **W6 underwater absorption and scatter.** Flat water 40 m across, camera at
+  (0, -1, 0) looking along +z. (a) No sun, an emissive wall of radiance 2 at z = 4: the
+  center block reads 2 e^(-4 x absorption) per channel within 2%. Control: with
+  `sea.under` off it reads 2 within 1%. (b) No wall, sun (0.5, 0.866, 0), color 3,
+  shafts 0: the center block reads scatter x L x (1 - e^(-20 x absorption)) per channel
+  within 3%, where L = 3 x 0.866 / pi x e^(-absorption x 1 / c) and c is the cosine of
+  the refracted sun direction from the vertical.
+* **W7 light shafts.** (a) The preset waves at time 3, sun (0.3, 0.9, 0.3) normalized,
+  color 3, camera at (0, -2, 0) looking along +z, field of view 1.0, water 40 m
+  across. 80 blocks of 16 x 240 pixels over rows 360 to 599 (level and below, where no
+  ray reaches the surface). Each block's mean with shafts 1 over its mean with shafts
+  0: the standard deviation of the 80 ratios over their mean is at least 0.005.
+  Control: the same measure between two shafts-0 frames, times 3 and 4, is at most
+  0.001. (b) W6 (b) with sun shadows on and a slab 4 m x 0.2 m x 4 m floating at
+  (0, 0.3, 7), far enough that its shadow covers z from 5 to 9 on the central ray: the
+  center block's blue channel is within 5% of the closed form with that stretch unlit,
+  scatter x L x ((1 - e^(-5a)) + (e^(-9a) - e^(-20a))). Control: with sun shadows off
+  it reads more than 15% above that.
+* **W8 above the water nothing changes.** The W4 frame with `sea.under` on and off:
+  no difference in any pixel.
+* **W9 cost.** (a) The W1 sea filling a 1280 x 720 view with swell, crest foam and
+  reflections (24 steps) on costs at most 3 ms more than the same frame with swell 0,
+  foam 0 and reflections off. (b) The W7 (a) frame costs at most 3 ms more with
+  `sea.under` on than off.
+* **W10 browser and the rest.** `scene_sea` in `webgputest` (a sea with swell, foam and
+  reflections over the test scene) matches the native frame by that tool's bar.
+  `gfxtest`, `wgsltest` and `webgputest` pass; the caustics bars K1 to K9 and the
+  goldens do not move.
+
+### Water results (2026-11-10, RX 9060 XT, RADV; another program using the whole card; full gate run)
+
+W4 has a black floor 3 m down in both frames, and its reference frame sets the sky's
+ambient to 1 so the sky reflects at its full radiance. W5 is read per channel. W6 and
+W7 (b) use field of view 0.9 and an 8 x 8 center block; W7 (a) uses luminance.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| W1 wave height | 100.0% of water pixels within 5 mm of the CPU sum | at least 99% |
+| W1 controls | 3.57% against time 0; largest height 0.0 mm with swell 0 | under 50%, at most 0.1 mm |
+| W2 normals | 100.0% within 1 degree | at least 99% |
+| W2 control, flat normal | 3.15% | under 50% |
+| W3 crest foam | crests 0.5511 over lows 0.0266: 20.75 times | at least 2 |
+| W3 control, foam 0 | 0.733 times | at most 1.3 |
+| W4 scene reflections | 32709 pixels inside the mirror image: worst 0.0% off; 555963 outside: worst 1.4% | within 5%, at most 5% |
+| W4 control, reflections off | worst 0.0% | at most 10% |
+| W5 Snell's window | lowest 0.9741 at 10 to 35 degrees; 0.8311 at 45; highest 0.0 at 51 and beyond | at least 0.9, at least 0.5, at most 0.05 |
+| W5 control, index 1.5 | 0.0 at 45 degrees | at most 0.05 |
+| W6 absorption | wall 0.3306, 1.3945, 1.5107 against 0.3306, 1.3954, 1.5116 | within 2% |
+| W6 control, pass off | 2.0 | 2 within 1% |
+| W6 scatter | 0.006105, 0.043834, 0.046204 against 0.006107, 0.04385, 0.04622 | within 3% |
+| W7 light shafts | spread 0.02 across the 80 blocks | at least 0.005 |
+| W7 control, shafts 0 at two times | 0.0 | at most 0.001 |
+| W7 slab shadow | blue 0.035601 against 0.035662 | within 5% |
+| W7 control, sun shadows off | 0.046204, 30% above | more than 15% above |
+| W8 above the water | 0 bytes differ | 0 |
+| W9 cost, surface | 1.79 ms against 1.41 ms: 0.38 ms more | at most 3 ms |
+| W9 cost, underwater pass | 2.35 ms against 0.69 ms: 1.66 ms more | at most 3 ms |
+| W10 browser | `scene_sea` identical to the native frame; 26 scenes, 0 failures | above 30 dB |
+| W10 the rest | caustics K1 to K9 and the goldens unchanged; gfxtest, wgsltest and webgputest pass | all pass |
+
+### Volumetric cloud results (2026-11-10, RX 9060 XT, RADV; another program using the whole card)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| V1 the shadow map matches the clouds seen | mean difference 0.020 at cover 0.7 (14 points below 0.5, 11 above) | at most 0.05, at least 7 on each side |
+| V1 control, clouds moved 1 km | 0.363 | at least 0.15 |
+| V2 ground shadows follow the map | mean difference 0.0002, spread of the ratio 0.313 | at most 0.02, at least 0.1 |
+| V2 control, shadow strength 0 | ratio 1 at every pixel | within 0.002 |
+| V3 wind moves the shadows | no difference after shifting back 40 texels | at most 0.02 |
+| V3 control, no shift | 0.149 | at least 0.05 |
+| V4 light shafts in fog | spread 0.264 with cloud shadows, 0 without; cover 0 mean 1.0 times the frame without clouds | at least 0.05, at most 0.005, within 1% |
+| V5 a clear sky is unchanged | 0 / 255 | at most 1 / 255 |
+| V5 control, cover 0.5 | 164 / 255 | above 1 / 255 |
+| V6 only sky pixels change | 49,980 box pixels identical; 37.4% of the sky pixels changed | 0 / 255, at least 30% |
+| V7 clouds are lit, not gray | thick cloud 6.77 times the clear sky; 95th percentile 1.01 times white | at least 3, at most 1.2 |
+| V7 control, no sunlight on the clouds | 1.89 | below 3 |
+| V8 detail | 2.33 times the baked layer | at least 2 |
+| V9 cost | 1.44 ms more in the sky view, 0.79 ms more in the ground view | at most 2 ms each |
+| V10 nothing else moved | goldens 44.92 dB and 41.7 dB; gfxtest, wgsltest and webgputest pass, `scene_clouds` identical to the native frame | goldens above 40 dB, all pass, `scene_clouds` above 30 dB |
+
+### Volumetric fog results (2026-11-10, RX 9060 XT, RADV; full gate run)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| H1 a volume's optical depth | center 0.8643 against 0.8647; 0 beside the volume | within 1%, at most 0.001 |
+| H1 control, density 0 | 0 | at most 0.001 |
+| H2 volume color inside global fog | 0.9697, 0.6987, 0.5630 against 0.9698, 0.6989, 0.5634 | within 2% each |
+| H2 control, white volume | blue 0.9697 | more than 10% from 0.5634 |
+| H3 round volume with soft edges | center 0.5927 against 0.5934; largest rise along the row 0; 0 at 320 pixels | within 2%, at most 0.005, at most 0.001 |
+| H3 control, soft 0 | center 0.6985 | more than 2% from 0.5934 |
+| H4 noise | spread 0.118 with noise 1, 0 with noise 0; frame mean 1.05 times the noise-0 frame | at least 0.05, at most 0.005, within 10% |
+| H5 wind | no difference after 80 s | at most 0.01 |
+| H5 control, 40 s | 0.136 | at least 0.03 |
+| H6 spot cone in fog | worst block 1.4% of the center value from the CPU integral; 0 outside the cone | at most 5%, at most 1% |
+| H6 control, point light | 3.5 times the center value outside the cone | above 1% |
+| H7 spot shadow in fog | 0 behind the box; lit side 0.1% from the CPU integral | at most 2%, at most 5% |
+| H7 point light shadow in fog | worst block 0.02% of the largest value from the CPU integral | at most 5% |
+| H7 control, shadows off | 0.85 of the open center value behind the box | above 2% |
+| H8 cost | 0.28 ms more (0.39 and 0.59 ms in two other runs) | at most 2 ms |
+| H9 browser | `scene_fog` passes; 25 scenes, 0 failures | above 30 dB |
+| H10 the rest | goldens 44.92 dB and 41.7 dB; gfxtest, wgsltest and webgputest pass | goldens above 40 dB, all pass |
+
+### Skin scattering results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+Differences are shares of the plateau, listed for red, green and blue. Controls list
+the least of the three channels, largest then mean.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| X1 profile, 0.15 m | 1,838 pixels: largest 0.0178 0.0082 0.0094, mean 0.0045 0.0027 0.0023 | 0.04, 0.01 |
+| X1 profile, 0.3 m | 1,609 pixels: largest 0.0134 0.008 0.0078, mean 0.0039 0.0024 0.0019 | 0.04, 0.01 |
+| X1 profile, 0.6 m | 810 pixels: largest 0.0117 0.0076 0.0077, mean 0.0032 0.0021 0.0014 | 0.04, 0.01 |
+| X1 profile, 0.3 m swung 60 degrees | 811 pixels: largest 0.0185 0.0105 0.0102, mean 0.0065 0.003 0.002 | 0.04, 0.01 |
+| X1 control, plain light against the reference | 0.3404 / 0.0385, 0.3464 / 0.0385, 0.3437 / 0.0402, 0.3477 / 0.0405 | above 0.04 / 0.01 |
+| X1 control, reference with twice the distances | 0.0981 / 0.0376, 0.1013 / 0.0376, 0.106 / 0.0378, 0.1046 / 0.0376 | above 0.04 / 0.01 |
+| X1 control, depth off on the swung sheet | 0.0909 / 0.0233 | above 0.04 / 0.01 |
+| X2 energy | scattered sum over plain sum 1.0037 0.9995 0.9994 | within 0.01 of 1 |
+| X2 control, light 5% dimmer | 0.9535 0.9494 0.9494 | more than 0.01 from 1 |
+| X3 no bleeding across a gap | largest 0.0002 of the card's middle on the wall behind it | at most 0.02 |
+| X3 control, depth off | mean 0.2613 | above 0.1 |
+| X4 only skin changes | pixels without skin: largest change 0 / 255; the frame repeats exactly | 0 |
+| X4 control | 22,696 of 53,142 skin pixels changed | above 1,000 |
+| X5 free when there is nothing to do | no skin in view: the pass did not run, change 0 / 255; sheet 5 m away: change 0 / 255 | 0, at most 1 |
+| X5 control, sheet 0.3 m away | change 93 / 255 | above 8 |
+| X6 the look | 3 pixels past the disc's edge: red 0.2258 of the middle, 3.2 times blue | at least 0.15, 2 |
+| X6 control, pass off | red 0.0 of the middle | at most 0.01 |
+| X7 cost | 1.8 ms off, 3.44 ms on with 64 taps: 1.64 ms more; 1.14 ms more with 16 taps | at most 4 ms |
+| X8 nothing else moved | goldens above 40 dB; gfxtest ok; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` matches the native frame exactly on WebGPU | pass |
+
+### Skin pore and fuzz results (2026-11-10, RX 9060 XT, RADV)
+
+The Y3 values include the lamp's own falloff across the patch, which is the same in
+all three frames.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| Y1 furrows show up close | 0.3724 with strength 0.7 | at least 0.05 |
+| Y1 control, strength 0 | 0.0002 | at most 0.005 |
+| Y2 the mean diffuse light stays | sum with strength 0.7 over sum with strength 0: 1.002 | within 0.01 of 1 |
+| Y2 control, light 5% dimmer | 0.9506 | more than 0.01 from 1 |
+| Y3 no noise far away | 0.5309 with strength 0.7, 0.6783 with strength 0 | at most 0.002 above |
+| Y3 control, no fade | 0.8809 | at least 0.01 above 0.5309 |
+| Y4 the far highlight follows the near one | near 1.123, far 1.0897 | near at least 0.05 from 1, far closer to near than to 1 |
+| Y4 control, strength 0 | 1.0 | fails |
+| Y5 fuzz lights the rim only | 3,243 rim pixels rise 13.92 / 255 on average; middle: largest change 1 / 255; pixels without skin: 0 / 255 | at least 3, at most 1, 0 |
+| Y5 control, fuzz 0 twice | rim rise 0.0 | below 3 |
+| Y6 cost | 1.13 ms without, 1.24 ms with: 0.12 ms more | at most 0.3 ms |
+| Y7 nothing else moved | goldens 44.92 dB and 41.7 dB; X1 to X7 pass with both strengths 0; wgsltest 67 modules, 58 pipelines, 0 failures; webgputest 22 scenes, 0 failures, `scene_sss` with strength 0.7 and fuzz 0.35 matches the native frame exactly on WebGPU | pass |
+
+### Skin cavity and color results (2026-11-11, RX 9060 XT, RADV)
+
+Before this change the pore and furrow darkening was part of the light that subsurface
+scattering blurs, so with scattering on it was spread over about 2 mm and skin read as
+smooth wax up close. SC1 measures the red channel, which scatters the farthest, on a
+sheet with albedo 0.8, roughness 1 and pore strength 1.1, 5 cm from the camera, lit
+from 30 degrees off the normal. SC2 measures the spread of green over red (standard deviation over mean) across
+the middle 400 x 400 pixels; gray pores do not change it, color blotches do.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| SC1 pores keep their contrast with scattering on | 0.0519 on, 0.0518 off: 1.0009 (the shader before this change: 0.0041 on, 0.0788 off: 0.0519) | deviation from the plane of each 16 x 16 block, scattering on over off: at least 0.7 |
+| SC1 control, the scattering-off frame blurred over a 2 mm (37 pixel) box on the CPU, as scattering blurred the darkening before | 0.0388 | below 0.7 |
+| SC2 skin color varies at the millimeter scale | 0.0308 (before this change: 0.0) | at least 0.01 with strength 1.1 |
+| SC2 control, strength 0 | 0.0 | at most 0.002 |
+| SC3 nothing else moved | X1 to X7 and Y1 to Y6 pass; goldens 44.92 dB and 41.7 dB; gfxtest ok; wgsltest 84 modules, 71 pipelines, 0 failures; webgputest 26 scenes, 0 failures; c 73 of 78 and web 77 of 78 as before | X1 to X7 and Y1 to Y6 pass; gfxtest ok; wgsltest and webgputest 0 failures |
+
+### Effects results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| V1 death events | 512 live, farthest 0.033 m from 1 m | 512; at most 0.1 m |
+| V1 control, no event | 0 live | 0 |
+| V2 inherited speed | 512 live, farthest 0.033 m from 2 m | 512; at most 0.1 m |
+| V3 hit events | 800 started; all within 0.15 m of the floor | within 5 % of 800; at least 0.99 |
+| V3 control, collisions off | 0 | 0 |
+| V4 trails | lit run 1.45 m; tail quarter 0.07 of the head quarter | within 15 % of 1.4 m; at most 0.5 |
+| V4 control, no trail | 0.17 m | at most 0.3 m |
+| V5 mesh particles | 6,219 pixels; 0.53 of them behind the sphere; brightness 186.8 against 46.0 | within 10 % of 6,150; 0.4 to 0.6; at least 2 times |
+| V6 effects as text | 480 live both ways; position difference 0; `line 3: unknown word sped` | equal; 0; refused with the line |
+| V7 cost | 1.4 ms and 4.1 ms more in two runs (2.9 ms against 1.5 ms; 5.8 ms against 1.7 ms) | at most 7 ms |
+| V8 nothing else moved | F1 to F6 pass; gfxtest passes; wgsltest 84 modules, 71 pipelines, 0 failures; webgputest 26 scenes, 0 failures | all pass |
+
+### Many lights results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| L1 nothing is dropped | 0 dropped; fullest cell 305 | 0; at most 1,023 |
+| L2 the frame is right | 0 / 255; brightness 106.5 against 37.8; no pixel at full white | at most 1 / 255; at least 2 times; below a quarter |
+| L2 control | 145,329 pixels | at least 1,000 |
+| L3 a crowded cell | fullest cell 700; 0 dropped; 0 / 255; brightness 67.4 | at least 700; 0; at most 1 / 255; between 30 and 220 |
+| L4 cost | 4.3 ms (5.6 ms with the lights, 1.3 ms without); 1.1 ms on the CPU; 16.6 times (91.9 ms) | at most 17 ms; at most 4 ms; at least 10 times |
+| L5 nothing else moved | gfxtest passes; wgsltest 80 modules, 69 pipelines, 0 failures; webgputest 26 scenes, 0 failures | all pass |
+
+### Time of day results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| D1 sun position | 73.439 degrees; 49.496 degrees; x 1.0 at -0.324 degrees; turned vector off by 0.0 | 73.44 within 0.2; 50 within 1; at least 0.99 within 1.5 of the horizon; within 0.001 |
+| D2 the day follows the clock | 130.5 at 12:00, 88.2 at 18:00, 1.39 at 20:15; 12.3 at 00:00 = 0.094 of noon; 0.124 with no moon = 0.01 of the moonlit frame | each lower; 0.02 to 0.35; at most 0.2 |
+| D3 dusk is warm | 8.76 | at least 2 |
+| D4 the night has a moon | 26.6 degrees; 0.0169 of noon | above 10 degrees; above 0 and at most 0.05 |
+| D5 no needless bake | a bake; no bake; no bake with the sun moved; a bake; 2 bakes in all | one bake; no bake but a new sun direction; a bake |
+| D6 no jump | largest step 3.73; 1.42 before and 1.17 after the moon takes over the sky at 20:10 | at most 7; within 3 |
+| D7 cost | 13.2 ms at 512; 5.8 ms at 128 | at most 70 ms; at most 14 ms |
+| D8 nothing else moved | gfxtest passes; wgsltest 80 modules, 69 pipelines, 0 failures; webgputest 26 scenes, 0 failures | all pass |
+
+The blur of the baked sky takes most of the bake, so `Day.samples` (default 128) sets its
+sample count for bakes made by `s3d::time_of_day`; `envmap::irr_samples` (default 2048)
+is the sample count of the diffuse level for every other bake.
+
+### Hair results (2026-11-10, RX 9060 XT, RADV)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| H1 generator | identical; 275,044 bytes differ with another seed; 616,016 bytes | identical; different; 616,016 |
+| H2 bad data | -1, -1, -1; index 0 for the whole groom | -1 three times; an index |
+| H3 coverage | 32,748 changed pixels, 1.699 of the head's disc; 0 beyond 3.2 radii | at least 0.4; none |
+| H3 control | 0 | none |
+| H4 wall | largest difference 0 / 255 (the wall frame differs from the open frame by 118) | equal |
+| H5 style | 0.0 mm | at most 3 mm |
+| H5 control | 183.0 mm | at least 10 mm |
+| H6 collision | 0.0999 m, 1 part, 64,000 cells | at least 0.095 m |
+| H6 control | 0.0309 m | at most 0.085 m |
+| H7 lag and settle | 102.2 mm right after the jump; 0.001 mm 180 steps later | at least 5 mm; at most 3 mm |
+| H8 self-shadow | 0.881 (30.1 against 34.2) | at most 0.92 |
+| H9 sun | 0.004 | at most 0.7 |
+| H10 two grooms | 1.706 and 1.685; 0 and 0 pixels differ | at least 0.4 each; equal |
+| H11 size | 79.8 dB | at least 30 dB |
+| H11 control | 25.1 dB | below 30 dB |
+| H12 repeat | 0 / 255 | equal |
+| H13 follow | 237.3 pixels; anchored 237.3 | 235 within 15; within 1 |
+| H13 control | 0.4 pixels | below 40 |
+| H14 cards round trip | same counts; 0.0000000075 m | same; at most 0.00001 m |
+| H15 bones | bound points off by 0.00000001 m; unbound moved 0.0000000075 m; 1 part, 184,320 cells, finite | within 0.0005; below 0.0005; 1 part, cells above 0, finite |
+| H16 cost | 1.69 ms (1.90 ms with hair, 0.21 ms without) | at most 14 ms |
+| H17 cards | 2 x points; 2.511 | 2 x points; at least 0.3 |
+| H18 fur | 1.212 | at least 0.7 |
+| H19 nothing else moved | gfxtest ok; wgsltest 80 modules, 69 pipelines, 0 failures; webgputest 26 scenes, a window and a compute check, 0 failures | all pass |
+
+### Fabric weave results (2026-11-10, RX 9060 XT, RADV)
+
+The W3 values include the lamp's own falloff across the patch, which is the same in
+all three frames. The far highlight is widened by the slopes across the threads; the
+steep ends of each pass lie in the darkened gaps and are left out.
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| W1 threads show up close | 0.2085 with strength 0.7 | at least 0.03 |
+| W1 control, strength 0 | 0.0002 | at most 0.005 |
+| W2 the mean light stays | sum with strength 0.7 over sum with strength 0: 1.0031 | within 0.01 of 1 |
+| W2 control, light 5% dimmer | 0.953 | more than 0.01 from 1 |
+| W3 no noise far away | 0.0915 with strength 0.7, 0.0915 with strength 0 | at most 0.002 above |
+| W3 control, no fade | 0.8449 | at least 0.01 above 0.0915 |
+| W4 the far color is the mean of the near colors | near 1.8018, far 1.802 | both at least 1.5, far within 4% of near |
+| W4 control, weft lightness 0 | 1.0012 | below 1.5 |
+| W5 the far highlight follows the near one | near 1.2196, far 1.1775 | near at least 0.05 from 1, far closer to near than to 1 |
+| W5 control, strength 0 | 1.0 | fails |
+| W6 cost | 1.47 ms without, 1.42 ms with: no measurable cost | at most 0.3 ms |
+| W7 nothing else moved | with strength 0 the goldens stay at 44.92 dB and 41.7 dB and Z8 and Z9 pass; gfxtest passes, wgsltest 67 modules and 58 pipelines with 0 failures, webgputest 23 scenes with 0 failures and `scene_cloth` drawn as the 3/1 twill | goldens above 40 dB, all pass |
+
+### Cloth results (2026-11-10, RX 9060 XT, RADV; Ryzen, one core for the solver)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| Z1 edges keep their length | longest edge 1.00001 times its rest length | at most 1.03 |
+| Z1 control, 1 substep without the pin limit | 3.70 | above 1.03 |
+| Z2 it comes to rest | mean speed 0.0007 m/s after 10 s, every position finite | below 0.02 m/s |
+| Z2 control, 0.5 s after the start | 1.07 m/s | above 0.02 m/s |
+| Z3 nothing passes through a sphere | nearest particle 0.305 m from the center; 446 particles touching at the end | at least 0.304 m; at least 100 |
+| Z3 control, no sphere | a particle comes within 0.009 m of the center; the sheet ends lying on the ground | within 0.2 m; lying |
+| Z4 nothing passes through a capsule | nearest particle 0.105 m from the segment | at least 0.104 m |
+| Z4 control, no capsule | 0.009 m | within 0.05 m |
+| Z5 pins hold and the cloth follows | pins off their targets by 0 m; bottom row moved 0.998 m | at most 0.000001 m; at least 0.8 m |
+| Z5 control, no pins | the sheet's mean x moved less than 0.000001 m | less than 0.01 m |
+| Z6 wind | bottom row at z 0.919 m | at least 0.2 m |
+| Z6 control, no wind | 0.0 m | at most 0.001 m |
+| Z7 normals follow the shape | 4.69 degrees from the sphere's on average | at most 15 |
+| Z7 control, rest normals | 56.36 degrees | above 15 |
+| Z8 the picture is the simulated shape | identical to the plain mesh of that step: no pixel differs | at least 50 dB, at most 2 / 255 |
+| Z8 control, rest shape | 21.13 dB | below 30 dB |
+| Z9 motion vectors | 0.002 pixels from the shift on average over 133,956 pixels | at most 0.05 |
+| Z9 control, last step ignored | 7.317 pixels | above 1 |
+| Z10 cost | 2.37 ms a step for 4,225 particles | at most 4 ms |
+| Z11 nothing else moved | goldens 44.92 dB and 41.7 dB; gfxtest, wgsltest and webgputest pass, `scene_cloth` identical to the native frame | goldens above 40 dB, all pass, `scene_cloth` above 30 dB |
+
+### Meshlet results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| N1 clusters | 4,119 clusters in 12 levels, the largest 128 triangles; level 0 holds 261,120 of 261,120; coarsest cut 126 triangles (1 / 2,072); built in 2.59 s | 128, all, 1 / 100, 5 s |
+| N2 no cracks | 16 cuts from 260,608 down to 126 triangles: 0 open edges | 0 |
+| N2 control, two errors mixed | 928 open edges | above 0 |
+| N3 the error is honest | farthest vertex 0.46 e, 0.72 e, 0.97 e and 1.02 e | at most 2 e |
+| N4 same picture close up | ball 480 pixels tall: mean difference 0.105 / 255; 0.0008 of the pixels more than 8 / 255 apart; 24,989 of 261,120 triangles (0.096) | 1 / 255, 0.005, 1 / 4 |
+| N4 control, `meshlet_px` 64 | 126 triangles: mean 1.6 / 255, 0.077 of the pixels apart: fails as it must | fails |
+| N5 far away | ball 40 pixels tall: 254 triangles (1 / 1,028); IoU 0.979; mean colors 0.47 / 255 apart | 1 / 100, at least 0.9, 4 / 255 |
+| N5 control, `meshlet_px` 0.01 | 72,960 triangles | above 2,611 |
+| N6 GPU list against CPU selection | 8 spots, 1,022 to 38,194 triangles, the same counts on both: 0 / 255 | 0 |
+| N6 control, CPU selection at `meshlet_px` 8 | 78 / 255 apart | above 0 |
+| N7 ball behind the camera | 0 triangles in the camera's list, 26,868 in the shadow list; shadow IoU 0.999 | 0, at least 0.97 |
+| N7 facing test | 24,989 triangles with it, 28,530 without: 0.876; frames 0 / 255 apart | at most 0.9, 0 |
+| N8 shadow in view | IoU 0.994 (27,133 shadow pixels against 27,141) | at least 0.97 |
+| N7 and N8 control, ball hidden | IoU 0 | below 0.97 |
+| N9 cost, 64 balls | 8.10 ms off, 2.37 ms on: 0.29; 213,736 triangles in the camera's list and 231,646 in the shadow list in place of 16.7 million; frames 0.27 / 255 apart | at most 0.5 |
+| N10 off is free, and gates | goldens 44.92 dB and 41.7 dB; gfxtest ok; wgsltest 65 modules, 56 pipelines, 0 failures; webgputest 21 scenes, 0 failures, `scene_meshlet` identical to native | above 40 dB, 0 failures |
+
+N1 to N3 run in `hc/test/gfx/meshlet_check.amni`, N4 to N9 in `meshlet_checks`
+(`GFX_ONLY=meshlet`).
+
+### Ray-traced reflection results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| R1 an object out of view is reflected | 16,267 green pixels against 16,196 in the mirrored reference, IoU 0.983; mean colors 1.3 / 255 apart | at least 0.9, at most 16 / 255 |
+| R1 control, `rt_reflect` off | 0 green pixels | 0 |
+| R2 the sky is still the sky | 832,550 pixels: 0 / 255 from the frame with `rt_reflect` off | at most 2 / 255 |
+| R3 with SSR on | R1 unchanged (IoU 0.983); of 28,468 pixels of the red box's SSR reflection, 1.0 within 2 / 255 of the SSR-only frame | at least 0.9, at least 0.8 |
+| R4 closed room under a bright sky | floor brightness 0.248 against 0.240 in the mirrored reference: 0.034 apart | at most 0.25 |
+| R4 control, `rt_reflect` and specular occlusion off | 4.17 times the reference: fails as it must | above 2 times |
+| R5 roughness 0.3 (`rt_rough`) | 0 / 255 from the frame with `rt_reflect` off | 0 |
+| R5 roughness 0.15 | 16,283 green pixels against 16,267 at roughness 0; 69 partly green columns in the band against 1 | at least half, at least 2 times |
+| R6 off is free | goldens 44.92 dB and 41.7 dB; every earlier check passes | above 40 dB |
+| R7 cost at 1280 x 720 | scene M off 1.368 ms, on 1.490 ms: 0.122 ms; 20,014-triangle sphere off 1.399 ms, on 1.556 ms: 0.157 ms | at most 1 ms and 4 ms |
+| R8 gates | gfxtest ok; wgsltest 63 modules, 54 pipelines, 0 failures; webgputest 20 scenes, 0 failures, `scene_rtr` identical to native | 0 failures |
+| R9 gold metal box | reflection brightness 0.90 times the mirrored reference's | 0.5 to 2 times |
+| R9 control, black box | 0.007 times | below 0.5 times |
+| R10 floor under a panel glowing at 4 | 0.809 against the closed-form 0.796: 0.016 apart | at most 0.35 |
+| R10 control, glow 0 | 0.0 | below 0.040 |
+
+### Texture streaming results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| S1 same picture | 16 of 16 textures streamed; against full at the far, middle, side and near spots: 0 / 255 | at most 2 / 255 |
+| S1 far memory | 349,952 of 22,370,048 bytes = 0.016 | at most 0.1 |
+| S1 control, every texture at its smallest size | near spot differs by 17 / 255: fails as it must | must fail |
+| S2 memory follows the camera | near 4,806,400 bytes; moved far: unchanged for 29 of 29 frames, one frame later 349,952 (a scene started far: 349,952); back near 4,806,400, picture 0 / 255 | hold, equal, at most 2 / 255 |
+| S3 budget of 1,922,560 bytes | 120-frame flight peaked at 1,791,744 bytes and ended with 4 textures starved | never above, above 0 |
+| S3 budget of 1,000 bytes | memory 349,952 bytes, the smallest sizes' total; the frame equals the all-smallest frame | equal, draws |
+| S3 control, no budget | peaked at 4,806,400 bytes: fails as it must | must fail |
+| S4 upload cap of 1 MiB | 2 frames above the cap, each one step of one texture (largest 1,398,128 bytes); all loaded after 6 frames | one step, at most 40 frames |
+| S4 control, settled in one frame | 4,718,912 bytes in 12 steps: fails as it must | must fail |
+| S5 first frame, warm cache | read 358,144 of 22,376,448 file bytes = 0.016; uploaded 349,952 of 22,370,048 bytes = 0.016; 22.35 ms making textures against 27.65 ms for a full load (best of 3 each) | at most 0.1, 0.1, no slower |
+| S5 control, full load | read 22,376,448 bytes, every byte | must read all |
+| S6 damaged cache | file cut from 1,398,528 to 839,116 bytes: moving near packed 1 texture again, picture 0 / 255, file back to 1,398,528 bytes | 1, at most 2 / 255 |
+| S6 control, untouched files | 0 packed again, picture 0 / 255 | 0 |
+| S7 cost | 0.002 ms a frame | at most 0.1 ms |
+| S8 no cache folder | 16 packed in memory, 16 streamed: 0 / 255; far memory 0.016 of full | at most 2 / 255, 0.1 |
+| S8 KTX2 images in the model | 16 streamed: 0 / 255 against the same scene unstreamed; far memory 349,952 of 22,370,048 bytes = 0.016 | at most 2 / 255, 0.1 |
+| S9 reading part of a file | 5 of 5 ranges equal on the native, C and web backends | all |
+| S10 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| S10 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| S10 webgputest, with the new `scene_stream` | 19 scenes, 0 failures; `scene_stream` identical to native | 0 failures |
+
+### Compressed texture results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| T1 hardware decode, BC1 and BC3 | largest difference 2 / 255 over 4,096 random blocks each | at most 2 / 255 |
+| T1 hardware decode, BC4 and BC5 | largest difference 1 / 255 | at most 1 / 255 |
+| T1 hardware decode, BC7 | 0 / 255, 8 of 8 block modes identical | 0 |
+| T1 control, blocks shifted by one | 255 / 255 in every format: fails as it must | must fail |
+| T2 image M | BC7 55.47 dB, BC1 43.75 dB, BC3 alpha 66.69 dB, BC4 84.85 dB, BC5 normals 0.239 degrees mean | 40, 32 (and 3 below BC7), 40, 40 dB, 1 degree |
+| T2 spheres, 480 x 360 | BC7 51.53 dB, BC1 41.98 dB | 40 dB, 33 dB |
+| T2 4,096 solid colors | BC7 1 / 255, BC4 0, BC1 4 / 255 | 1, 0, 4 |
+| T3 KTX2 | 6 of 6 formats identical with 7 levels, 6 of 6 as zlib streams, 858 of 858 damaged files refused, untouched files read | all, all, all |
+| T4 scene, 1280 x 720 | 51.24 dB against uncompressed; texture memory 2,796,256 of 11,184,808 bytes = 0.25 | at least 40 dB, at most 0.26 |
+| T4 control, flat gray textures | 22.71 dB: fails as it must | must fail |
+| T5 no BC on the device | CPU decode against the GPU's decode: 0 / 255; memory back to 11,184,808 bytes | at most 2 / 255 |
+| T6 cache | first load packed 2 and wrote 2 files in 357.62 ms; second load packed 0 and read 2 in 3.4 ms, 105.32 times faster; picture difference 0 | 0 packed, at least 5 times, 0 |
+| T6 control, one file cut short | 1 packed again, 1 read, difference 0 | 1, 0 |
+| T7 KTX2 in glTF | BC7 KTX2 image against the same file from the cache: 0; marked BasisLZ: 1 bad image, drawn white | 0, 1 |
+| T8 speed, one thread | image M with all mips to BC7 in 0.18 s, to BC1 in 0.09 s | at most 2 s, 1 s |
+| T8 frame, 1280 x 720 | 1.39 ms uncompressed, 1.33 ms compressed | at most 0.2 ms added |
+| T9 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| T9 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| T9 webgputest, with the new `scene_bc` | 18 scenes, 0 failures; `scene_bc` identical to native | 0 failures |
+
+### Caustics results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| K1 formula, floor 1 m deep | 100.0 % of samples within 2 %, median error 0.018 % | at least 99 %, at most 0.5 % |
+| K1 formula, floor 3 m deep | 100.0 % of samples within 2 %, median error 0.019 % | at least 99 %, at most 0.5 % |
+| K2 energy, mean factor | 1.000 at 0.5 m, 1.001 at 1 m, 1.008 at 3 m | within 2 %, 2 %, 5 % of 1 |
+| K3 focus, standard deviation | 0.06 at 0.5 m, 0.12 at 1 m, 0.425 at 3 m | growing, at least 0.05 at 1 m |
+| K4 scope | 188,784 floor pixels outside the footprint and 600 on a block above the surface: 0 changed; inside, 28,916 of 28,916 changed | 0 changed |
+| K5 sun absorption, flat water 2 m deep | worst channel 0.011 % from `exp(-absorb * path)` | within 1 % |
+| K5 control, straight-down path | 6.85 % off: fails as it must | must fail |
+| K6 time | same time twice differs by 0; 2 s later correlates 0.103 | 0, below 0.5 |
+| K7 water item | picture from the item against numbers set by hand: 0 / 255; level and waves read back equal; factor spread 0.478 | at most 1 / 255, equal, above 0.02 |
+| K8 cost, 1280 x 720 floor under water | 0.49 ms a frame without, 0.77 ms with: 0.28 ms added | at most 1.0 ms |
+| K9 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| K9 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| K9 webgputest, with the new `scene_caust` | 17 scenes, 0 failures; `scene_caust` identical to native | 0 failures |
+
+### Instancing and foliage results (2026-11-09, RX 9060 XT, RADV; full gfxtest ok)
+
+| Bar | Result | Bar value |
+| --- | --- | --- |
+| F1 same picture, 512 copies as one set against 512 items | worst channel difference 1 / 255, PSNR 106.53 dB | at most 2 / 255, at least 60 dB |
+| F2 culling, 4,096 copies over 60 x 60 m | 876 with their center on screen, 0 missed, 895 drawn (21.85 %), image with culling off differs by 0 | 0 missed, under 60 %, difference 0 |
+| F3 two levels, far level beyond 15 m | near 180 (CPU 180), far 715 (CPU 715), 91,840 triangles against 229,120 at one level | counts equal, fewer triangles |
+| F4 wind, 1 m blade, sway 1, strength 0.2 | tip moved at least 10.75 px, worst tip error 0.062 px, bottom row 0.0 px, tip motion vector -2.065 px against -2.115 px | 0.5 px, 0.1 px, 0.15 px |
+| F4 control, sway 0 | tip moved 0.0 px, tip error 23.996 px: fails as it must | must fail |
+| F5 pusher of radius 0.5 m, 0.2 m from the blade | tip pushed 59.5 px against 59.99 px, blade 1 m outside moved 0.0 px | 0.5 px, 0 px |
+| F6 speed, 20,000 spheres in view at 1280 x 720 with shadows | one set 11.13 ms a frame, 20,000 items 295.77 ms: 26.57 x | at least 10 x |
+| F6 reported, 100,000 blades with wind, all in view | 3.79 ms a frame | reported |
+| F7 goldens | 44.92 dB and 41.7 dB | above 40 dB |
+| F7 wgsltest | 63 modules, 54 pipelines, 0 failures | 0 failures |
+| F7 webgputest, with the new `scene_inst` | 16 scenes, 0 failures; `scene_inst` identical to native | 0 failures |
 
 ### Motion blur and depth of field results (2026-11-02, RX 9060 XT, RADV)
 
@@ -833,6 +4110,9 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 
 ## References
 
+* Hillaire, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique", EGSR 2020 (multi-scatter table).
+* Belcour and Barla, "A Practical Extension to Microfacet Theory for the Modeling of Varying Iridescence", SIGGRAPH 2017.
+
 * B. Walter, S. Marschner, H. Li, K. Torrance, "Microfacet Models for Refraction
   through Rough Surfaces", EGSR 2007 (GGX distribution).
 * C. Schlick, "An Inexpensive BRDF Model for Physically-based Rendering",
@@ -882,9 +4162,117 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 
 ## Known gaps
 
-No progressive JPEG, no point/line primitives (skipped and counted), Adler-32 is
-not verified, ambient is an analytic sky (no image-based lighting yet), spot lights
-are reserved but not shaded. Also:
+* Skin scattering gathers light from what the camera sees: light that enters on a side
+  facing away from the camera (an ear lit from behind) is not gathered, and blended or
+  cut-out skin materials are not scattered. Pores are one
+  pattern for all skin, laid out in UV space; they are not shaped per body region.
+* Cloth: a cloth does not collide with itself or with another cloth, so folds can pass
+  through each other. Colliders are spheres, capsules and one ground plane, not
+  meshes. The solver runs on one CPU core, in the item's own space. Ray-traced
+  shadows, reflections and GI see the rest shape. Tangents keep their rest direction,
+  so a normal map on a strongly folded cloth is lit slightly off. Cloth meshes are
+  not drawn as meshlets. The weave is a plain weave or a warp-faced twill (no satin, no knit), and the
+  threads' direction does not stretch the highlight. Hair: a groom has at most 32 points a guide, 64 bones and 8 collider parts. Strand hair casts no
+  shadow on the scene, grooms do not shadow each other, and two grooms that overlap on screen share
+  their depth layers. A move of the head without a turn is not carried over to the hair at once, so
+  the tips trail by the whole move and catch up.
+* Effects: there is no node-graph editor; effects are written as text or in code. Mesh
+  particles take the sun and a flat sky ambient only, cast no shadows and are not in the
+  depth prepass. Trails are not meant for emitters that `wrap` (rain, snow): a particle
+  that comes back on the far side drags its trail across the box. The order in which
+  events start their particles differs from run to run, so a child emitter with a random
+  spread or speed does not repeat exactly.
+* Many lights: the grid is built on the CPU every frame and its cells grow with distance, so
+  far pixels test more lights than near ones. Only the first 16 lights cast shadows or light
+  the fog, and hair and particles are not lit through the grid.
+* Time of day: the clock is local solar time (no time zones, no equation of time). The moon
+  is always full and directly opposite the sun, and there are no stars. The sky is dark once
+  the sun is about 6 degrees below the horizon, earlier than a real twilight ends. The sky
+  is baked in steps of `step` degrees, so reflections and ambient light follow the clock in
+  those steps while the sun itself moves every frame.
+* Clouds: one layer of one cloud type (cumulus), shaped by noise alone: there is no
+  weather map to place clouds and no high thin cloud. They are drawn on sky pixels
+  only, so nothing can sit inside a cloud or be hidden by one. Light inside a cloud
+  is four samples toward the sun plus a fitted term for scattering, not a full
+  solution, and local lights do not light clouds. Reflections, probes and ambient
+  light see the environment map's baked layer, which does not move with the wind.
+  Thin cloud edges show some grain without the temporal pass.
+* Sheen renders brighter than three.js on the chair and toy car (the likely cause, its
+  low fit, is unproven), and the clearcoat fixture's base tiles are brighter
+  (R 185 against 143), cause not found. See the PSNR table in hc/test/gfx/results.
+* Metal cavities: with GTAO bent normals, `spec_occlusion` treats a blocked reflection
+  as black, but a real metal cavity reflects itself, so the undercut of a machined part
+  goes black. Screen-space reflections on the same groove show chevrons from its facets
+  when the surface is rougher than about 0.25. Amni-CAD sets `spec_occlusion = false`
+  and `ssr_rough = 0.4`; the engine defaults are unchanged.
+* Reflection probes do not update by themselves when geometry or lights move (call
+  `recapture()`), leave glass, particles and quads out of the capture, and light a whole
+  box's diffuse with the irradiance at the probe's position.
+* Screen-space GI misses light from surfaces that are off screen or face away from the
+  camera, takes about 2 s at 60 fps to build up several bounces, and costs about as
+  much as the rest of a simple frame at 1280 x 720: the Hi-Z walk picks its level
+  with a branch over eight textures, which diverges across a wave.
+* Rain and snow: shelter is straight down, so rain blown sideways still stops at a roof's
+  edge, and the height map is one texel (5 cm with the default box) coarse. The map is
+  redrawn every frame. Drops and splashes take their color from the emitter, not from the
+  sun and sky. Puddles, rain rings, `wet` and `snow` do not know about shelter, so ground
+  under a roof gets them too. Puddle shapes come from a noise pattern, not from the height
+  of the ground. `shapes::sea` water gets no rain rings. Lens drops do not blur what is
+  behind them and do not catch highlights.
+* Decals: every opaque pixel tests every decal's box (no clustering yet; 64 heavily
+  overlapping decals add about 0.3 ms at 1280 x 720). Images are resampled into the
+  1024 x 1024 array layers, so finer detail is lost. The depth prepass, SSAO, SSR and
+  SSGI see the surface's own normal, not the decal's. Transparent and unlit surfaces take
+  none, and decals cannot glow.
+* Rect lights: clearcoat, sheen and skin's second lobe take the base lobe's panel
+  integral through one direction (the reflection of the lobe-weighted center), so their
+  panel highlights are close but not exact. Shadows, fog, GI and ray-traced visibility
+  treat the panel as its center point. Panels are one color (no textured panels or
+  video screens). One rect light covering the whole view costs about 2 ms at
+  1280 x 720 on an RX 9060 XT.
+* Instanced copies: they are not part of the ray-traced scene, so they cast no ray-traced
+  shadows and add nothing to probe GI. Skinned assets cannot be instanced. Shadow passes
+  draw every copy (culling is for the camera passes). A copy moved with
+  `s3d::set_instance` writes no object motion that frame. Wind moves positions only;
+  normals keep their rest direction.
+* Caustics: one level body of water, lit by the sun only (local lights get none). Each
+  point takes one bundle of rays, so past the depth where the lines first cross the
+  overlapping sheets are not summed.
+* Water: reflections come from what is in the picture, so anything off screen or hidden
+  behind something else is missing from them. The underwater view handles one body of
+  water, takes the surface as level at its mean height (a camera inside a wave trough
+  or crest switches at that height, for the whole frame at once), and its shafts are
+  cut only by what the sun's shadow map holds at the surface. Local lights add no
+  scatter under water.
+* Compressed textures: the BC7 encoder uses one block mode (mode 6). Images whose
+  sides are not multiples of 4 stay RGBA8. Devices without BC (most phones) draw the
+  same picture from RGBA8 with no memory saved; ASTC and ETC2 are not built. KTX2 files
+  packed with BasisLZ or Zstandard are not read.
+* Texture streaming: sizes are read and unpacked on the render thread, so a large step
+  can lengthen the frame it lands in. What is loaded follows the camera's distance
+  only. Skinned and morphed meshes, height-mapped materials, plain RGBA8 textures and
+  textures under 256 pixels are loaded whole. A texture used by a decal or an array
+  layer is loaded at the array's size.
+* Ray-traced reflections: the ray scene holds static meshes only; skinned, morphed,
+  instanced and blended meshes and `no_gi` materials are not in it, and it does not
+  follow objects that move. A reflected surface shows one flat color per triangle: no
+  textures, no smooth normals, and metal and roughness textures are not read (those
+  surfaces reflect as rough non-metals). With SSR on, things on screen reflect in full
+  detail. One bounce: a mirror seen in a mirror shows ambient light only. Rough
+  reflections take one ray per pixel. Blended and transmissive surfaces do not trace.
+* Shadows: virtual shadow maps cover the sun only; spot and point lights use the local
+  shadow atlas.
+* Meshlets: static opaque and cut-out meshes only; skinned, morphed, blended and
+  transmissive meshes and instance groups draw every triangle. No occlusion culling
+  and no software rasterizer: triangles smaller than a pixel go through the GPU's
+  rasterizer. Clusters are built on the first frame that draws a mesh and are not
+  saved to disk or streamed. Shadow passes use the camera's level of detail. The
+  frame's index list has a fixed size (`meshlet_budget`). Ray-traced shadows,
+  reflections and GI use the full mesh.
+* Not built: WebP, meshopt and Draco, and mesh streaming.
+
+No point/line primitives (skipped and counted), Adler-32 is not verified, the GI
+pass lights spot lights as points (no cone). Also:
 
 * The furnaces do not resolve roughness below 0.3 (metal roughness 0 shows 12.75 %
   mean error on the spheres at 4096 directions); the LUT check covers the shading
@@ -911,6 +4299,5 @@ are reserved but not shaded. Also:
 * TAA ghosting is measured on one slide (about 7 px/frame); fast rotation, thin
   geometry and disocclusion of high-contrast detail are not covered. Sky pixels are
   left out of every image metric, so ghosts over the sky are only reported.
-* Motion vectors ignore morph-target changes (last frame's weights are not kept),
-  and transparent (blended) surfaces write no motion, so the surface behind them is
+* Transparent (blended) surfaces write no motion, so the surface behind them is
   reprojected.

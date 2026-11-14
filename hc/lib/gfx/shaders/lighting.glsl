@@ -49,8 +49,12 @@ vec3 light_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float roug
 // Smooth falloff that reaches zero at the light's range: an inverse-square core
 // shaped by a (1 - (d/range)^2)^2 window.
 float range_falloff(float d, float range) {
+	if (range < 0.0) { float t = d / range; t = t * t; float w = clamp(1.0 - t * t, 0.0, 1.0); return w * w / max(d * d, 0.01); }
 	float q = clamp(1.0 - (d * d) / (range * range), 0.0, 1.0);
 	return q * q / (1.0 + d * d);
+}
+float spot_cone(float inner, float co, vec3 ldir, vec3 ld) {
+	return co < -1.5 ? 1.0 : smoothstep(co, inner - 1.0, dot(-ld, ldir));
 }
 
 // Analytic sky: a zenith/horizon gradient, a darker ground, and a glow around the sun.

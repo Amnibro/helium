@@ -1,0 +1,42 @@
+=== -66990c9dab6fe2de
+import os;
+import math;
+=== 0af617485b519991
+fn skin_d(c real, s real) real {
+	if s < 0.0001 { return max(c, 0.0); }
+	var num = 0.0;
+	var den = 0.0;
+	for i in 4096 {
+		let a = PI * (i + 0.5) / 4096.0;
+		let h = sin(a / 2.0);
+		let x = 2.0 * h / s;
+		let k = (exp(-x) + exp(-x / 3.0)) / max(h, 1e-9) * sin(a);
+		let p = cos(a) * c;
+		let q = sin(a) * sqrt(max(1.0 - c * c, 0.0));
+		let e = if p >= q { p } else if p <= -q { 0.0 } else { (p * acos(-p / q) + sqrt(q * q - p * p)) / PI };
+		num += k * e;
+		den += k;
+	}
+	num / den
+}
+=== 45d0dffe330b1644
+fn main() {
+	let T = 32;
+	let S = 16;
+	print("const int SKIN_T = 32;");
+	print("const int SKIN_S = 16;");
+	print("const float SKIN_D[512] = float[](");
+	for j in S {
+		let f = j * 1.0 / (S - 1);
+		let s = f * f;
+		var line byte[>..] = [];
+		line.push('\t');
+		for i in T {
+			let c = -1.0 + 2.0 * i / (T - 1);
+			format_flt(line, skin_d(c, s), 5);
+			if j < S - 1 || i < T - 1 { line.append(", "); }
+		}
+		print(line);
+	}
+	print(");");
+}

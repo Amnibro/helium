@@ -244,7 +244,7 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 - Strings: `trim trim_start trim_end split(s, ',') each_split words each_word join(out, parts, sep) compare to_lower to_upper parse_int(s, base) parse_flt format_int(out, v, base, width, pad) format_flt(out, v, decimals) format_replaced each_utf8 push_utf8`.
 - `import dictionary;`: `var d = dictionary<const byte[:], int> {};` with `insert get(gives V?) contains get_or_insert update(d, k, v0) { it += 1; } remove each(d) { k, v => ... } count`.
 - `import math;`: `sqrt sin cos tan atan2 exp log pow floor ceil round PI TAU`. `import os;`: `read_file(path, out) write_file append_file file_exists list_dir read_line args() arg_count clock time sleep_ms random_seed`.
-- Also `vec` (`float2 float3 float4`), `json`, `csv`, `regex`, `base64`, `binary`, `ffi`, `exception`, `gf` (`dot64 mix mix_inv mul`: GF(2^8) rows and AES rounds on byte buffers); std `hex_encode hex_decode`; `gfx`, `audio`, `ui`, `physics` packages.
+- Also `vec` (`float2 float3 float4`), `json`, `regex`, `base64`, `binary`, `ffi`, `exception`, `gf` (`dot64 mix mix_inv mul`: GF(2^8) rows and AES rounds on byte buffers); std `hex_encode hex_decode`; `gfx`, `audio`, `ui`, `physics`, `crypto`, `net` packages.
 
 ## Minimal by construction (std constructs and waste warnings)
 

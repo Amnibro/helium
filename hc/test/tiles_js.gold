@@ -1,0 +1,12 @@
+into tiles_js.he
+lang he
+use tiles.js
+
+```he
+NUMS := ["0", "-0", "1", "0.1", "1e21", "1e-7", "123456789012345680000", "1.5e-7", "0.000001", "0.0000001", "-1234.5678", "NaN", "Infinity", "-Infinity", "100", "1e300", "5e-324", "0.30000000000000004"]
+FIXED := ["1.005 2", "1.45 1", "-1.5 0", "2.5 0", "-0 2", "-0.001 2", "1e21 2", "123.456 0", "NaN 2", "0.5 0", "1.255 2", "-2.345 2", "1234.5678 3", "0 0", "1e-10 3", "9.995 2"]
+LOC := ["1234567.891 2", "0.5 0", "2.5 0", "-2.5 0", "1.005 2", "-0 3", "-0.0001 3", "1e21 0", "NaN 3", "Infinity 3", "-Infinity 0", "1234.5 0", "0.125 2", "999.9996 3", "-1234567.25 1", "12 3", "0.1 3", "1e-7 3", "123456.7891 3", "-0.4 0"]
+FL := ["1234567.891 2", "-0.001 2", "-0 2", "NaN 2", "2.5 0", "0.125 2", "1.005 2", "999.9996 3", "-1234567.25 1", "1e21 0", "Infinity 1", "0.000001 5", "12 3", "-999.5 0", "123456789.125 2", "999999999999999.9 1", "0.5 0", "-0.5 0", "1e-7 3"]
+```
+
+The program prints one line per case, the lists in the order above. A NUMS case is a number written as text, read with `parse_flt`, and prints "num [", the text, "] " and `js::num_str` of it. A FIXED or LOC case is a number and a count separated by a space, and prints "fixed [" or "loc [", the text, "] " and `js::to_fixed` or `js::locale_string` of the number and the count. An FL case is the same pair and prints "fl [", the text, "] ", `js::fixed_locale` of the pair, a space and `js::fixed_locale` of the pair with or_zero set. Last comes a sweep: for i from 0 up to 20,000 the number is (i * 7919 % 2000003 - 1000001) / 8 and the count i % 5, and `js::fixed_locale` of them must equal `js::locale_string` of the count and the number `parse_flt` reads from `js::to_fixed` of them; print "fl sweep ok" when every one does, else "fl sweep bad" and the first failing i.

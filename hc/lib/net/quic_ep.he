@@ -1,0 +1,69 @@
+namespace net
+use os
+use crypto.x509
+use crypto.ecc
+use net.sock
+use net.quic_wire
+use net.quic
+struct QEp { fd int = -1, srv bool = false, cert byte[>..] = [], key byte[>..] = [], alpn byte[>..] = [], c Quic[>..][>..] = [], to Addr[>..] = [], given bool[>..] = [], buf byte[>..] = [], out byte[>..] = [], maxc int = 200, n int = 0 }
+qe_bind(a Addr) QEp: e ~= QEp{}; e.fd = udp(a); e
+qe_serve(e QEp&, cert const byte[:], key const byte[:], alpn const byte[:]) bool:
+	k byte[>..] ~= []; id ~= crypto::P256
+	if key.len == 32: k.append(key)
+	else: p, c := crypto::pkcs8_ec_parse(key); k.append(p[..]); id = c
+	if id != crypto::P256 || k.len != 32: return false
+	e.cert.append(cert); e.key.append(k[..]); e.alpn.append(alpn); e.srv = true; true
+qe_slot(e QEp&, to Addr) int:
+	i ~= 0
+	while i < e.c.len && e.c[i].len > 0: i += 1
+	if i == e.c.len: s Quic[>..] ~= []; e.c.push(s); e.to.push(to); e.given.push(false)
+	e.to[i] = to; e.given[i] = false; e.n += 1; i
+qe_dial(e QEp&, to Addr, host const byte[:], alpn const byte[:], pin const byte[:]) int: i := qe_slot(e, to); e.c[i].push(quic_client(host, alpn, pin, clock())); e.given[i] = true; i
+qe_free(e QEp&, i int): if i >= 0 && i < e.c.len && e.c[i].len > 0 { e.c[i].clear(); e.n -= 1 }
+qe_find(e QEp&, id const byte[:]) int:
+	for i e.c.len:
+		if e.c[i].len > 0 && (e.c[i][0].scid[..] == id || e.c[i][0].srv && e.c[i][0].odcid[..] == id): return i
+	-1
+qe_vn(e QEp&, d const byte[:], dl int, sl int, to Addr): o byte[>..] ~= []; o.append([0xC0 as byte, 0, 0, 0, 0][..]); o.push(sl as! byte); o.append(d[7 + dl..7 + dl + sl]); o.push(dl as! byte); o.append(d[6..6 + dl]); o.append([0 as byte, 0, 0, 1][..]); send_to(e.fd, to, o[..]);
+qe_first(d const byte[:], dl int) bool: h := qh_parse(d, 8); h.ok && qp_open(qk_initial(d[6..6 + dl], false), d[..h.stop], h.pno, 0).ok
+qe_route(e QEp&, d const byte[:], from Addr, now real):
+	if d.len < 9: return
+	lg := d[0] >= 128; dl := if lg { d[5] as int } else { 8 }; o := if lg { 6 } else { 1 }
+	if lg && d.len < 7 + dl: return
+	sl := if lg { d[6 + dl] as int } else { 0 }
+	if lg && d.len < 7 + dl + sl: return
+	ver := if lg { ((d[1] as int) << 24) | ((d[2] as int) << 16) | ((d[3] as int) << 8) | (d[4] as int) } else { 1 }
+	if ver != 1:
+		if e.srv && ver != 0 && d.len >= 1200: qe_vn(e, d, dl, sl, from)
+		return
+	i ~= qe_find(e, d[o..o + dl])
+	if i < 0:
+		if !e.srv || !lg || (((d[0] as int) >> 4) & 3) != 0 || d.len < 1200 || dl < 8 || e.n >= e.maxc || !qe_first(d, dl): return
+		i = qe_slot(e, from); e.c[i].push(quic_server(e.cert[..], e.key[..], e.alpn[..], now))
+	quic_recv(e.c[i][0], d, now)
+qe_timeout(e QEp&) real:
+	t ~= 0.0
+	for i e.c.len:
+		if e.c[i].len > 0: u := quic_timeout(e.c[i][0]); t = if u > 0.0 && (t == 0.0 || u < t) { u } else { t }
+	t
+qe_flush(e QEp&, now real):
+	for i e.c.len:
+		if e.c[i].len == 0: continue
+		while quic_send(e.c[i][0], e.out, now): send_to(e.fd, e.to[i], e.out[..])
+		if !e.given[i] && quic_state(e.c[i][0]) == QUIC_CLOSED: qe_free(e, i)
+qe_poll(e QEp&, ms int) int:
+	now := clock(); t := qe_timeout(e); w := if t > 0.0 { min(ms, max(0, ((t - now) * 1000.0) as! int + 1)) } else { ms }; n ~= 0; var from Addr
+	if ms > 0: qe_flush(e, now)
+	if wait_one(e.fd, READ, w) > 0:
+		while n < 512:
+			e.buf.clear()
+			if recv_from(e.fd, e.buf, from) < 0: break
+			n += 1; qe_route(e, e.buf[..], from, clock())
+	qe_flush(e, clock()); n
+qe_next(e QEp&) int:
+	for i e.c.len:
+		if e.c[i].len > 0 && !e.given[i] && quic_state(e.c[i][0]) == QUIC_OPEN: e.given[i] = true; return i
+	-1
+qe_port(e QEp&) int: local_port(e.fd)
+qe_same(e QEp&, a Addr) int: n ~= 0; for i e.c.len { if e.c[i].len > 0 && e.to[i].ip == a.ip { n += 1 } } n
+qe_close(e QEp&): close(e.fd); e.fd = -1

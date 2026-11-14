@@ -1,0 +1,4 @@
+// error: cannot replace b through a reference
+struct B { id u32, name byte[] }
+fn load(b B&) { b = B { id: 1, name: "nm" }; }
+fn main() { var x = B { id: 0, name: "" }; load(x); print(x.name); }

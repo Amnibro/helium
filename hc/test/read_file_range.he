@@ -1,0 +1,23 @@
+use os
+same(a const byte[:], b const byte[:]) bool: if a.len != b.len { return false } for i a.len { if a[i] != b[i] { return false } } true
+main():
+	p := "read_file_range.tmp"
+	d byte[>..] ~= []; for i 100000 { d.push(((i * 31 + i / 251) % 256) as byte) }
+	if !write_file(p, d[..]) { print("write failed"); return }
+	all byte[>..] ~= []; ok := read_file(p, all)
+	print(str("whole ", ok, " ", all.len, " ", same(all[..], d[..])))
+	a byte[>..] ~= []; r1 := read_file_range(p, 0, 10, a)
+	print(str("start ", r1, " ", a.len, " ", same(a[..], all[..10])))
+	b byte[>..] ~= []; r2 := read_file_range(p, 50000, 10, b)
+	print(str("middle ", r2, " ", b.len, " ", same(b[..], all[50000..50010])))
+	c byte[>..] ~= []; r3 := read_file_range(p, 99995, 10, c)
+	print(str("past end ", r3, " ", c.len, " ", same(c[..], all[99995..])))
+	e byte[>..] ~= []; r4 := read_file_range(p, 100005, 10, e)
+	print(str("after end ", r4, " ", e.len))
+	r5 := read_file_range(p, 10, 70000, a)
+	print(str("appended ", r5, " ", a.len, " ", same(a[..], all[..70010])))
+	m byte[>..] ~= []; r7 := read_file_range("read_file_range.missing", 0, 10, m)
+	print(str("missing ", r7, " ", m.len))
+	r8 := read_file_range(p, -1, 10, m); r9 := read_file_range(p, 0, -1, m)
+	print(str("negative ", r8, " ", r9, " ", m.len))
+	print(str("removed ", delete_file(p)))

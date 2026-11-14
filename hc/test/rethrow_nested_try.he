@@ -1,0 +1,12 @@
+use exception
+f(): exception::throw(2)
+g():
+	code ~= 0
+	body(): f()
+	exception::try<int>(body) { e => code = e }
+	if code == 2: f()
+main():
+	code ~= 0
+	body(): g()
+	exception::try<int>(body) { e => code = e }
+	print(code)

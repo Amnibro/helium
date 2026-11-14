@@ -1,0 +1,306 @@
+import os;
+import math;
+import gfx.cloth;
+var P f32[>..];
+var I u32[>..];
+var N int = 0;
+fn sheet(n int, mode int) {
+	P.clear();
+	I.clear();
+	N = n;
+	for j in n {
+		for i in n {
+			let u = (i as real) / ((n - 1) as real) - 0.5;
+			let t = (j as real) / ((n - 1) as real);
+			var y = 0.0;
+			var z = 0.0;
+			var ny = 0.0;
+			var nz = 0.0;
+			if mode == 0 {
+				y = 2.0 - t;
+				nz = 1.0;
+			} else if mode == 1 {
+				y = 0.85;
+				z = t - 0.5;
+				ny = 1.0;
+			} else {
+				y = 2.0;
+				z = t;
+				ny = 1.0;
+			}
+			P.push(u as f32);
+			P.push(y as f32);
+			P.push(z as f32);
+			P.push(0.0 as f32);
+			P.push(ny as f32);
+			P.push(nz as f32);
+		}
+	}
+	for j in n - 1 {
+		for i in n - 1 {
+			let a = j * n + i;
+			let b = a + n;
+			I.push(a as u32);
+			I.push(b as u32);
+			I.push((a + 1) as u32);
+			I.push((a + 1) as u32);
+			I.push(b as u32);
+			I.push((b + 1) as u32);
+		}
+	}
+}
+fn fresh(n int, mode int, pins bool) int {
+	cloth::clear_colliders();
+	sheet(n, mode);
+	let c = cloth::make(P[..], 6, 0, N * N, I[..]);
+	if pins {
+		for i in n {
+			cloth::pin(c, i, P[i * 6] as real, P[i * 6 + 1] as real, P[i * 6 + 2] as real);
+		}
+	}
+	c
+}
+fn run(c int, steps int, wz real) {
+	for k in steps {
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, wz);
+	}
+}
+fn nearest(c int, ax real, ay real, az real, bx real, by real, bz real) real {
+	let p0 = cloth::cloths[c].p0;
+	let np = cloth::cloths[c].np;
+	let dx = bx - ax;
+	let dy = by - ay;
+	let dz = bz - az;
+	let l2 = dx * dx + dy * dy + dz * dz;
+	var best = 1e30;
+	for i in p0..p0 + np {
+		let x = cloth::pos[i * 3];
+		let y = cloth::pos[i * 3 + 1];
+		let z = cloth::pos[i * 3 + 2];
+		var t = 0.0;
+		if l2 > 0.0 {
+			t = clamp(((x - ax) * dx + (y - ay) * dy + (z - az) * dz) / l2, 0.0, 1.0);
+		}
+		let ex = x - (ax + t * dx);
+		let ey = y - (ay + t * dy);
+		let ez = z - (az + t * dz);
+		let d = sqrt(ex * ex + ey * ey + ez * ez);
+		if d < best { best = d; }
+	}
+	best
+}
+fn row_mean(c int, row int, axis int) real {
+	var s = 0.0;
+	var k = 0;
+	if row < 0 {
+		let p0 = cloth::cloths[c].p0;
+		let np = cloth::cloths[c].np;
+		for i in np {
+			s += cloth::pos[(p0 + i) * 3 + axis];
+		}
+		k = np;
+	} else {
+		for i in N {
+			let q = cloth::particle(c, row * N + i);
+			s += cloth::pos[q * 3 + axis];
+		}
+		k = N;
+	}
+	s / (k as real)
+}
+fn verdict(ok bool) const byte[:] {
+	if ok { " PASS" } else { " FAIL" }
+}
+fn z1() bool {
+	let c = fresh(33, 0, true);
+	run(c, 180, 0.0);
+	let s = cloth::stretch_now(c);
+	let c2 = fresh(33, 0, true);
+	cloth::cloths[c2].substeps = 1;
+	cloth::cloths[c2].limit = false;
+	run(c2, 180, 0.0);
+	let sc = cloth::stretch_now(c2);
+	let ok = s <= 1.03 && sc > 1.03;
+	print("cloth Z1 longest edge after 3 s ", s, " of rest (bar 1.03), control 1 substep without the pin limit ", sc, verdict(ok));
+	ok
+}
+fn z2() bool {
+	let c = fresh(33, 2, true);
+	var early = 0.0;
+	for k in 1..601 {
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, 0.0);
+		if k == 30 { early = cloth::speed(c); }
+	}
+	let late = cloth::speed(c);
+	let p0 = cloth::cloths[c].p0;
+	let np = cloth::cloths[c].np;
+	var finite = true;
+	for i in p0..p0 + np {
+		for a in 3 {
+			let v = cloth::pos[i * 3 + a];
+			if !(v == v && abs(v) < 1e30) { finite = false; }
+		}
+	}
+	let ok = late < 0.02 && finite && early > 0.02;
+	print("cloth Z2 mean speed after 10 s ", late, " m/s (bar 0.02), finite ", finite, ", control at 0.5 s ", early, verdict(ok));
+	ok
+}
+fn angle_between(ax real, ay real, az real, bx real, by real, bz real) real {
+	let cx = ay * bz - az * by;
+	let cy = az * bx - ax * bz;
+	let cz = ax * by - ay * bx;
+	let cm = sqrt(cx * cx + cy * cy + cz * cz);
+	let dt = ax * bx + ay * by + az * bz;
+	atan2(cm, dt) * 180.0 / PI
+}
+fn z3() bool {
+	let c = fresh(33, 1, false);
+	cloth::ball(0.0, 0.5, 0.0, 0.3);
+	cloth::ground(0.0);
+	var low = 1e30;
+	for k in 180 {
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, 0.0);
+		let d = nearest(c, 0.0, 0.5, 0.0, 0.0, 0.5, 0.0);
+		if d < low { low = d; }
+	}
+	let p0 = cloth::cloths[c].p0;
+	let np = cloth::cloths[c].np;
+	var touch = 0;
+	var cnt = 0;
+	var ang_s = 0.0;
+	var fl_s = 0.0;
+	for i in p0..p0 + np {
+		let dx = cloth::pos[i * 3];
+		let dy = cloth::pos[i * 3 + 1] - 0.5;
+		let dz = cloth::pos[i * 3 + 2];
+		let d = sqrt(dx * dx + dy * dy + dz * dz);
+		if abs(d - 0.304) <= 0.002 { touch += 1; }
+		if d - 0.305 <= 0.002 && d > 0.0 {
+			cnt += 1;
+			ang_s += angle_between(cloth::nrm[i * 3], cloth::nrm[i * 3 + 1], cloth::nrm[i * 3 + 2], dx, dy, dz);
+			fl_s += angle_between(0.0, 1.0, 0.0, dx, dy, dz);
+		}
+	}
+	var ang = 180.0;
+	var flat_ang = 0.0;
+	if cnt > 0 {
+		ang = ang_s / (cnt as real);
+		flat_ang = fl_s / (cnt as real);
+	}
+	let c2 = fresh(33, 1, false);
+	cloth::ground(0.0);
+	var clow = 1e30;
+	for k in 180 {
+		cloth::step(c2, 1.0 / 60.0, 0.0, 0.0, 0.0);
+		let d = nearest(c2, 0.0, 0.5, 0.0, 0.0, 0.5, 0.0);
+		if d < clow { clow = d; }
+	}
+	let q0 = cloth::cloths[c2].p0;
+	let qn = cloth::cloths[c2].np;
+	var lying = true;
+	for i in q0..q0 + qn {
+		let y = cloth::pos[i * 3 + 1];
+		if y < 0.004 || y > 0.02 { lying = false; }
+	}
+	let ok3 = low >= 0.304 && touch >= 100 && clow < 0.2 && lying;
+	let ok7 = ang <= 15.0 && flat_ang > 15.0;
+	print("cloth Z3 nearest to the sphere's center ", low, " m (bar 0.304), touching at the end ", touch, " (bar 100), control without the sphere nearest ", clow, " lying on the ground ", lying, verdict(ok3));
+	print("cloth Z7 normals against the sphere's ", ang, " degrees over the touching particles (bar 15), control rest normals ", flat_ang, verdict(ok7));
+	ok3 && ok7
+}
+fn z4() bool {
+	let c = fresh(33, 1, false);
+	cloth::pill(-0.3, 0.5, 0.0, 0.3, 0.5, 0.0, 0.1);
+	cloth::ground(0.0);
+	var low = 1e30;
+	for k in 180 {
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, 0.0);
+		let d = nearest(c, -0.3, 0.5, 0.0, 0.3, 0.5, 0.0);
+		if d < low { low = d; }
+	}
+	let c2 = fresh(33, 1, false);
+	cloth::ground(0.0);
+	var clow = 1e30;
+	for k in 180 {
+		cloth::step(c2, 1.0 / 60.0, 0.0, 0.0, 0.0);
+		let d = nearest(c2, -0.3, 0.5, 0.0, 0.3, 0.5, 0.0);
+		if d < clow { clow = d; }
+	}
+	let ok = low >= 0.104 && clow < 0.05;
+	print("cloth Z4 nearest to the capsule's segment ", low, " m (bar 0.104), control without it ", clow, verdict(ok));
+	ok
+}
+fn z5() bool {
+	let c = fresh(33, 0, true);
+	let before = row_mean(c, N - 1, 0);
+	var off = 0.0;
+	for k in 1..121 {
+		var tx = 0.0;
+		for i in N {
+			tx = (i as real) / ((N - 1) as real) - 0.5 + 0.5 * (k as real) / 60.0;
+			cloth::pin(c, i, tx, 2.0, 0.0);
+		}
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, 0.0);
+		for i in N {
+			let ix = (i as real) / ((N - 1) as real) - 0.5 + 0.5 * (k as real) / 60.0;
+			let q = cloth::particle(c, i);
+			let ex = cloth::pos[q * 3] - ix;
+			let ey = cloth::pos[q * 3 + 1] - 2.0;
+			let ez = cloth::pos[q * 3 + 2];
+			let d = sqrt(ex * ex + ey * ey + ez * ez);
+			if d > off { off = d; }
+		}
+	}
+	let moved = row_mean(c, N - 1, 0) - before;
+	let c2 = fresh(33, 0, false);
+	let m0 = row_mean(c2, -1, 0);
+	run(c2, 120, 0.0);
+	let drift = abs(row_mean(c2, -1, 0) - m0);
+	let ok = off <= 0.000001 && moved >= 0.8 && drift < 0.01;
+	print("cloth Z5 pins off their targets by at most ", off, " m (bar 0.000001), bottom row moved ", moved, " m (bar 0.8), control without pins moved ", drift, verdict(ok));
+	ok
+}
+fn z6() bool {
+	let c = fresh(33, 0, true);
+	run(c, 180, 5.0);
+	let blown = row_mean(c, N - 1, 2);
+	let c2 = fresh(33, 0, true);
+	run(c2, 180, 0.0);
+	let calm = row_mean(c2, N - 1, 2);
+	let ok = blown >= 0.2 && abs(calm) <= 0.001;
+	print("cloth Z6 bottom row in 5 m/s wind at z ", blown, " m (bar 0.2), control without wind ", calm, verdict(ok));
+	ok
+}
+fn z10() bool {
+	let c = fresh(65, 0, true);
+	var out f32[>..] = [];
+	out.resize(N * N * 16, 0.0);
+	var ts real[>..] = [];
+	for k in 120 {
+		let t0 = clock_ns();
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, 5.0);
+		cloth::write(c, P[..], 6, 0, 3, out[..]);
+		let t1 = clock_ns();
+		ts.push((t1 - t0) as real / 1000000.0);
+	}
+	sort(ts) { a, b => a < b };
+	let med = ts[60];
+	let ok = med <= 4.0;
+	print("cloth Z10 one step of 4225 particles with the morph data ", med, " ms (bar 4, median of 120)", verdict(ok));
+	ok
+}
+fn main() {
+	let a = z1();
+	let b = z2();
+	let c = z3();
+	let d = z4();
+	let e = z5();
+	let f = z6();
+	let g = z10();
+	if a && b && c && d && e && f && g {
+		print("cloth: ok");
+	} else {
+		print("cloth: FAILED");
+		exit(1);
+	}
+}

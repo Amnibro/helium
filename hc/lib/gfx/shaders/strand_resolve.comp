@@ -1,0 +1,20 @@
+layout(local_size_x = 8, local_size_y = 8) in;
+#include "strand_common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer Acc { uint acc[]; };
+layout(set = 1, binding = 0, rgba16f) uniform writeonly image2D out_img;
+void main() {
+	ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+	if (px.x >= int(size.x) || px.y >= int(size.y)) return;
+	uint pi = uint(px.y) * uint(size.x) + uint(px.x);
+	vec3 C = vec3(0.0);
+	float T = 1.0;
+	for (uint k = 0u; k < 4u; k++) {
+		uint o = (pi * 4u + k) * 4u;
+		float cov = float(acc[o + 3u]) / 4096.0;
+		if (cov <= 0.0) continue;
+		float a = 1.0 - exp(-cov);
+		C += T * a * vec3(float(acc[o]), float(acc[o + 1u]), float(acc[o + 2u])) / 4096.0 / cov;
+		T *= 1.0 - a;
+	}
+	imageStore(out_img, px, vec4(C, 1.0 - T));
+}

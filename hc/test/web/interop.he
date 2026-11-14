@@ -1,8 +1,11 @@
 use web
 var COUNT i32
 var BUF byte[>..]
+var BIG byte[>..]
 main():
 	web::log("hello from hc on the web")
+	BIG.resize(100000000, 7)
+	web::log(str("first growth past the region size: ", BIG.len, " ", BIG[99999999] as int))
 	web::user_agent(BUF)
 	print("agent ", BUF, " now ", web::now() > 0.0)
 export he_event(tag i32, kind i32):

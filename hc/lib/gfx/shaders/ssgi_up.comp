@@ -1,0 +1,32 @@
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) uniform sampler2D tex_hc;
+layout(set = 0, binding = 1) uniform sampler2D tex_hz;
+layout(set = 0, binding = 2) uniform sampler2D tex_depth;
+layout(set = 0, binding = 3) uniform sampler2D tex_nd;
+layout(std430, set = 1, binding = 0) buffer Px { uvec2 gi_px[]; };
+layout(set = 2, binding = 0) uniform Up { vec4 size; vec4 tune; };
+void main() {
+	ivec2 x = ivec2(int(gl_GlobalInvocationID.x), int(gl_GlobalInvocationID.y));
+	if (x.x >= int(size.x) || x.y >= int(size.y)) return;
+	float z = texelFetch(tex_depth, x, 0).r;
+	vec4 g = vec4(0.0, 0.0, 0.0, 1.0);
+	if (z > 0.0) {
+		vec3 n = texelFetch(tex_nd, x, 0).xyz;
+		ivec2 hs = textureSize(tex_hc, 0);
+		ivec2 hb = x / 2;
+		vec4 acc = vec4(0.0);
+		float ws = 0.0;
+		for (int k = 0; k < 9; k++) {
+			ivec2 h = clamp(hb + ivec2(k % 3 - 1, k / 3 - 1), ivec2(0), hs - 1);
+			ivec2 hf = min(h * 2, ivec2(size.xy) - 1);
+			float hz = texelFetch(tex_hz, h, 0).r;
+			vec3 hn = texelFetch(tex_nd, hf, 0).xyz;
+			vec2 dd = vec2(hf - x);
+			float w = exp(-dot(dd, dd) * 0.125) * exp(-abs(hz - z) / (tune.x * z + 1e-4)) * pow(max(dot(hn, n), 0.0), 8.0) * (hz > 0.0 ? 1.0 : 0.0);
+			acc += w * texelFetch(tex_hc, h, 0);
+			ws += w;
+		}
+		g = ws > 1e-4 ? acc / ws : texelFetch(tex_hc, hb, 0);
+	}
+	gi_px[x.y * int(size.x) + x.x] = uvec2(packHalf2x16(g.xy), packHalf2x16(g.zw));
+}

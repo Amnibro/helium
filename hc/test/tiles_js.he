@@ -1,0 +1,37 @@
+use tiles.js
+NUMS := ["0", "-0", "1", "0.1", "1e21", "1e-7", "123456789012345680000", "1.5e-7", "0.000001", "0.0000001", "-1234.5678", "NaN", "Infinity", "-Infinity", "100", "1e300", "5e-324", "0.30000000000000004"]
+FIXED := ["1.005 2", "1.45 1", "-1.5 0", "2.5 0", "-0 2", "-0.001 2", "1e21 2", "123.456 0", "NaN 2", "0.5 0", "1.255 2", "-2.345 2", "1234.5678 3", "0 0", "1e-10 3", "9.995 2"]
+LOC := ["1234567.891 2", "0.5 0", "2.5 0", "-2.5 0", "1.005 2", "-0 3", "-0.0001 3", "1e21 0", "NaN 3", "Infinity 3", "-Infinity 0", "1234.5 0", "0.125 2", "999.9996 3", "-1234567.25 1", "12 3", "0.1 3", "1e-7 3", "123456.7891 3", "-0.4 0"]
+FL := ["1234567.891 2", "-0.001 2", "-0 2", "NaN 2", "2.5 0", "0.125 2", "1.005 2", "999.9996 3", "-1234567.25 1", "1e21 0", "Infinity 1", "0.000001 5", "12 3", "-999.5 0", "123456789.125 2", "999999999999999.9 1", "0.5 0", "-0.5 0", "1e-7 3"]
+pair(s const byte[:]) real, int, bool:
+	sp ~= 0
+	while sp < s.len && s[sp] != ' ': sp += 1
+	if sp >= s.len: return 0.0, 0, false
+	x, ok1 := parse_flt(s[..sp])
+	n, ok2 := parse_int(s[sp + 1..])
+	return x, n, ok1 && ok2
+main():
+	for s NUMS:
+		x, ok := parse_flt(s)
+		print("num [", s, "] ", js::num_str(x))
+	for s FIXED:
+		x, n, ok := pair(s)
+		print("fixed [", s, "] ", js::to_fixed(x, n))
+	for s LOC:
+		x, n, ok := pair(s)
+		print("loc [", s, "] ", js::locale_string(x, n))
+	for s FL:
+		x, n, ok := pair(s)
+		print("fl [", s, "] ", js::fixed_locale(x, n), " ", js::fixed_locale(x, n, true))
+	bad ~= -1
+	for i 20000:
+		x := ((i * 7919 % 2000003 - 1000001) as real) / 8.0
+		c := i % 5
+		a := js::fixed_locale(x, c)
+		t := js::to_fixed(x, c)
+		y, ok := parse_flt(t)
+		b := js::locale_string(y, c)
+		if a != b:
+			bad = i
+			break
+	if bad < 0: print("fl sweep ok") else: print("fl sweep bad ", bad);

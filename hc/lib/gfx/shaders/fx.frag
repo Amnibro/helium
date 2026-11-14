@@ -14,5 +14,5 @@ void main() {
 		if (zs > 0.0) fade = clamp((zs - in_depth_fade.x) / in_depth_fade.y, 0.0, 1.0);
 	}
 	float a = in_rgba.a * shape * fade;
-	out_rgba = mode.x < 0.5 ? vec4(in_rgba.rgb * a, 0.0) : vec4(in_rgba.rgb, a);
+	out_rgba = vec4(in_rgba.rgb, a);
 }

@@ -1,21 +1,33 @@
 layout(local_size_x = 64) in;
 #include "fx_common.glsl"
 layout(set = 0, binding = 0) uniform sampler2D tex_nd;
-layout(std430, set = 0, binding = 1) readonly buffer Emits { vec4 emits[]; };
+layout(set = 0, binding = 1) uniform sampler2D tex_sh;
+layout(std430, set = 0, binding = 2) readonly buffer Emits { vec4 emits[]; };
 layout(std430, set = 1, binding = 0) buffer Parts { Part parts[]; };
 layout(std430, set = 1, binding = 1) buffer Dead { int dead[]; };
 layout(std430, set = 1, binding = 2) buffer Alive { uint alive[]; };
 layout(std430, set = 1, binding = 3) buffer Keys { float keys[]; };
-layout(set = 2, binding = 0) uniform U { vec4 info; vec4 gravity; mat4 view_proj; mat4 view; vec4 screen; };
+layout(std430, set = 1, binding = 4) buffer Ev { uint evd[]; };
+layout(std430, set = 1, binding = 5) buffer Trail { vec4 trail[]; };
+layout(set = 2, binding = 0) uniform U { vec4 info; vec4 gravity; mat4 view_proj; mat4 view; vec4 screen; vec4 shelter; };
+void fx_event(vec2 lk, vec3 p, vec3 v) {
+	if (lk.x < 0.0 || lk.y < 0.5) return;
+	uint c = atomicAdd(evd[0], 1u);
+	if (c >= uint(info.w)) return;
+	uint r = 1u + c * 8u;
+	evd[r] = floatBitsToUint(p.x); evd[r + 1u] = floatBitsToUint(p.y); evd[r + 2u] = floatBitsToUint(p.z); evd[r + 3u] = uint(lk.x);
+	evd[r + 4u] = floatBitsToUint(v.x); evd[r + 5u] = floatBitsToUint(v.y); evd[r + 6u] = floatBitsToUint(v.z); evd[r + 7u] = uint(min(lk.y, 32.0));
+}
 void main() {
 	uint i = gl_GlobalInvocationID.x;
 	if (i >= uint(info.x)) return;
 	Part q = parts[i];
 	if (q.vel.w <= 0.0) return;
 	float dt = info.y;
+	bool fresh = q.pos.w == 0.0;
 	q.pos.w += dt;
-	if (q.pos.w >= q.vel.w) { q.vel.w = 0.0; parts[i] = q; int c = atomicAdd(dead[0], 1); dead[c + 1] = int(i); return; }
-	int em = (int(q.misc.x)) * 11;
+	int em = (int(q.misc.x)) * 15;
+	if (q.pos.w >= q.vel.w) { fx_event(emits[em + 13].xy, q.pos.xyz, q.vel.xyz); q.vel.w = 0.0; parts[i] = q; int c = atomicAdd(dead[0], 1); dead[c + 1] = int(i); return; }
 	vec3 g = gravity.xyz * emits[em + 4].x;
 	float k = emits[em + 4].y;
 	vec3 v = q.vel.xyz;
@@ -34,12 +46,34 @@ void main() {
 				if (nd.w > 0.0 && zp > nd.w && zp < nd.w + screen.w) {
 					vec3 n = normalize(vec3(dot(view[0].xyz, nd.xyz), dot(view[1].xyz, nd.xyz), dot(view[2].xyz, nd.xyz)));
 					float vn = dot(nv, n);
-					if (vn < 0.0) nv -= (1.0 + emits[em + 5].y) * vn * n;
-					np = p;
+					if (vn < 0.0) { nv -= (1.0 + emits[em + 5].y) * vn * n; if (vn < -0.5) fx_event(emits[em + 13].zw, p, nv); }
+					vec3 pvs = (view * vec4(p, 1.0)).xyz; vec3 nvs = (view * vec4(np, 1.0)).xyz; vec3 sn = normalize(nd.xyz);
+					float den = dot(nvs - pvs, sn);
+					np = mix(p, np, clamp(den < -1e-7 ? dot(nvs * (nd.w / zp) - pvs, sn) / den : 0.0, 0.0, 1.0) * 0.98);
 				}
 			}
 		}
 	}
+	vec4 wx = emits[em + 11];
+	if (wx.y > 0.5) {
+		if (screen.y < 0.5) { vec3 c = emits[em].xyz; vec3 hs = max(emits[em + 1].xyz, vec3(1e-4)); np = c + mod(np - c + hs, 2.0 * hs) - hs; }
+		float h = -1.0e30;
+		if (shelter.w > 0.5) { ivec2 sz = textureSize(tex_sh, 0); ivec2 ti = ivec2(floor(((np.xz - shelter.xy) * shelter.z + 0.5) * vec2(sz))); if (ti.x >= 0 && ti.y >= 0 && ti.x < sz.x && ti.y < sz.y) h = texelFetch(tex_sh, ti, 0).r; }
+		float ts = (h - np.y) / max(-nv.y, 1e-3);
+		q.misc.z = np.y > h ? 0.0 : (ts < wx.z ? 1.0 : 2.0);
+		q.misc.w = h;
+	}
+	float td = emits[em + 14].y;
+	if (td > 0.0 && info.z > 0.5) {
+		uint b = i * 9u;
+		if (fresh) { for (int tk = 1; tk < 9; tk++) trail[b + uint(tk)] = vec4(p, 0.0); trail[b] = vec4(np, dt); }
+		else {
+			float ta = trail[b].w + dt;
+			if (ta >= td) { for (int tk = 8; tk > 0; tk--) trail[b + uint(tk)] = trail[b + uint(tk - 1)]; ta = min(ta - td, td); }
+			trail[b] = vec4(np, ta);
+		}
+	}
+	if (emits[em + 14].z > -0.5) { uint ml = uint(info.w) * 8u + 1u; uint mc = atomicAdd(evd[ml], 1u); evd[ml + 1u + mc] = i; }
 	q.pos.xyz = np; q.vel.xyz = nv;
 	parts[i] = q;
 	uint a = atomicAdd(alive[0], 1u);

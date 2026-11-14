@@ -1,0 +1,137 @@
+=== -1e31d3c66301d360
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.envmap;
+import gfx.scene3d;
+=== -305d79b71ee67052
+fn num(s const byte[:]) f32 {
+	let v, ok = parse_flt(s);
+	if !ok { return 0.0; }
+	v as f32
+}
+=== -497a80545baaab74
+fn arg_of(i int) byte[>..] {
+	var out byte[>..] = [];
+	for a, k in args() { if k == i { out.append(a); } }
+	out
+}
+=== 366f92b0f1be953b
+fn main() {
+	if arg_count() - 1 < 11 {
+		print("usage: vis_frame model.glb out.png width height eye_x eye_y eye_z target_x target_y target_z fov_y [features]");
+		return;
+	}
+	let path = arg_of(1);
+	let outp = arg_of(2);
+	let w, wok = parse_int(arg_of(3));
+	let h, hok = parse_int(arg_of(4));
+	let ex = num(arg_of(5));
+	let ey = num(arg_of(6));
+	let ez = num(arg_of(7));
+	let tx = num(arg_of(8));
+	let ty = num(arg_of(9));
+	let tz = num(arg_of(10));
+	let fov = num(arg_of(11));
+	gltf::lazy_pixels = true;
+	let id = gltf::load(path);
+	if id < 0 {
+		print(gltf::error());
+		return;
+	}
+	gfx::open_headless(w, h);
+	s3d::place(s3d::add(id), gfx::mat4_identity);
+	let dx = (ex - tx) as real;
+	let dy = (ey - ty) as real;
+	let dz = (ez - tz) as real;
+	let d real = sqrt(dx * dx + dy * dy + dz * dz);
+	let df = d as f32;
+	s3d::view = s3d::Camera { eye: float3 { ex, ey, ez }, target: float3 { tx, ty, tz }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: fov, near: df * 0.01, far: df * 10.0, .. };
+	s3d::sun.shadows = false;
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	let g = float3 { 0.5, 0.5, 0.5 };
+	s3d::sky = s3d::Sky { zenith: g, horizon: g, ground: g, ambient: 1.0, draw: true, .. };
+	s3d::look.curve = 1;
+	s3d::look.bloom = 0.0;
+	s3d::look.ssao = false;
+	if arg_count() - 1 >= 12 {
+		let feats = arg_of(12);
+		let parts = split(feats, ',');
+		for wd in parts {
+			if starts_with(wd, "env=") {
+				let p = wd[4..];
+				if !envmap::load(p) { print(p); }
+				s3d::sky.draw = true;
+			} else if starts_with(wd, "dbg=") {
+				let n, ok = parse_int(wd[4..]);
+				s3d::debug_view = n;
+			} else if starts_with(wd, "curve=") {
+				let n, ok = parse_int(wd[6..]);
+				s3d::look.curve = n;
+			} else if starts_with(wd, "vignette=") {
+				s3d::look.vignette = num(wd[9..]);
+			} else if starts_with(wd, "chroma=") {
+				s3d::look.chroma = num(wd[7..]);
+			} else if starts_with(wd, "grain=") {
+				s3d::look.grain = num(wd[6..]);
+			} else if starts_with(wd, "sharpen=") {
+				s3d::look.sharpen = num(wd[8..]);
+			} else if starts_with(wd, "sky=") {
+				let vals = split(wd[4..], ':');
+				var e f32 = 0.0;
+				var a f32 = 0.0;
+				var power f32 = 0.0;
+				var haze f32 = 0.0;
+				var clouds f32 = 0.0;
+				for v, k in vals {
+					if k == 0 { e = num(v); }
+					else if k == 1 { a = num(v); }
+					else if k == 2 { power = num(v); }
+					else if k == 3 { haze = num(v); }
+					else if k == 4 { clouds = num(v); }
+				}
+				let er real = (e as real) * PI / 180.0;
+				let ar real = (a as real) * PI / 180.0;
+				s3d::atmosphere(float3 { (cos(er) * cos(ar)) as f32, sin(er) as f32, (cos(er) * sin(ar)) as f32 }, power, haze, clouds);
+			} else if starts_with(wd, "wet=") {
+				s3d::wet = num(wd[4..]);
+			} else if starts_with(wd, "snow=") {
+				s3d::snow = num(wd[5..]);
+			} else if starts_with(wd, "time=") {
+				s3d::world_time = num(wd[5..]);
+			} else if wd == "nosky" {
+				s3d::sky.draw = false;
+			} else if starts_with(wd, "sun=") {
+				let r = num(wd[4..]);
+				s3d::sun.rgb = float3 { r, r, r };
+				s3d::sun.shadows = true;
+				s3d::sun.shadow_far = 3.0 * df;
+			} else if starts_with(wd, "lights=") {
+				let cnt, ok = parse_int(wd[7..]);
+				for ki in cnt {
+					let k real = ki as real;
+					let p = float3 {
+						tx + (d * (0.5 * sin(k * 12.9898))) as f32,
+						ty + (d * (0.5 * sin(k * 78.233))) as f32,
+						tz + (d * (0.5 * sin(k * 37.719))) as f32
+					};
+					let s = d * d * 0.05;
+					let c = float3 {
+						((0.5 + 0.5 * sin(k * 1.7)) * s) as f32,
+						((0.5 + 0.5 * sin(k * 2.9)) * s) as f32,
+						((0.5 + 0.5 * sin(k * 4.3)) * s) as f32
+					};
+					s3d::lights.push(s3d::Light { pos: p, range: 0.35 * df, rgb: c, kind: 0, radius: 0.02 * df, .. });
+				}
+			}
+		}
+	}
+	s3d::init(w, h);
+	let target = gfx::render_target(w, h, gfx::RGBA8);
+	for i in 2 { s3d::render(target); }
+	let saved = gfx::save_png(target, outp);
+	print("vis_frame: ", saved, " ", gfx::driver());
+	gfx::close();
+}

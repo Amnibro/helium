@@ -1,20 +1,32 @@
 layout(local_size_x = 64) in;
 #include "fx_common.glsl"
 layout(std430, set = 0, binding = 0) readonly buffer Emits { vec4 emits[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Ev { uint evd[]; };
 layout(std430, set = 1, binding = 0) buffer Parts { Part parts[]; };
 layout(std430, set = 1, binding = 1) buffer Dead { int dead[]; };
-layout(set = 2, binding = 0) uniform U { vec4 info; vec4 counts[4]; };
+layout(set = 2, binding = 0) uniform U { vec4 info; vec4 counts[8]; };
 void main() {
 	uint t = gl_GlobalInvocationID.x;
-	if (t >= uint(info.x)) return;
-	int e = 0; uint acc = 0u; uint loc = 0u;
-	for (int k = 0; k < 16; k++) { uint c = uint(counts[k / 4][k % 4]); if (t < acc + c) { e = k; loc = t - acc; break; } acc += c; }
+	bool ev = info.z > 0.5;
+	int e = 0; uint acc = 0u; uint loc = 0u; vec3 ep = vec3(0.0); vec3 pv = vec3(0.0);
+	if (ev) {
+		uint ek = t / 32u;
+		if (ek >= min(evd[0], uint(info.w))) return;
+		uint r = 1u + ek * 8u;
+		if (t % 32u >= evd[r + 7u]) return;
+		e = int(evd[r + 3u]);
+		ep = vec3(uintBitsToFloat(evd[r]), uintBitsToFloat(evd[r + 1u]), uintBitsToFloat(evd[r + 2u]));
+		pv = vec3(uintBitsToFloat(evd[r + 4u]), uintBitsToFloat(evd[r + 5u]), uintBitsToFloat(evd[r + 6u]));
+	} else {
+		if (t >= uint(info.x)) return;
+		for (int k = 0; k < 32; k++) { uint c = uint(counts[k / 4][k % 4]); if (t < acc + c) { e = k; loc = t - acc; break; } acc += c; }
+	}
 	int d = atomicAdd(dead[0], -1);
 	if (d <= 0) { atomicAdd(dead[0], 1); return; }
 	uint slot = uint(dead[d]);
-	uint s = fx_hash(t * 9781u + uint(info.y) * 6271u + 17u);
-	int em = (e) * 11;
-	vec3 p = emits[em + 0].xyz;
+	uint s = fx_hash(t * 9781u + uint(info.y) * 6271u + 17u + (ev ? 40503u : 0u));
+	int em = (e) * 15;
+	vec3 p = ev ? ep : emits[em + 0].xyz;
 	int shape = int(emits[em + 0].w);
 	if (shape == 1) { vec3 q = vec3(0.0); for (int r = 0; r < 16; r++) { q = vec3(fx_rnd(s), fx_rnd(s), fx_rnd(s)) * 2.0 - 1.0; if (dot(q, q) <= 1.0) break; } p += q * emits[em + 1].x; }
 	if (shape == 2) { p += (vec3(fx_rnd(s), fx_rnd(s), fx_rnd(s)) * 2.0 - 1.0) * emits[em + 1].xyz; }
@@ -29,6 +41,6 @@ void main() {
 	float speed = mix(emits[em + 2].w, emits[em + 3].x, fx_rnd(s));
 	float life = mix(emits[em + 3].y, emits[em + 3].z, fx_rnd(s));
 	parts[slot].pos = vec4(p, 0.0);
-	parts[slot].vel = vec4(dir * speed, life);
+	parts[slot].vel = vec4(dir * speed + pv * emits[em + 14].x, life);
 	parts[slot].misc = vec4(float(e), float(s & 65535u), 0.0, 0.0);
 }

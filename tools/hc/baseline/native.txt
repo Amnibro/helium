@@ -1,6 +1,7 @@
 test/bool_branch.amni
 test/bool_nested_if_fallthrough.amni
 test/bool_or_sel.amni
+test/branch_merge_live_in.amni
 test/call_result_live_across.amni
 test/checked_index_chain.amni
 test/codegen/global_index_abs.amni

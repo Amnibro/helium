@@ -1,0 +1,31 @@
+use std
+nine(a int, b int, c int, d int, e int, f int, g int, h int, i int) int:
+	buf byte[256] ~= [0; 256]
+	for k 256: buf[k] = ((a + b * 2 + c * 3 + d * 4 + e * 5 + f * 7 + g * 11 + h * 13 + i * 17 + k) & 255) as byte
+	t ~= 0
+	for k 256: t += buf[k] as int * (k + 1)
+	if i > 0:
+		r := nine(b, c, d, e, f, g, h, i - 1, a)
+		t = (t ^ r >> 1) + r % 1000
+	t
+mixed(a int, b int, c int, d int, e int, s const byte[:], x int, y f64, z int) int:
+	buf int[40] ~= [0; 40]
+	for k 40: buf[k] = a * k + b + c + d + e + s[k % s.len] as int + x * 3 + z * 5
+	t ~= (y * 2.0) as int
+	for k 40: t += buf[k]
+	t
+small(a int, b int, c int, d int, e int, f int, g int, h int) int:
+	a - b + c - d + e - f + g * 100 + h * 1000
+wide(q int) int:
+	w byte[70] ~= [0; 70]
+	for k 70: w[k] = (q + k) as byte
+	t ~= 0
+	for k 70: t += w[k] as int
+	t + small(q, 1, 2, 3, 4, 5, 6, 7) + nine(q, 2, 3, 4, 5, 6, 7, 2, 9)
+main():
+	print(nine(1, 2, 3, 4, 5, 6, 7, 8, 9))
+	print(mixed(1, 2, 3, 4, 5, "stack arguments", 6, 2.5, 7))
+	print(small(1, 2, 3, 4, 5, 6, 7, 8))
+	t ~= 0
+	for q 5: t += wide(q)
+	print(t)

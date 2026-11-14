@@ -1,0 +1,45 @@
+use os
+use crypto.x509
+use crypto.ecc
+use crypto.hash
+use net.quic
+struct Link { t real[>..] = [], to int[>..] = [], d byte[>..][>..] = [], x int = 1, n int = 0 }
+l_rand(l Link&) int: l.x = (l.x * 1103515245 + 12345) & 0x7fffffff; (l.x >> 8) % 1000
+l_put(l Link&, to int, d const byte[:], now real):
+	l.n += 1
+	if l_rand(l) < 200: return
+	k := if l_rand(l) < 100 { 2 } else { 1 }
+	for i k: c byte[>..] ~= []; c.append(d); l.t.push(now + 0.05 + (l_rand(l) as real) / 10000.0); l.to.push(to); l.d.push(c)
+run(seed int, test int, cert const byte[:], key const byte[:], size int) real, int:
+	c ~= net::quic_client("amni-lan", "amni-v1", crypto::sha256(cert), 0.0); s ~= net::quic_server(cert, key, "amni-v1", 0.0); c.test = test; s.test = test
+	l ~= Link{}; l.x = seed * 7919 + 1; d byte[>..] ~= []; now ~= 0.0; id ~= -1; got byte[>..] ~= []; back byte[>..] ~= []; msg byte[>..] ~= []; fin ~= false
+	for i size: msg.push(((i * 7 + seed) % 251) as! byte)
+	while now < 90.0:
+		i ~= 0
+		while i < l.t.len:
+			if l.t[i] > now: i += 1; continue
+			if l.to[i] == 0: net::quic_recv(c, l.d[i][..], now)
+			if l.to[i] == 1: net::quic_recv(s, l.d[i][..], now)
+			e := l.t.len - 1; l.t[i] = l.t[e]; l.to[i] = l.to[e]; l.d[i].clear(); l.d[i].append(l.d[e][..]); l.t.pop(); l.to.pop(); l.d.pop()
+		if id < 0 && net::quic_state(c) == net::QUIC_OPEN: id = net::quic_open(c, true); net::quic_write(c, id, msg[..]); net::quic_fin(c, id)
+		n := net::quic_read(s, 0, got)
+		if n > 0: net::quic_write(s, 0, got[got.len - n..])
+		if !fin && n >= 0 && (net::quic_stream(s, 0) & 2) != 0: net::quic_fin(s, 0); fin = true
+		net::quic_read(c, 0, back)
+		if id >= 0 && (net::quic_stream(c, 0) & 2) != 0: break
+		while net::quic_send(c, d, now): l_put(l, 1, d[..], now)
+		while net::quic_send(s, d, now): l_put(l, 0, d[..], now)
+		nt ~= 90.0; a := net::quic_timeout(c); b := net::quic_timeout(s)
+		for x l.t: nt = min(nt, x)
+		if a > 0.0: nt = min(nt, a)
+		if b > 0.0: nt = min(nt, b)
+		now = max(nt, now + 0.0005)
+	ok := back[..] == msg[..] && got[..] == msg[..] && (net::quic_stream(c, 0) & 2) != 0
+	return (if ok { now } else { -1.0 }), l.n
+main():
+	priv := crypto::ec_generate(crypto::P256); cert, okc := crypto::x509_self_signed("amni-lan", priv[..], (time() as int) - 3600, 30); bad ~= 0
+	for seed 200:
+		t, pk := run(seed + 1, 0, cert[..], priv[..], 256000)
+		if t < 0.0 || t >= 90.0: bad += 1
+	print("Q4 hostile link ", bad == 0)
+	t, pk := run(1, 4, cert[..], priv[..], 256000); print("Q4 control ", t < 0.0)

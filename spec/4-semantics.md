@@ -119,7 +119,7 @@ All traps print `helium runtime error: <message> (<file>:<line>)` to stderr, aft
 - Rule T-Assert (CONFIRMED): `assert(c)` with `c` false traps: `assert failed`. Evidence: `a15_assert_fail`. Source: `lib/rt.he:59` (`rt_die` kind 6).
 - Rule T-Abort (CONFIRMED): `abort(msg)` traps with the given message. Evidence: `a18_abort`.
 - Rule T-Exit (CONFIRMED): `exit(n)` exits with status `n` without a trap message. Evidence: `a17_exit_code` exits 7.
-- Rule T-Grow-Limit (CONFIRMED): a growable array cannot exceed the runtime limit; `push` past it traps with `array grew past its 2048 MiB reserve (raise with -DGS_STACK_RESERVE=bytes) (push)` (2 GiB is the default reserve). Evidence: `c15_for_grow_while_iter` (a loop that pushes to the array it iterates). Source: `lib/rt.he:59` (`rt_die` kind 5).
+- Rule T-Grow-Limit (CONFIRMED): a growable array cannot exceed the runtime limit; `push` past it traps with `array grew past its 2048 MiB region; build with -DGS_STACK_RESERVE=<bytes> to raise it (push)` (2 GiB is the default reservation). Evidence: `c15_for_grow_while_iter` (a loop that pushes to the array it iterates). Source: `lib/rt.he:59` (`rt_die` kind 5).
 - Rule T-RelRef (UNCONFIRMED): relative-reference offsets out of range trap with `relative reference offset out of range` or `pool-relative reference offset out of range`, or a null relative reference traps with `a relative reference would encode as null` under `opt`. Source: `lower.he:492` (`sguard`), `lower.he:508`–`515`. Not run: no test program was built for relative references in this pass.
 - Rule T-Output-Flush (CONFIRMED): a trap flushes buffered stdout before printing its message. Evidence: `a02_div0` prints `start ` on stdout, then the trap.
 

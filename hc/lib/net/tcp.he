@@ -1,0 +1,67 @@
+namespace net
+use std
+use ffi
+extern "libc.so.6" {
+	t_socket(d i32, t i32, p i32) i32 = "socket";
+	t_connect(fd i32, a uint, l u32) i32 = "connect";
+	t_send(fd i32, b uint, n uint, f i32) int = "send";
+	t_recv(fd i32, b uint, n uint, f i32) int = "recv";
+	t_close(fd i32) i32 = "close";
+	t_setsockopt(fd i32, lv i32, o i32, v uint, l u32) i32 = "setsockopt";
+	t_getsockopt(fd i32, lv i32, o i32, v uint, l uint) i32 = "getsockopt";
+	t_fcntl(fd i32, c i32, a i32) i32 = "fcntl";
+	t_poll(p uint, n uint, ms i32) i32 = "poll";
+	t_getaddrinfo(h uint, s uint, hints uint, res uint) i32 = "getaddrinfo";
+	t_freeaddrinfo(a uint) = "freeaddrinfo";
+	t_uname(b uint) i32 = "uname";
+}
+var TCP_OS = 0
+tcp_darwin() bool:
+	if TCP_OS == 0: b byte[>..] ~= []; b.resize(4096, 0); t_uname(ffi::ptr(b[..])); TCP_OS = if b[0] == 'D' { 2 } else { 1 }
+	TCP_OS == 2
+le_n(b const byte[:], o int, n int) uint: v uint ~= 0; for i n { v |= (b[o + i] as uint) << (8 * i) } v
+cz(s const byte[:]) byte[>..]: o byte[>..] ~= []; o.append(s); o.push(0); o
+int_bytes(v int) byte[>..]: o byte[>..] ~= []; for i 4 { o.push(((v >> (8 * i)) & 255) as! byte) } o
+tcp_resolve(host const byte[:], port int) byte[>..][>..]:
+	out byte[>..][>..] ~= []; hints byte[>..] ~= []; hints.resize(64, 0); hints[8] = 1; res byte[>..] ~= []; res.resize(8, 0); h := cz(host); sv := cz(str(port))
+	if t_getaddrinfo(ffi::ptr(h[..]), ffi::ptr(sv[..]), ffi::ptr(hints[..]), ffi::ptr(res[..])) != 0: return out
+	head := le_n(res[..], 0, 8); node ~= head
+	while node != 0 && out.len < 16:
+		ai := ffi::bytes(node, 48); al := le_n(ai[..], 16, 4) as int; p24 := le_n(ai[..], 24, 8); p32 := le_n(ai[..], 32, 8); ad := if p24 != 0 && p32 == 0 { p24 } else { p32 }
+		if ad != 0 && al > 0 && al <= 128: e byte[>..] ~= []; e.append(int_bytes(le_n(ai[..], 4, 4) as int)[..]); e.append(int_bytes(le_n(ai[..], 12, 4) as int)[..]); e.append(ffi::bytes(ad, al)[..]); out.push(e)
+		node = le_n(ai[..], 40, 8)
+	t_freeaddrinfo(head); out
+tcp_open_at(a const byte[:]) int:
+	fam := le_n(a, 0, 4) as i32; pr := le_n(a, 4, 4) as i32; sa := a[8..]; fd := t_socket(fam, 1, pr) as int
+	if fd < 0: return -1
+	dw := tcp_darwin(); fl := t_fcntl(fd as i32, 3, 0); nb := if dw { 4 } else { 0x800 }; t_fcntl(fd as i32, 4, (fl | nb) as i32); one := int_bytes(1)
+	if dw: t_setsockopt(fd as i32, 0xFFFF, 0x1022, ffi::ptr(one[..]), 4 as u32)
+	tcp_nodelay(fd); t_connect(fd as i32, ffi::ptr(sa), sa.len as u32); fd
+tcp_nodelay(fd int): one := int_bytes(1); t_setsockopt(fd as i32, 6, 1, ffi::ptr(one[..]), 4 as u32)
+tcp_open(host const byte[:], port int) int:
+	for a tcp_resolve(host, port): fd := tcp_open_at(a[..]); if fd >= 0 { return fd }
+	-1
+tcp_poll(fd int, ev int, ms int) int:
+	p byte[>..] ~= []; p.append(int_bytes(fd)[..]); p.push(ev as! byte); p.push(0); p.push(0); p.push(0)
+	n := t_poll(ffi::ptr(p[..]), 1 as uint, ms as i32)
+	if n <= 0 { 0 } else { p[6] as int | (p[7] as int) << 8 }
+tcp_status(fd int, ms int) int:
+	r := tcp_poll(fd, 4, ms)
+	if r == 0: return 0
+	e byte[>..] ~= []; e.resize(4, 0); l byte[>..] ~= []; l.append(int_bytes(4)[..]); l.resize(8, 0); dw := tcp_darwin()
+	t_getsockopt(fd as i32, if dw { 0xFFFF } else { 1 }, if dw { 0x1007 } else { 4 }, ffi::ptr(e[..]), ffi::ptr(l[..]))
+	if le_n(e[..], 0, 4) == 0 && r & 24 == 0 { 1 } else { -1 }
+tcp_send(fd int, d const byte[:]) int:
+	if d.len == 0: return 0
+	r := tcp_poll(fd, 4, 0)
+	if r & 24 != 0: return -1
+	if r & 4 == 0: return 0
+	fl := if tcp_darwin() { 0 } else { 0x4000 }; n := t_send(fd as i32, ffi::ptr(d), d.len as uint, fl as i32)
+	if n < 0 { -1 } else { n }
+tcp_recv(fd int, out byte[>..]&, ms int) int:
+	r := tcp_poll(fd, 1, ms)
+	if r == 0: return 0
+	b byte[>..] ~= []; b.resize(16384, 0); n := t_recv(fd as i32, ffi::ptr(b[..]), 16384 as uint, 0)
+	if n <= 0: return -1
+	out.append(b[..n]); n
+tcp_close(fd int): if fd >= 0 { t_close(fd as i32) }

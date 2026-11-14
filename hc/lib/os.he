@@ -4,6 +4,7 @@ use std
 
 # whole files
 extern read_file(path const byte[:], out byte[>..]&) bool = "hr_os_read_file"
+extern read_file_range(path const byte[:], offset int, count int, out byte[>..]&) bool = "hr_os_read_file_range"
 extern write_file(path const byte[:], data const byte[:]) bool = "hr_os_write_file"
 extern write_file_atomic(path const byte[:], data const byte[:]) bool = "hr_os_write_file_atomic"
 extern append_file(path const byte[:], data const byte[:]) bool = "hr_os_append_file"
@@ -46,6 +47,7 @@ args() byte[:][>..]:
 
 # time
 extern time_ns() int = "hr_os_time_ns"
+extern utc_offset(unix_seconds int) int = "hr_os_utc_offset"
 extern clock_ns() int = "hr_os_clock_ns"
 extern sleep_ms(ms int) = "hr_os_sleep_ms"
 extern random_seed() uint = "hr_os_random_u64"

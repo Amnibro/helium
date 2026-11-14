@@ -5,10 +5,19 @@ namespace codec_png;
 import gfx.zlib;
 import os;
 
+var idat byte[>..];
+var raw byte[>..];
 fn be32(b const byte[:], o int) int { (b[o] as int) << 24 | (b[o + 1] as int) << 16 | (b[o + 2] as int) << 8 | b[o + 3] as int }
 
 fn is_png(b const byte[:]) bool {
 	b.len >= 8 && b[0] == 137 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G' && b[4] == 13 && b[5] == 10 && b[6] == 26 && b[7] == 10
+}
+
+fn size(b const byte[:]) int, int, bool {
+	if !is_png(b) || b.len < 24 { return 0, 0, false; }
+	let w = be32(b, 16);
+	let h = be32(b, 20);
+	return w, h, w > 0 && h > 0;
 }
 
 // Samples per pixel for each PNG colour type (PNG spec 11.2.2); 0 = invalid.
@@ -62,7 +71,7 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 	var palette byte[1024] = [255; 1024]; // RGBA palette entries
 	var pal_n = 0;
 	var key_r = -1; var key_g = -1; var key_b = -1; // tRNS color key for types 0 and 2
-	var idat byte[>..] = [];
+	idat.clear();
 	var o = 8;
 	while o + 12 <= file.len {
 		let n = be32(file, o);
@@ -89,7 +98,7 @@ fn decode(file const byte[:], out byte[>..]&) int, int, bool {
 	if w <= 0 || h <= 0 || w > 32768 || h > 32768 { return 0, 0, false; }
 	let chans = samples_per_pixel(ctype);
 	if chans == 0 || (bit_depth != 1 && bit_depth != 2 && bit_depth != 4 && bit_depth != 8 && bit_depth != 16) { return 0, 0, false; }
-	var raw byte[>..] = [];
+	raw.clear();
 	if !zlib::inflate(idat[..], raw) { return 0, 0, false; }
 	let bits_px = chans * bit_depth;
 	let bpp = max(1, bits_px / 8);

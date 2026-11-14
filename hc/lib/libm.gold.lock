@@ -1,0 +1,446 @@
+=== 06d49d12fee466e0
+import binary;
+import math;
+=== -31f5d235367b4e6f
+struct Ipio2Row { v int }
+=== -2a25c09c19caa33d
+fn ipio2_table() Ipio2Row[66] {
+	[
+		Ipio2Row { 0xA2F983 }, Ipio2Row { 0x6E4E44 }, Ipio2Row { 0x1529FC }, Ipio2Row { 0x2757D1 },
+		Ipio2Row { 0xF534DD }, Ipio2Row { 0xC0DB62 }, Ipio2Row { 0x95993C }, Ipio2Row { 0x439041 },
+		Ipio2Row { 0xFE5163 }, Ipio2Row { 0xABDEBB }, Ipio2Row { 0xC561B7 }, Ipio2Row { 0x246E3A },
+		Ipio2Row { 0x424DD2 }, Ipio2Row { 0xE00649 }, Ipio2Row { 0x2EEA09 }, Ipio2Row { 0xD1921C },
+		Ipio2Row { 0xFE1DEB }, Ipio2Row { 0x1CB129 }, Ipio2Row { 0xA73EE8 }, Ipio2Row { 0x8235F5 },
+		Ipio2Row { 0x2EBB44 }, Ipio2Row { 0x84E99C }, Ipio2Row { 0x7026B4 }, Ipio2Row { 0x5F7E41 },
+		Ipio2Row { 0x3991D6 }, Ipio2Row { 0x398353 }, Ipio2Row { 0x39F49C }, Ipio2Row { 0x845F8B },
+		Ipio2Row { 0xBDF928 }, Ipio2Row { 0x3B1FF8 }, Ipio2Row { 0x97FFDE }, Ipio2Row { 0x05980F },
+		Ipio2Row { 0xEF2F11 }, Ipio2Row { 0x8B5A0A }, Ipio2Row { 0x6D1F6D }, Ipio2Row { 0x367ECF },
+		Ipio2Row { 0x27CB09 }, Ipio2Row { 0xB74F46 }, Ipio2Row { 0x3F669E }, Ipio2Row { 0x5FEA2D },
+		Ipio2Row { 0x7527BA }, Ipio2Row { 0xC7EBE5 }, Ipio2Row { 0xF17B3D }, Ipio2Row { 0x0739F7 },
+		Ipio2Row { 0x8A5292 }, Ipio2Row { 0xEA6BFB }, Ipio2Row { 0x5FB11F }, Ipio2Row { 0x8D5D08 },
+		Ipio2Row { 0x560330 }, Ipio2Row { 0x46FC7B }, Ipio2Row { 0x6BABF0 }, Ipio2Row { 0xCFBC20 },
+		Ipio2Row { 0x9AF436 }, Ipio2Row { 0x1DA9E3 }, Ipio2Row { 0x91615E }, Ipio2Row { 0xE61B08 },
+		Ipio2Row { 0x659985 }, Ipio2Row { 0x5F14A0 }, Ipio2Row { 0x68408D }, Ipio2Row { 0xFFD880 },
+		Ipio2Row { 0x4D7327 }, Ipio2Row { 0x310606 }, Ipio2Row { 0x1556CA }, Ipio2Row { 0x73A8C9 },
+		Ipio2Row { 0x60E27B }, Ipio2Row { 0xC08C6B },
+	]
+}
+=== 712e7c918d223cb7
+var IPIO2 Ipio2Row[>..];
+fn ipio2_at(i int) int {
+	if IPIO2.len == 0 { IPIO2.append(ipio2_table()); }
+	IPIO2[i].v
+}
+=== 607105831632accd
+let PIO2 real[8] = [1.57079625129699707031e+00, 7.54978941586159635335e-08, 5.39030252995776476554e-15, 3.28200341580791294123e-22, 1.27065575308067607349e-29, 1.22933308981111328932e-36, 2.73370053816464559624e-44, 2.16741683877804819444e-51];
+=== 3743e2ef8698dff6
+fn scalbn(x real, n int) real {
+	x * binary::f64_from_bits(((0x3ff + n) as uint) << 52)
+}
+=== -73208464562da58c
+fn k_sinf(x real) f32 {
+	let S1 = -0.166666666416265235595;
+	let S2 = 0.0083333293858894631756;
+	let S3 = -0.000198393348360966317347;
+	let S4 = 0.0000027183114939898219064;
+	let z = x * x;
+	let w = z * z;
+	let r = S3 + z * S4;
+	let s = z * x;
+	((x + s * (S1 + z * S2)) + s * w * r) as f32
+}
+=== -39503a3c19c3b7d0
+fn k_cosf(x real) f32 {
+	let C0 = -0.499999997251031003120;
+	let C1 = 0.0416666233237390631894;
+	let C2 = -0.00138867637746099294692;
+	let C3 = 0.0000243904487962774090654;
+	let z = x * x;
+	let w = z * z;
+	let r = C2 + z * C3;
+	(((1.0 + z * C0) + w * C1) + (w * z) * r) as f32
+}
+=== -10c36e4ef0d0cd25
+let TWO24 real = 16777216.0;
+let TWON24 real = 5.9604644775390625e-08;
+fn rem_pio2_large(x real, e0 int) int, real {
+	var f real[20] = [0.0; 20];
+	var q real[20] = [0.0; 20];
+	var fq real[20] = [0.0; 20];
+	var iq int[20] = [0; 20];
+	var jv = (e0 - 3) / 24;
+	if jv < 0 { jv = 0; }
+	var q0 = e0 - 24 * (jv + 1);
+	for i in 0..4 {
+		f[i] = ipio2_at(jv + i) as real;
+		q[i] = 0.0 + x * f[i];
+	}
+	var jz = 3;
+	var z = 0.0;
+	var n = 0;
+	var ih = 0;
+	loop {
+		var i = 0;
+		z = q[jz];
+		var j = jz;
+		while j >= 1 {
+			let fw0 = (((TWON24 * z) as int) as real);
+			iq[i] = (z - TWO24 * fw0) as int;
+			z = q[j - 1] + fw0;
+			i += 1;
+			j -= 1;
+		}
+		z = scalbn(z, q0);
+		z -= 8.0 * floor(z * 0.125);
+		n = z as int;
+		z -= n as real;
+		ih = 0;
+		if q0 > 0 {
+			let ii = iq[jz - 1] >> (24 - q0);
+			n += ii;
+			iq[jz - 1] -= ii << (24 - q0);
+			ih = iq[jz - 1] >> (23 - q0);
+		} else if q0 == 0 {
+			ih = iq[jz - 1] >> 23;
+		} else if z >= 0.5 {
+			ih = 2;
+		}
+		if ih > 0 {
+			n += 1;
+			var carry = 0;
+			for ci in 0..jz {
+				if carry == 0 && iq[ci] != 0 {
+					carry = 1;
+					iq[ci] = 0x1000000 - iq[ci];
+				} else if carry != 0 {
+					iq[ci] = 0xffffff - iq[ci];
+				}
+			}
+			if q0 == 1 { iq[jz - 1] = iq[jz - 1] & 0x7fffff; }
+			if q0 == 2 { iq[jz - 1] = iq[jz - 1] & 0x3fffff; }
+			if ih == 2 {
+				z = 1.0 - z;
+				if carry != 0 { z -= scalbn(1.0, q0); }
+			}
+		}
+		if z == 0.0 {
+			var orv = 0;
+			for oj in 3..jz { orv = orv | iq[oj]; }
+			if orv == 0 {
+				var k = 1;
+				while iq[3 - k] == 0 { k += 1; }
+				for ki in jz + 1..jz + k + 1 {
+					f[ki] = ipio2_at(jv + ki) as real;
+					q[ki] = 0.0 + x * f[ki];
+				}
+				jz += k;
+				continue;
+			}
+		}
+		break;
+	}
+	if z == 0.0 {
+		jz -= 1;
+		q0 -= 24;
+		while iq[jz] == 0 {
+			jz -= 1;
+			q0 -= 24;
+		}
+	} else {
+		z = scalbn(z, -q0);
+		if z >= TWO24 {
+			let fw1 = (((TWON24 * z) as int) as real);
+			iq[jz] = (z - TWO24 * fw1) as int;
+			jz += 1;
+			q0 += 24;
+			iq[jz] = fw1 as int;
+		} else {
+			iq[jz] = z as int;
+		}
+	}
+	var fw = scalbn(1.0, q0);
+	var qi = jz;
+	while qi >= 0 {
+		q[qi] = fw * (iq[qi] as real);
+		fw *= TWON24;
+		qi -= 1;
+	}
+	var fi = jz;
+	while fi >= 0 {
+		fw = 0.0;
+		var k = 0;
+		while k <= 3 && k <= jz - fi {
+			fw += PIO2[k] * q[fi + k];
+			k += 1;
+		}
+		fq[jz - fi] = fw;
+		fi -= 1;
+	}
+	fw = 0.0;
+	var si = jz;
+	while si >= 0 {
+		fw += fq[si];
+		si -= 1;
+	}
+	let y = if ih == 0 { fw } else { -fw };
+	return n & 7, y;
+}
+=== -5725003217720859
+let INV_PIO2 real = 6.36619772367581382433e-01;
+let PIO2_1 real = 1.57079631090164184570e+00;
+let PIO2_1T real = 1.58932547735281966916e-08;
+let TOINT real = 6755399441055744.0;
+fn rem_pio2f(x f32) int, real {
+	let x64 real = x;
+	let bits = binary::f32_bits(x) as int;
+	let ix = bits & 0x7fffffff;
+=== -46bf04cacd335579
+	if ix < 0x4dc90fdb {
+		let tmp = x64 * INV_PIO2 + TOINT;
+		let f_n = tmp - TOINT;
+		return f_n as int, x64 - f_n * PIO2_1 - f_n * PIO2_1T;
+	}
+	if ix >= 0x7f800000 { return 0, x64 - x64; }
+	let e0 = (ix >> 23) - 150;
+	let tx real = binary::f32_from_bits((ix - (e0 << 23)) as u32);
+	let n, y = rem_pio2_large(tx, e0);
+	if (bits >> 31) != 0 { return -n, -y; }
+	return n, y;
+}
+=== -33c7aa863453bab2
+let ATAN_HI f32[4] = [4.6364760399e-01, 7.8539812565e-01, 9.8279368877e-01, 1.5707962513e+00];
+let ATAN_LO f32[4] = [5.0121582440e-09, 3.7748947079e-08, 3.4473217170e-08, 7.5497894159e-08];
+let A_T f32[5] = [3.3333328366e-01, -1.9999158382e-01, 1.4253635705e-01, -1.0648017377e-01, 6.1687607318e-02];
+fn atanf(x0 f32) f32 {
+	var x f32 = x0;
+	var ix = binary::f32_bits(x0);
+	let sign = (ix >> 31) != 0;
+	ix = ix & 0x7fffffff;
+	var id = -1;
+=== -4cc755cffb0dd3fe
+	if ix >= 0x4c800000 {
+		if x != x { return x; }
+		let z0 f32 = ATAN_HI[3] + binary::f32_from_bits(0x03800000);
+		return if sign { -z0 } else { z0 };
+	}
+	if ix < 0x3ee00000 {
+		if ix < 0x39800000 { return x; }
+	} else {
+		x = binary::f32_from_bits(ix);
+		if ix < 0x3f300000 {
+			x = (2.0 * x - 1.0) / (2.0 + x);
+			id = 0;
+		} else if ix < 0x3f980000 {
+			x = (x - 1.0) / (x + 1.0);
+			id = 1;
+		} else if ix < 0x401c0000 {
+			x = (x - 1.5) / (1.0 + 1.5 * x);
+			id = 2;
+		} else {
+			x = -1.0 / x;
+			id = 3;
+		}
+	}
+=== -341ae2bf9856dc57
+	let z f32 = x * x;
+	let w f32 = z * z;
+	let s1 f32 = z * (A_T[0] + w * (A_T[2] + w * A_T[4]));
+	let s2 f32 = w * (A_T[1] + w * A_T[3]);
+=== 60e8bda22ea5f312
+	if id < 0 { return x - x * (s1 + s2); }
+	let r f32 = ATAN_HI[id] - ((x * (s1 + s2) - ATAN_LO[id]) - x);
+	return if sign { -r } else { r };
+}
+=== 019d82121013ebb3
+let PIF f32 = 3.1415927410e+00;
+let PI_LO f32 = -8.7422776573e-08;
+fn atan2f(y f32, x f32) f32 {
+	if x != x || y != y { return y + x; }
+	var ix = binary::f32_bits(x) as int;
+	var iy = binary::f32_bits(y) as int;
+	if ix == 0x3f800000 { return atanf(y); }
+	let m = ((iy >> 31) & 1) | ((ix >> 30) & 2);
+	ix = ix & 0x7fffffff;
+	iy = iy & 0x7fffffff;
+	if iy == 0 {
+		return match m {
+			0, 1 => y,
+			2 => PIF,
+			_ => -PIF,
+		};
+	}
+	if ix == 0 {
+		return if (m & 1) != 0 { -PIF / 2.0 } else { PIF / 2.0 };
+	}
+	if ix == 0x7f800000 {
+		if iy == 0x7f800000 {
+			return match m {
+				0 => PIF / 4.0,
+				1 => -PIF / 4.0,
+				2 => 3.0 * PIF / 4.0,
+				_ => -3.0 * PIF / 4.0,
+			};
+		}
+		return match m {
+			0 => 0.0,
+			1 => -0.0,
+			2 => PIF,
+			_ => -PIF,
+		};
+	}
+	if ix + (26 << 23) < iy || iy == 0x7f800000 {
+		return if (m & 1) != 0 { -PIF / 2.0 } else { PIF / 2.0 };
+	}
+	var z f32 = 0.0;
+	if (m & 2) != 0 && iy + (26 << 23) < ix {
+		z = 0.0;
+	} else {
+		let q f32 = y / x;
+		z = atanf(binary::f32_from_bits(binary::f32_bits(q) & 0x7fffffff));
+	}
+	return match m {
+		0 => z,
+		1 => -z,
+		2 => PIF - (z - PI_LO),
+		_ => (z - PI_LO) - PIF,
+	};
+}
+=== -3b44496ba5e3321c
+let FRAC_PI_2 real = 1.5707963267948966;
+let P1 real = 1.0 * FRAC_PI_2;
+let P2 real = 2.0 * FRAC_PI_2;
+let P3 real = 3.0 * FRAC_PI_2;
+let P4 real = 4.0 * FRAC_PI_2;
+=== -2fc483781c42456b
+fn sinf(x f32) f32 {
+	let x64 real = x;
+	let bits = binary::f32_bits(x);
+	let ix = bits & 0x7fffffff;
+	let sign = (bits >> 31) != 0;
+	if ix <= 0x3f490fda {
+		if ix < 0x39800000 { return x; }
+		return k_sinf(x64);
+	}
+	if ix <= 0x4016cbe3 {
+		return if sign { -k_cosf(x64 + P1) } else { k_cosf(x64 - P1) };
+	}
+	if ix <= 0x407b53d1 {
+		return if sign { k_sinf(-(x64 + P2)) } else { k_sinf(-(x64 - P2)) };
+	}
+	if ix <= 0x40afeddf {
+		return if sign { k_cosf(x64 + P3) } else { -k_cosf(x64 - P3) };
+	}
+	if ix <= 0x40e231d5 {
+		return if sign { k_sinf(x64 + P4) } else { k_sinf(x64 - P4) };
+	}
+	if ix >= 0x7f800000 { return x - x; }
+	let n, y = rem_pio2f(x);
+	match n & 3 {
+		0 => k_sinf(y),
+		1 => k_cosf(y),
+		2 => k_sinf(-y),
+		_ => -k_cosf(y),
+	}
+}
+=== -6b8ef1b9ef70352c
+fn cosf(x f32) f32 {
+	let x64 real = x;
+	let bits = binary::f32_bits(x);
+	let ix = bits & 0x7fffffff;
+	let sign = (bits >> 31) != 0;
+	if ix <= 0x3f490fda {
+		if ix < 0x39800000 { return 1.0; }
+		return k_cosf(x64);
+	}
+	if ix <= 0x4016cbe3 {
+		return if sign { k_sinf(x64 + P1) } else { k_sinf(P1 - x64) };
+	}
+	if ix <= 0x407b53d1 {
+		return if sign { -k_cosf(x64 + P2) } else { -k_cosf(x64 - P2) };
+	}
+	if ix <= 0x40afeddf {
+		return if sign { k_sinf(-x64 - P3) } else { k_sinf(x64 - P3) };
+	}
+	if ix <= 0x40e231d5 {
+		return if sign { k_cosf(x64 + P4) } else { k_cosf(x64 - P4) };
+	}
+	if ix >= 0x7f800000 { return x - x; }
+	let n, y = rem_pio2f(x);
+	match n & 3 {
+		0 => k_cosf(y),
+		1 => k_sinf(-y),
+		2 => -k_cosf(y),
+		_ => k_sinf(y),
+	}
+}
+=== -575db92f273c1355
+fn sincosf(x f32) f32, f32 {
+	let x64 real = x;
+	let bits = binary::f32_bits(x);
+	let ix = bits & 0x7fffffff;
+	let sign = (bits >> 31) != 0;
+	if ix <= 0x3f490fda {
+		if ix < 0x39800000 { return x, 1.0; }
+		return k_sinf(x64), k_cosf(x64);
+	}
+	if ix <= 0x4016cbe3 {
+		if sign { return -k_cosf(x64 + P1), k_sinf(x64 + P1); }
+		return k_cosf(P1 - x64), k_sinf(P1 - x64);
+	}
+	if ix <= 0x407b53d1 {
+		if sign { return -k_sinf(x64 + P2), -k_cosf(x64 + P2); }
+		return -k_sinf(x64 - P2), -k_cosf(x64 - P2);
+	}
+	if ix <= 0x40afeddf {
+		if sign { return k_cosf(x64 + P3), -k_sinf(x64 + P3); }
+		return -k_cosf(x64 - P3), k_sinf(x64 - P3);
+	}
+	if ix <= 0x40e231d5 {
+		if sign { return k_sinf(x64 + P4), k_cosf(x64 + P4); }
+		return k_sinf(x64 - P4), k_cosf(x64 - P4);
+	}
+	if ix >= 0x7f800000 {
+		let rv = x - x;
+		return rv, rv;
+	}
+	let n, y = rem_pio2f(x);
+	let s = k_sinf(y);
+	let c = k_cosf(y);
+	let k = n & 3;
+	if k == 0 { return s, c; }
+	if k == 1 { return c, -s; }
+	if k == 2 { return -s, -c; }
+	return -c, s;
+}
+=== -73c27eed288351c8
+fn hypotf(x0 f32, y0 f32) f32 {
+	var ux = (binary::f32_bits(x0) as int) & 0x7fffffff;
+	var uy = (binary::f32_bits(y0) as int) & 0x7fffffff;
+	if ux < uy {
+		let tmp = ux;
+		ux = uy;
+		uy = tmp;
+	}
+	var x f32 = binary::f32_from_bits(ux as u32);
+	var y f32 = binary::f32_from_bits(uy as u32);
+	if uy == (0xff << 23) { return y; }
+	if ux >= (0xff << 23) || uy == 0 || ux - uy >= (25 << 23) { return y + x; }
+	var z f32 = 1.0;
+	if ux >= ((0x7f + 60) << 23) {
+		z = binary::f32_from_bits(0x6c800000);
+		let sc f32 = binary::f32_from_bits(0x12800000);
+		x = x * sc;
+		y = y * sc;
+	} else if uy < ((0x7f - 60) << 23) {
+		z = binary::f32_from_bits(0x12800000);
+		let sc f32 = binary::f32_from_bits(0x6c800000);
+		x = x * sc;
+		y = y * sc;
+	}
+	let x64 real = x;
+	let y64 real = y;
+	let t f32 = (x64 * x64 + y64 * y64) as f32;
+	let tr real = t;
+	let s f32 = sqrt(tr) as f32;
+	return z * s;
+}

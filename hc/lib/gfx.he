@@ -8,10 +8,10 @@ MAIN_THREAD := true
 WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32
 VERTEX := 0 as i32; FRAGMENT := 1 as i32; COMPUTE := 2 as i32
 BUFFER_VERTEX := 1 as i32; BUFFER_INDEX := 2 as i32; BUFFER_INDIRECT := 4 as i32; BUFFER_STORAGE := 8 as i32; BUFFER_COMPUTE_READ := 16 as i32; BUFFER_COMPUTE_WRITE := 32 as i32
-TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32
+TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32; TEXTURE_CUBE_ARRAY := 4 as i32
 SAMPLED := 1 as i32; COLOR_TARGET := 2 as i32; DEPTH_TARGET := 4 as i32; STORAGE_READ := 8 as i32; COMPUTE_READ := 16 as i32; COMPUTE_WRITE := 32 as i32; COMPUTE_READ_WRITE := 64 as i32
 RGBA8 := 1 as i32; BGRA8 := 2 as i32; RGBA8_SRGB := 3 as i32; R8 := 4 as i32; RG8 := 5 as i32; RGBA16F := 6 as i32; RGBA32F := 7 as i32; R16F := 8 as i32; RG16F := 9 as i32; R32F := 10 as i32
-RG32F := 11 as i32; R32UI := 12 as i32; RGBA8UI := 13 as i32; RGB10A2 := 14 as i32; RG11B10F := 15 as i32; DEPTH16 := 16 as i32; DEPTH24 := 17 as i32; DEPTH32F := 18 as i32; DEPTH24_STENCIL8 := 19 as i32; DEPTH := 20 as i32
+RG32F := 11 as i32; R32UI := 12 as i32; RGBA8UI := 13 as i32; RGB10A2 := 14 as i32; RG11B10F := 15 as i32; DEPTH16 := 16 as i32; DEPTH24 := 17 as i32; DEPTH32F := 18 as i32; DEPTH24_STENCIL8 := 19 as i32; DEPTH := 20 as i32; BC1 := 21 as i32; BC1_SRGB := 22 as i32; BC3 := 23 as i32; BC3_SRGB := 24 as i32; BC4 := 25 as i32; BC5 := 26 as i32; BC7 := 27 as i32; BC7_SRGB := 28 as i32
 NEAREST := 0 as i32; LINEAR := 1 as i32; REPEAT := 0 as i32; MIRROR := 1 as i32; CLAMP := 2 as i32
 COMPARE_NEVER := 1 as i32; COMPARE_LESS := 2 as i32; COMPARE_EQUAL := 3 as i32; COMPARE_LESS_EQUAL := 4 as i32; COMPARE_GREATER := 5 as i32; COMPARE_NOT_EQUAL := 6 as i32; COMPARE_GREATER_EQUAL := 7 as i32; COMPARE_ALWAYS := 8 as i32
 TRIANGLES := 0 as i32; TRIANGLE_STRIP := 1 as i32; LINES := 2 as i32; LINE_STRIP := 3 as i32; POINTS := 4 as i32
@@ -33,7 +33,7 @@ struct ComputePipeline { id u32 }
 struct TextureDesc { kind i32 = 0, format i32 = 1, usage i32 = 1, width i32, height i32, depth i32 = 1, mips i32 = 1, samples i32 = 1 }
 struct Region { mip i32 = 0, layer i32 = 0, x i32 = 0, y i32 = 0, z i32 = 0, w i32 = 0, h i32 = 0, d i32 = 0 }
 struct SamplerDesc { min_filter i32 = 1, mag_filter i32 = 1, mip_filter i32 = 1, wrap_u i32 = 0, wrap_v i32 = 0, wrap_w i32 = 0, max_anisotropy f32 = 1.0, compare i32 = 0 }
-struct PipelineDesc { primitive i32 = 0, cull i32 = 0, clockwise bool = false, wireframe bool = false, depth_test bool = false, depth_write bool = false, depth_compare i32 = 2, blend i32 = 0, instance_location i32 = -1, depth_bias f32 = 0.0, depth_bias_slope f32 = 0.0, formats u8[16] = [0; 16] }
+struct PipelineDesc { primitive i32 = 0, cull i32 = 0, clockwise bool = false, wireframe bool = false, depth_test bool = false, depth_write bool = false, depth_compare i32 = 2, blend i32 = 0, instance_location i32 = -1, depth_bias f32 = 0.0, depth_bias_slope f32 = 0.0, formats u8[16] = [0; 16], alpha_to_coverage bool = false }
 struct Event { kind i32, scancode i32, keycode i32, mods i32, down bool, repeat bool, button i32, clicks i32, codepoint u32, x f32, y f32 }
 struct PassDesc { color Texture[4] = [Texture{0}; 4], resolve Texture[4] = [Texture{0}; 4], depth Texture = Texture{0}, layer i32 = 0, mip i32 = 0, clear_color bool = true, clear_depth bool = true, color_value float4 = float4{0.0, 0.0, 0.0, 1.0}, depth_value f32 = 1.0, cycle i32 = 0 }
 struct mat4 { c0 float4, c1 float4, c2 float4, c3 float4 }
@@ -52,7 +52,7 @@ struct CSh { size uint, code uint, entry uint, fmt u32, stage i32, nsmp u32, nst
 struct CVB { slot u32, pitch u32, rate i32, step u32 }
 struct CVA { loc u32, slot u32, fmt i32, off u32 }
 struct CCTD { fmt i32, sc i32, dc i32, cop i32, sa i32, da i32, aop i32, wm u8, eb bool, ewm bool, pad 5 }
-struct CGP { vs uint, fs uint, vbd uint, nvb u32, pad 4, va uint, nva u32, pad 4, prim i32, fill i32, cull i32, ff i32, dbc f32, dbcl f32, dbs f32, edb bool, edc bool, pad 2, sc i32, smask u32, emask bool, pad 3, dcmp i32, pad 32, cmask u8, wmask u8, edt bool, edw bool, est bool, pad 3, ctd uint, nct u32, dsf i32, hds bool, pad 7, props u32, pad 4 }
+struct CGP { vs uint, fs uint, vbd uint, nvb u32, pad 4, va uint, nva u32, pad 4, prim i32, fill i32, cull i32, ff i32, dbc f32, dbcl f32, dbs f32, edb bool, edc bool, pad 2, sc i32, smask u32, emask bool, a2c bool, pad 2, dcmp i32, pad 32, cmask u8, wmask u8, edt bool, edw bool, est bool, pad 3, ctd uint, nct u32, dsf i32, hds bool, pad 7, props u32, pad 4 }
 struct CCP { size uint, code uint, entry uint, fmt u32, nsmp u32, nrost u32, nrosb u32, nrwst u32, nrwsb u32, nub u32, tx u32, ty u32, tz u32, props u32, pad 4 }
 struct CVP { x f32, y f32, w f32, h f32, mn f32, mx f32 }
 struct CRect { x i32, y i32, w i32, h i32 }
@@ -107,6 +107,8 @@ extern "libSDL3.so.0" {
 	s_regev(n i32) u32 = "SDL_RegisterEvents";
 	s_ns() uint = "SDL_GetTicksNS";
 	s_tstart(w uint) bool = "SDL_StartTextInput";
+	s_platform() uint = "SDL_GetPlatform";
+	s_dscale(w uint) f32 = "SDL_GetWindowDisplayScale";
 	s_tstop(w uint) bool = "SDL_StopTextInput";
 	s_step(p uint, n uint) u32 = "SDL_StepUTF8";
 	s_scn(n uint) i32 = "SDL_GetScancodeFromName";
@@ -170,6 +172,7 @@ extern "libSDL3.so.0" {
 	s_cu(c uint, s u32, d uint, n u32) = "SDL_PushGPUComputeUniformData";
 	s_draw(p uint, nv u32, ni u32, fv u32, fi u32) = "SDL_DrawGPUPrimitives";
 	s_drawi(p uint, nx u32, ni u32, fx u32, vo i32, fi u32) = "SDL_DrawGPUIndexedPrimitives";
+	s_drawii(p uint, b uint, o u32, n u32) = "SDL_DrawGPUIndexedPrimitivesIndirect";
 	s_bcomp(c uint, t uint, nt u32, b uint, nb u32) uint = "SDL_BeginGPUComputePass";
 	s_ecomp(p uint) = "SDL_EndGPUComputePass";
 	s_bcp(p uint, cp uint) = "SDL_BindGPUComputePipeline";
@@ -263,6 +266,7 @@ VF := [0, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 20, 18, 16, 21, 22, 27, 28, 29,
 VSZ := [0, 4, 8, 12, 16, 4, 8, 12, 16, 4, 8, 12, 16, 4, 4, 4, 4, 8, 4, 8, 4, 8]
 VK := "_ffffiiiiuuuuffuiiffff"
 TFMT := [0, 4, 12, 52, 2, 3, 29, 32, 27, 28, 30, 31, 40, 36, 8, 33, 58, 59, 60, 61]
+TBC := [13, 54, 15, 56, 16, 17, 18, 57]
 ALN := [226, 226, 230, 230, 227, 227, 227, 231, 231, 231, 101]
 ALS := ["Left Alt", "Left Option", "Right Alt", "Right Option", "Left GUI", "Left Command", "Left Windows", "Right GUI", "Right Command", "Right Windows", "Application"]
 pp<T>(x T&) uint: ffi::ptr(bytes_of(x))
@@ -351,9 +355,15 @@ flush_raw():
 	finish()
 flush(): flush_raw(); check()
 texfmt(f int) int:
-	if f == 20: return if DEV != 0 && s_texok(DEV, 60, 0, 5) { 60 } else { 59 }
-	if f >= 1 && f < 20 { TFMT[f] } else { -1 }
+	if f == 20:
+		if DEV == 0: return 59
+		for u in [5, 4]:
+			for d in [60, 59, 58]:
+				if s_texok(DEV, d as i32, 0, u as u32): return d
+		return 59
+	if f >= 1 && f < 20 { TFMT[f] } else { if f >= 21 && f <= 28 { TBC[f - 21] } else { -1 } }
 isdepth(f int) bool: f >= 58 && f <= 62
+isblock(f int) bool: (f >= 13 && f <= 18) || (f >= 54 && f <= 57)
 stage_name(s int) byte[>..]: copy(if s == 0 { "vertex" } else { if s == 1 { "fragment" } else { "compute" } })
 pname() byte[>..]: copy(if PASS != 0 { "render" } else { "compute" })
 scrtex(h Texture&, fmt int, usage int, gf int, w int, hh int) bool:
@@ -405,7 +415,7 @@ start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 	if env("HELIUM_GFX_DEBUG", dv) || env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
 	DEV = s_mkdev(18, debug, 0)
 	if DEV == 0: fail(str("no GPU device: ", sdlerr())); close_raw(); return false
-	have := s_fmts(DEV); SHF = if have & 2 != 0 { 2 } else { if have & 4 != 0 { 4 } else { 16 } }
+	have := s_fmts(DEV); SHF = if have & 2 != 0 { 2 } else { if have & 4 != 0 { 4 } else { if have & 64 != 0 { 64 } else { 16 } } }
 	pw ~= width; ph ~= height; WW = 1; WH = 1; WPW = 1; WPH = 1
 	if windowed:
 		wf := 8192 | (if flags & 1 != 0 { 32 } else { 0 }) | (if flags & 2 != 0 { 8 } else { 0 }) | (if flags & 4 != 0 { 1 } else { 0 })
@@ -579,6 +589,8 @@ events_into(out Event[:]) int:
 	EVS.len
 fingers() Finger[>..]: o Finger[>..] ~= []; o.append(FINGERS[..]); o
 events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
+display_scale() f32: if WIN == 0 { 1.0 } else { k := s_dscale(WIN); if k > 0.0 { k } else { 1.0 } }
+touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS"
 text_input(on bool):
 	if !need("text_input") || WIN == 0: return
 	if on { s_tstart(WIN) } else { s_tstop(WIN) }
@@ -616,7 +628,7 @@ upload_buffer(buf uint, off int, data const byte[:], zeros int, fresh bool, cyc 
 	tb := transfer(total, true)
 	if tb == 0: if fresh { s_cancel(c) } return false
 	p := s_map(DEV, tb, false); ffi::write(p, data)
-	if zeros > 0: z byte[>..] ~= []; z.resize(zeros, 0); ffi::write(p + data.len as uint, z[..])
+	if zeros > 0: z byte[>..] ~= []; z.resize(min(zeros, 1 << 20), 0); o ~= 0; while o < zeros { k := min(zeros - o, z.len); ffi::write(p + (data.len + o) as uint, z[..k]); o += k }
 	s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CLoc{tb, 0}; dst ~= CBReg{buf, off as u32, total as u32}; s_upb(cp, pp(src), pp(dst), cyc); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
 buffer(usage int, size int, data const byte[:]) Buffer:
 	h ~= Buffer{0}
@@ -668,11 +680,12 @@ create_texture(desc TextureDesc) Texture:
 	if !need("texture"): return h
 	fmt := texfmt(desc.format as int); kind := desc.kind as int; w := desc.width as int; ht := desc.height as int; dp ~= desc.depth as int; sm ~= desc.samples as int; mips ~= desc.mips as int
 	if fmt < 0: misuse(str("texture format ", desc.format, " is not one of gfx's formats")); return h
-	if kind < 0 || kind > 3: misuse(str("texture kind ", desc.kind, " is not one of TEXTURE_2D, _2D_ARRAY, _3D or _CUBE")); return h
+	if kind < 0 || kind > 4: misuse(str("texture kind ", desc.kind, " is not one of TEXTURE_2D, _2D_ARRAY, _3D, _CUBE or _CUBE_ARRAY")); return h
 	if w < 1 || ht < 1 || w > 16384 || ht > 16384: misuse(str("a texture of ", w, " x ", ht)); return h
-	if kind == 3 && w != ht: misuse(str("a cube texture must be square, not ", w, " x ", ht)); return h
+	if (kind == 3 || kind == 4) && w != ht: misuse(str("a cube texture must be square, not ", w, " x ", ht)); return h
 	if kind == 0 || kind == 3: dp = 1
 	if dp < 1 || dp > 2048: misuse(str("a texture ", if kind == 2 { "depth" } else { "layer count" }, " of ", dp)); return h
+	if kind == 4 && dp % 6 != 0: misuse(str("a cube array texture needs 6 layers per cube, not ", dp)); return h
 	if sm != 2 && sm != 4 && sm != 8: sm = 1
 	largest := max(max(w, ht), if kind == 2 { dp } else { 0 }); chain ~= 1
 	while largest >> chain != 0: chain += 1
@@ -682,7 +695,9 @@ create_texture(desc TextureDesc) Texture:
 	dep := isdepth(fmt)
 	if dep != (usage & 4 != 0): misuse(if dep { "a depth format needs DEPTH_TARGET usage" } else { "DEPTH_TARGET usage needs a depth format" }); return h
 	if sm > 1 && (kind != 0 || mips != 1 || usage & ~6 != 0): misuse("a multisampled texture is a 2D target with one mip, drawn into and resolved, not sampled or stored to"); return h
-	if mips > 1 && usage & 1 != 0 && !dep: usage |= 2
+	blk := isblock(fmt)
+	if blk && (kind == 2 || sm > 1 || usage != 1 || w % 4 != 0 || ht % 4 != 0): misuse("a block-compressed texture is sampled only, not 3D or multisampled, with a width and height that are multiples of 4"); return h
+	if mips > 1 && usage & 1 != 0 && !dep && !blk: usage |= 2
 	if !s_texok(DEV, fmt as i32, kind as i32, usage as u32): fail(str("this device does not support texture format ", desc.format, " with usage ", usage)); return h
 	ci ~= CTex{kind as i32, fmt as i32, usage as u32, w as u32, ht as u32, (if kind == 3 { 6 } else { dp }) as u32, mips as u32, nsamp(sm) as i32, 0}
 	tex := s_mktex(DEV, pp(ci))
@@ -699,23 +714,24 @@ texture_array(width int, height int, layers int, format i32, usage i32) Texture:
 region(s TexS&, r const Region&, o CTReg&, what const byte[:]) bool:
 	kind := s.d.kind as int; mips := s.d.mips as int; mip := r.mip as int; lay := r.layer as int
 	if mip < 0 || mip >= mips: return misuse(str(what, ": mip ", mip, " of a texture with ", mips))
-	layers := if kind == 3 { 6 } else { if kind == 1 { s.d.depth as int } else { 1 } }
+	layers := if kind == 3 { 6 } else { if kind == 1 || kind == 4 { s.d.depth as int } else { 1 } }
 	if lay < 0 || lay >= layers: return misuse(str(what, ": layer ", lay, " of a texture with ", layers))
 	mw := mipsz(s.d.width as int, mip); mh := mipsz(s.d.height as int, mip); md := if kind == 2 { mipsz(s.d.depth as int, mip) } else { 1 }
 	o = CTReg{s.tex, mip as u32, lay as u32, 0, 0, 0, mw as u32, mh as u32, md as u32}
 	if r.w == 0: return true
+	if isblock(s.fmt): return misuse(str(what, ": a block-compressed texture is updated a whole mip at a time"))
 	x := r.x as int; y := r.y as int; z := r.z as int; w := r.w as int; h := if r.h != 0 { r.h as int } else { 1 }; dd := if r.d != 0 { r.d as int } else { 1 }
 	if x < 0 || y < 0 || z < 0 || w < 0 || h < 0 || dd < 0 || x + w > mw || y + h > mh || z + dd > md: return misuse(str(what, ": region ", x, ",", y, ",", z, " + ", w, " x ", h, " x ", dd, " is outside the ", mw, " x ", mh, " x ", md, " mip"))
 	o = CTReg{s.tex, mip as u32, lay as u32, x as u32, y as u32, z as u32, w as u32, h as u32, dd as u32}; true
 texbytes(s TexS&, o CTReg&, n int, what const byte[:]) bool:
-	want := s_bsz(s.fmt as i32) as int * o.w as int * o.h as int * o.d as int
+	want := if isblock(s.fmt) { s_bsz(s.fmt as i32) as int * ((o.w as int + 3) / 4) * ((o.h as int + 3) / 4) * o.d as int } else { s_bsz(s.fmt as i32) as int * o.w as int * o.h as int * o.d as int }
 	n == want || misuse(str(what, ": ", n, " bytes for a ", o.w, " x ", o.h, " x ", o.d, " region of ", want))
-upload_texture(o CTReg&, data const byte[:], fresh bool, what const byte[:]) bool:
+upload_texture(o CTReg&, data const byte[:], fresh bool, blk bool, what const byte[:]) bool:
 	c := copy_cmd(fresh, what)
 	if c == 0: return false
 	tb := transfer(data.len, true)
 	if tb == 0: if fresh { s_cancel(c) } return false
-	p := s_map(DEV, tb, false); ffi::write(p, data); s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CTTI{tb, 0, o.w, o.h}; s_upt(cp, pp(src), pp(o), false); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
+	p := s_map(DEV, tb, false); ffi::write(p, data); s_unmap(DEV, tb); cp := s_bcopy(c); src ~= CTTI{tb, 0, if blk { 0 as u32 } else { o.w }, if blk { 0 as u32 } else { o.h }}; s_upt(cp, pp(src), pp(o), false); s_ecopy(cp); s_rmtb(DEV, tb); copy_done(c, fresh)
 update_texture_region(t Texture, rg const Region&, data const byte[:]) bool:
 	if !need("update_texture"): return false
 	i := tslot(t)
@@ -723,7 +739,7 @@ update_texture_region(t Texture, rg const Region&, data const byte[:]) bool:
 	if TEXS[i].d.samples > 1: return misuse("update_texture: a multisampled texture")
 	o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}
 	if !region(TEXS[i], rg, o, "update_texture") || !texbytes(TEXS[i], o, data.len, "update_texture"): return false
-	upload_texture(o, data, false, "update_texture")
+	upload_texture(o, data, false, isblock(TEXS[i].fmt), "update_texture")
 update_texture(t Texture, rg Region, data const byte[:]) bool: update_texture_region(t, rg, data)
 update_texture(t Texture, data const byte[:]) bool: update_texture(t, Region{}, data)
 download_texture(o CTReg&, out byte[:], what const byte[:]) bool:
@@ -736,6 +752,7 @@ download_texture(o CTReg&, out byte[:], what const byte[:]) bool:
 	s_rmtb(DEV, tb); ok
 readable(s TexS&, what const byte[:]) bool:
 	if s.d.samples > 1: return misuse(str(what, ": a multisampled texture; read the texture it resolves to"))
+	if isblock(s.fmt): return misuse(str(what, ": a block-compressed texture cannot be read back"))
 	!isdepth(s.fmt) || misuse(str(what, ": a depth texture cannot be read back"))
 read_texture_into(t Texture, rg const Region&, out byte[:]) bool:
 	if !need("read_texture"): return false
@@ -784,7 +801,7 @@ load_texture(path const byte[:], flags int) Texture:
 	if i >= 0:
 		all := ffi::bytes(u64at(hd[..], 24), pitch * ht); tight byte[>..] ~= []
 		for y ht: tight.append(all[y * pitch..y * pitch + w * 4])
-		o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}; region(TEXS[i], Region{}, o, "load_texture"); ok := upload_texture(o, tight[..], true, "load_texture")
+		o ~= CTReg{0, 0, 0, 0, 0, 0, 0, 0, 0}; region(TEXS[i], Region{}, o, "load_texture"); ok := upload_texture(o, tight[..], true, false, "load_texture")
 		if ok && TEXS[i].d.mips > 1: c := s_acq(DEV); if c != 0 { s_mips(c, TEXS[i].tex); s_submit(c) }
 		if !ok: release(h); h.id = 0
 	s_rmsurf(rgba); h
@@ -792,8 +809,9 @@ generate_mips(t Texture):
 	if !need("generate_mips"): return
 	i := tslot(t)
 	if i < 0: return
-	if TEXS[i].d.mips < 2 || TEXS[i].usage & 1 == 0: misuse("generate_mips: a sampled texture with more than one mip"); return
+	if TEXS[i].d.mips < 2 || TEXS[i].usage & 1 == 0 || isblock(TEXS[i].fmt): misuse("generate_mips: a sampled texture with more than one mip"); return
 	c := copy_cmd(false, "generate_mips"); if c != 0 { s_mips(c, TEXS[i].tex) }
+format_supported(format i32) bool: need("format_supported") && texfmt(format as int) >= 0 && s_texok(DEV, texfmt(format as int) as i32, 0, 1)
 texture_info(t Texture) TextureDesc: i := tfind(TTEX, t.id); if i < 0 { TextureDesc{width: 0, height: 0} } else { TEXS[i].d }
 release(t Texture):
 	if !need("release_texture"): return
@@ -823,19 +841,20 @@ release(s Sampler):
 	if i < 0: return
 	s_rmsmp(DEV, SMPS[i]); trem(TSMP, s.id)
 read_blob(b const byte[:], o Info&) bool:
-	if b.len < 56 || b[..4] != "GSHD": return misuse("not a shader: pass what embed_shader returns")
+	if b.len < 68 || b[..4] != "GSHD": return misuse("not a shader: pass what embed_shader returns")
 	ver := u16at(b, 4)
-	if ver != 1: return misuse(str("a shader blob of version ", ver, ", where this gfx reads version 1"))
+	if ver != 2: return misuse(str("a shader blob of version ", ver, ", where this gfx reads version 2"))
 	o.stage = b[6] as int; o.nin = b[7] as int; for k 3 { o.ls[k] = u32at(b, 8 + 4 * k) }
 	o.nsmp = u16at(b, 20); o.nstro = u16at(b, 22); o.nstrw = u16at(b, 24); o.nsbro = u16at(b, 26); o.nsbrw = u16at(b, 28); o.nub = u16at(b, 30)
-	o.so = u32at(b, 32); o.ss = u32at(b, 36); o.mo = u32at(b, 40); o.ms = u32at(b, 44); ho := u32at(b, 48); hs := u32at(b, 52)
-	if o.stage > 2 || o.nub > 4 || o.nin > 16 || o.so + o.ss > b.len || o.mo + o.ms >= b.len || ho + hs >= b.len: return misuse("a damaged shader blob")
-	p ~= 56; for k o.nub { o.usz[k] = u32at(b, p); p += 4 }
+	o.so = u32at(b, 32); o.ss = u32at(b, 36); o.mo = u32at(b, 40); o.ms = u32at(b, 44); ho := u32at(b, 48); hs := u32at(b, 52); wo := u32at(b, 56); ws := u32at(b, 60)
+	if o.stage > 2 || o.nub > 4 || o.nin > 16 || o.so + o.ss > b.len || o.mo + o.ms >= b.len || ho + hs >= b.len || wo + ws >= b.len: return misuse("a damaged shader blob")
+	p ~= 68; for k o.nub { o.usz[k] = u32at(b, p); p += 4 }
 	for k o.nin: o.inl[k] = b[p] as int; o.inty[k] = b[p + 1] as int; p += 2
 	true
 shader_code(b const byte[:], o Info&, code byte[>..]&) byte[:]:
 	if SHF == 2: code.append(b[o.so..o.so + o.ss]); return "main\0"
 	if SHF == 16: code.append(b[o.mo..o.mo + o.ms + 1]); return "main0\0"
+	if SHF == 64: code.append(b); return "main\0"
 	misuse("no shader format this device takes"); ""
 fnv(b const byte[:]) uint:
 	h ~= 0xcbf29ce484222325 as uint
@@ -867,17 +886,17 @@ vertex_layout(p PipS&) bool:
 		for c cols: p.attrs.push(CVA{(l + c) as u32, slot as u32, VF[f] as i32, off[slot] as u32}); off[slot] += VSZ[f]
 	for slot 2: if off[slot] != 0 { p.vbufs.push(CVB{slot as u32, off[slot] as u32, slot as i32, 0}); p.vmask |= 1 << slot }
 	true
-cctd(fmt int, mode int) CCTD:
+cctd(fmt int, mode int, rgb bool) CCTD:
 	f := if mode == 1 { [7, 8, 2, 8] } else { if mode == 2 { [7, 2, 1, 2] } else { if mode == 3 { [2, 8, 2, 8] } else { if mode == 4 { [5, 1, 1, 2] } else { [0, 0, 0, 0] } } } }
-	CCTD{fmt as i32, f[0] as i32, f[1] as i32, 1, f[2] as i32, f[3] as i32, 1, 0, mode != 0, false}
+	CCTD{fmt as i32, f[0] as i32, f[1] as i32, 1, f[2] as i32, f[3] as i32, 1, if rgb { 7 } else { 0 }, mode != 0, rgb}
 teq(a Tg&, b Tg&) bool: a.nc == b.nc && a.c[0] == b.c[0] && a.c[1] == b.c[1] && a.c[2] == b.c[2] && a.c[3] == b.c[3] && a.d == b.d && a.hd == b.hd && a.sc == b.sc
 pipeline_for(pi int) uint:
 	let p .= PIPS[pi]
 	for t, k p.vt: if teq(t, TG) { return p.vp[k] }
 	if p.vt.len == 8: misuse("a pipeline drawn into more than 8 different combinations of target formats"); return 0
 	d := p.desc; cols CCTD[>..] ~= []
-	for i TG.nc: cols.push(cctd(TG.c[i], d.blend as int))
-	ci ~= CGP{SHS[p.vs].sh, SHS[p.fs].sh, ffi::ptr(bytes_of(p.vbufs[..])), p.vbufs.len as u32, ffi::ptr(bytes_of(p.attrs[..])), p.attrs.len as u32, d.primitive, if d.wireframe { 1 } else { 0 }, d.cull, if d.clockwise { 1 } else { 0 }, d.depth_bias, 0.0, d.depth_bias_slope, d.depth_bias != 0.0 || d.depth_bias_slope != 0.0, true, TG.sc as i32, 0, false, if d.depth_compare != 0 { d.depth_compare } else { 2 }, 0, 0, d.depth_test && TG.hd, d.depth_write && TG.hd, false, ffi::ptr(bytes_of(cols[..])), TG.nc as u32, TG.d as i32, TG.hd, 0}
+	for i TG.nc: cols.push(cctd(TG.c[i], d.blend as int, d.alpha_to_coverage && TG.sc > 0))
+	ci ~= CGP{SHS[p.vs].sh, SHS[p.fs].sh, ffi::ptr(bytes_of(p.vbufs[..])), p.vbufs.len as u32, ffi::ptr(bytes_of(p.attrs[..])), p.attrs.len as u32, d.primitive, if d.wireframe { 1 } else { 0 }, d.cull, if d.clockwise { 1 } else { 0 }, d.depth_bias, 0.0, d.depth_bias_slope, d.depth_bias != 0.0 || d.depth_bias_slope != 0.0, true, TG.sc as i32, 0, false, d.alpha_to_coverage && TG.sc > 0, if d.depth_compare != 0 { d.depth_compare } else { 2 }, 0, 0, d.depth_test && TG.hd, d.depth_write && TG.hd, false, ffi::ptr(bytes_of(cols[..])), TG.nc as u32, TG.d as i32, TG.hd, 0}
 	gp := s_mkgp(DEV, pp(ci))
 	if gp == 0: misuse(str("creating a pipeline: ", sdlerr())); return 0
 	p.vt.push(TG); p.vp.push(gp); gp
@@ -1078,6 +1097,13 @@ draw_indexed(indices int, instances int, first_index int, vertex_offset int, fir
 	if indices < 0 || instances < 0 || first_index < 0 || first_instance < 0: misuse("draw_indexed: a negative count"); return
 	s_drawi(PASS, indices as u32, instances as u32, first_index as u32, vertex_offset as i32, first_instance as u32)
 draw_indexed(indices int): draw_indexed(indices, 1, 0, 0, 0)
+draw_indexed_indirect(args Buffer, offset int):
+	if !ready_to_draw("draw_indexed_indirect"): return
+	if !IXB: misuse("draw_indexed_indirect with no index buffer bound"); return
+	k := bslot(args)
+	if k < 0: return
+	if BUFS[k].usage & 4 == 0 || offset < 0 || offset % 4 != 0 || offset + 20 > BUFS[k].size: misuse("draw_indexed_indirect: five u32 at a multiple of 4 bytes inside a BUFFER_INDIRECT buffer"); return
+	s_drawii(PASS, BUFS[k].buf, offset as u32, 1)
 draw_indexed_instanced(indices int, instances int): draw_indexed(indices, instances, 0, 0, 0)
 begin_compute(rwb const Buffer[:], rwt const Texture[:]) bool:
 	if !need("begin_compute"): return false

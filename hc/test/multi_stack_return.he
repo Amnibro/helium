@@ -1,0 +1,36 @@
+struct T { a int, b int }
+struct P { x int[..], y real }
+mk(n int) P:
+	p ~= P { [..n], 2.5 }
+	p.x.push(7)
+	p
+op(k int) P, T:
+	t := T { k, 3 }
+	return mk(16), t
+two(k int) P, P:
+	a := mk(16)
+	b ~= mk(32)
+	b.x.push(k)
+	return b, a
+thru(k int) P, T:
+	return op(k)
+other() int:
+	q ~= mk(16)
+	q.x.push(9)
+	q.x.push(9)
+	q.x.len
+main():
+	p, t := op(1)
+	print(p.x.len, " ", p.y, " ", t.a, " ", t.b)
+	print(other())
+	print(p.x.len, " ", p.y, " ", p.x[0], " ", t.a, " ", t.b)
+	a, b := two(5)
+	print(other())
+	print(a.x.len, " ", a.x[1], " ", b.x.len, " ", b.x[0])
+	c, d := thru(4)
+	print(other())
+	print(c.x.len, " ", c.x[0], " ", d.a, " ", d.b)
+	for i 2000:
+		e, f := two(i)
+		if e.x[1] != i || f.x.len != 1 { print("bad") }
+	print("done")

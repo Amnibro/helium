@@ -1,0 +1,13 @@
+dot64 mismatches 0
+dot64 rot 3 orot 5 262123024
+dot64 rot 3 1605520
+dot64 offsets 116305477
+mix 219812059
+mix round trip 256
+mix short 230043594
+mix short round trip 256
+dot16 mismatches 0
+dot16 gather 49267819
+dot16 scatter 43984938
+dot16 moved vecs mismatches 0
+direct mismatches 0

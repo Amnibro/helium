@@ -1,0 +1,98 @@
+use std
+use os
+use gf
+sum(b const byte[:]) int:
+	h ~= 7
+	for c b: h = (h * 31 + c as int) & 0xFFFFFFF
+	h
+fill(b byte[:], seed int):
+	x ~= seed
+	for i b.len:
+		x = (x * 1103515245 + 12345) & 0x7FFFFFFF
+		b[i] = (x >> 16 & 255) as byte
+main():
+	vecs byte[1024] ~= [0; 1024]
+	s byte[64] ~= [0; 64]
+	out byte[64] ~= [0; 64]
+	want byte[64] ~= [0; 64]
+	fill(vecs[..], 12345)
+	fill(s[..], 777)
+	bad ~= 0
+	for rot 16:
+		for q 17:
+			gf::dot64(out[..], 0, vecs[..], 0, s[..], 0, rot, q - 1)
+			sh := if q == 0 { 0 } else { 4 * (q - 1) }
+			for k 64:
+				a ~= 0
+				for j 16: a ^= gf::mul(vecs[64 * j + k] as int, s[4 * ((j + rot) & 15) + (k & 3)] as int)
+				want[(k + sh) & 63] = a as byte
+			for k 64: bad += if out[k] != want[k] { 1 } else { 0 }
+	print("dot64 mismatches ", bad)
+	gf::dot64(out[..], 0, vecs[..], 0, s[..], 0, 3, 5)
+	print("dot64 rot 3 orot 5 ", sum(out[..]))
+	gf::dot64(out[..], 0, vecs[..], 0, s[..], 0, 3)
+	print("dot64 rot 3 ", sum(out[..]))
+	big byte[2048] ~= [0; 2048]
+	fill(big[..], 99)
+	gf::dot64(big[..], 130, vecs[..], 0, big[..], 900, 7, 9)
+	print("dot64 offsets ", sum(big[..]))
+	buf byte[256] ~= [0; 256]
+	keep byte[256] ~= [0; 256]
+	fill(buf[..], 4242)
+	for i 256: keep[i] = buf[i]
+	gf::mix(buf[..], 0, 256)
+	print("mix ", sum(buf[..]))
+	gf::mix_inv(buf[..], 0, 256)
+	same ~= 0
+	for i 256: same += if buf[i] == keep[i] { 1 } else { 0 }
+	print("mix round trip ", same)
+	gf::mix(buf[..], 4, 40)
+	print("mix short ", sum(buf[..]))
+	gf::mix_inv(buf[..], 4, 40)
+	same = 0
+	for i 256: same += if buf[i] == keep[i] { 1 } else { 0 }
+	print("mix short round trip ", same)
+	blk byte[1024] ~= [0; 1024]
+	o1 byte[1024] ~= [0; 1024]
+	o2 byte[1024] ~= [0; 1024]
+	perm byte[16] ~= [0; 16]
+	rots byte[16] ~= [0; 16]
+	fill(blk[..], 31337)
+	bad = 0
+	for t 40:
+		fill(perm[..], 1000 + t)
+		fill(rots[..], 2000 + t)
+		if t % 2 == 0 { for y 16 { perm[y] = ((y * 7 + t) & 15) as byte } }
+		for m 4:
+			fill(o1[..], 5)
+			fill(o2[..], 5)
+			if m == 2 { gf::dot16(o1[..], vecs[..], blk[..]) } else { gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], if m == 3 { 2 } else { m }) }
+			for y 16:
+				p := (perm[y] as int) & 15
+				if m == 0 { gf::dot64(o2[..], 64 * y, vecs[..], 0, blk[..], 64 * p, rots[y] as int) } else if m == 1 { gf::dot64(o2[..], 64 * p, vecs[..], 0, blk[..], 64 * y, 0, rots[y] as int) } else { gf::dot64(o2[..], 64 * y, vecs[..], 0, blk[..], 64 * y) }
+			for k 1024: bad += if o1[k] != o2[k] { 1 } else { 0 }
+	print("dot16 mismatches ", bad)
+	gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..])
+	print("dot16 gather ", sum(o1[..]))
+	gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], 1)
+	print("dot16 scatter ", sum(o1[..]))
+	gv byte[1024] ~= [0; 1024]
+	bad = 0
+	for t 40:
+		fill(perm[..], 3000 + t)
+		fill(rots[..], 4000 + t)
+		for j 16 { for i 64 { gv[64 * j + i] = vecs[64 * ((perm[j] as int) & 15) + 4 * (((i >> 2) + (rots[j] as int)) & 15) + (i & 3)] } }
+		gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], 3)
+		gf::dot16(o2[..], gv[..], blk[..])
+		for k 1024: bad += if o1[k] != o2[k] { 1 } else { 0 }
+	print("dot16 moved vecs mismatches ", bad)
+	arg := args()
+	bad = 0
+	if rt_vk_cpu() == 1 || (arg.len > 1 && arg[1] == "HC_NOVK"):
+		for m 4:
+			fill(o1[..], 5)
+			fill(o2[..], 5)
+			gf::dot16(o1[..], vecs[..], blk[..], perm[..], rots[..], m)
+			rt_vk_gfdots(ptr(o2[..]), ptr(vecs[..]), ptr(blk[..]), ptr(perm[..]), ptr(rots[..]), m)
+			for k 1024: bad += if o1[k] != o2[k] { 1 } else { 0 }
+	print("direct mismatches ", bad)

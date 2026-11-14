@@ -1,0 +1,100 @@
+import gfx;
+import math;
+namespace clusters;
+let CX = 16;
+let CY = 9;
+let CZ = 24;
+let MAX_PER = 1023;
+var dropped = 0;
+var top = 0;
+var counts int[>..];
+var pair_c int[>..];
+var pair_l int[>..];
+fn build(view gfx::mat4, tan_x f32, tan_y f32, near f32, far f32, lights const float4[:], out u32[>..]&) {
+	counts.clear();
+	pair_c.clear();
+	pair_l.clear();
+	counts.resize(CX * CY * CZ, 0);
+	for i in lights.len {
+		place(view, tan_x, tan_y, near, far, lights[i], i);
+	}
+	finish(out);
+}
+fn slice_of(z f32, near f32, far f32) int {
+	let s = floor(log((z / near) as real) / log((far / near) as real) * (CZ as real));
+	clamp(s, 0.0, (CZ - 1) as real) as int
+}
+fn depth_at(k int, near f32, far f32) f32 {
+	((near as real) * pow((far / near) as real, (k as real) / (CZ as real))) as f32
+}
+fn cell(v f32, n int) int {
+	clamp(floor(v as real), 0.0, (n - 1) as real) as int
+}
+fn place(view gfx::mat4, tan_x f32, tan_y f32, near f32, far f32, l float4, li int) {
+	let px = l.x;
+	let py = l.y;
+	let pz = l.z;
+	let r = l.w;
+	let vx = view.c0.x * px + view.c1.x * py + view.c2.x * pz + view.c3.x;
+	let vy = view.c0.y * px + view.c1.y * py + view.c2.y * pz + view.c3.y;
+	let vz = view.c0.z * px + view.c1.z * py + view.c2.z * pz + view.c3.z;
+	let d = -vz;
+	if d + r < near || d - r > far { return; }
+	let k0 = slice_of(max(d - r, near), near, far);
+	let k1 = slice_of(min(d + r, far), near, far);
+	let fx = CX as f32;
+	let fy = CY as f32;
+	for k in k0..k1 + 1 {
+		let zn = depth_at(k, near, far);
+		let zf = depth_at(k + 1, near, far);
+		var dz f32 = 0.0;
+		if !(zn <= d && d <= zf) { dz = min(abs(d - zn), abs(d - zf)); }
+		if dz >= r { continue; }
+		let rc = sqrt(r * r - dz * dz);
+		let xlo = min((vx - rc) / (zn * tan_x), (vx - rc) / (zf * tan_x));
+		let xhi = max((vx + rc) / (zn * tan_x), (vx + rc) / (zf * tan_x));
+		let ylo = min((vy - rc) / (zn * tan_y), (vy - rc) / (zf * tan_y));
+		let yhi = max((vy + rc) / (zn * tan_y), (vy + rc) / (zf * tan_y));
+		if xhi < -1.0 || xlo > 1.0 || yhi < -1.0 || ylo > 1.0 { continue; }
+		let cx0 = cell((xlo * 0.5 + 0.5) * fx, CX);
+		let cx1 = cell((xhi * 0.5 + 0.5) * fx, CX);
+		let cy0 = cell((1.0 - yhi) * 0.5 * fy, CY);
+		let cy1 = cell((1.0 - ylo) * 0.5 * fy, CY);
+		for y in cy0..cy1 + 1 {
+			for x in cx0..cx1 + 1 {
+				let c = (k * CY + y) * CX + x;
+				pair_c.push(c);
+				pair_l.push(li);
+				counts[c] += 1;
+			}
+		}
+	}
+}
+fn finish(out u32[>..]&) {
+	let cells = CX * CY * CZ;
+	var total = 0;
+	dropped = 0;
+	top = 0;
+	for c in cells { total += min(counts[c], MAX_PER); dropped += max(counts[c] - MAX_PER, 0); top = max(top, counts[c]); }
+	out.clear();
+	out.resize(cells + total, 0);
+	var off = cells;
+	for c in cells {
+		let n = min(counts[c], MAX_PER);
+		var h u32 = 0;
+		if n > 0 { h = ((off << 10) | n) as u32; }
+		out[c] = h;
+		counts[c] = off;
+		off += n;
+	}
+	for i in pair_c.len {
+		let c = pair_c[i];
+		let hd = out[c];
+		let end = (hd >> 10) as int + (hd & 1023) as int;
+		if counts[c] < end {
+			out[counts[c]] = pair_l[i] as u32;
+			counts[c] += 1;
+		}
+	}
+}
+

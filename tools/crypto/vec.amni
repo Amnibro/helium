@@ -1,0 +1,97 @@
+import std;
+import os;
+import crypto.hash;
+import crypto.aead;
+import crypto.c25519;
+import crypto.rsa;
+import crypto.ecc;
+import crypto.rand;
+fn unhex(s const byte[:]) byte[>..] {
+	var o byte[>..] = [];
+	if s != "-" { hex_decode(s, o); }
+	o
+}
+fn hx(b const byte[:]) byte[>..] {
+	var o byte[>..] = [];
+	hex_encode(o, b);
+	if o.len == 0 { o.push('-'); }
+	o
+}
+fn num(s const byte[:]) int {
+	let v, ok = parse_int(s);
+	v
+}
+fn run(f const byte[:][>..]) byte[>..] {
+	let op = f[0];
+	if op == "H" { return hx(crypto::digest(num(f[1]), unhex(f[2])[..])[..]); }
+	if op == "HS" {
+		let m = unhex(f[2]);
+		let cut = num(f[3]);
+		var h = crypto::hash_new(num(f[1]));
+		var i = 0;
+		while i < m.len { let e = min(i + cut, m.len); crypto::hash_update(h, m[i..e]); i = e; }
+		return hx(crypto::hash_final(h)[..]);
+	}
+	if op == "HF" {
+		let m = unhex(f[2]);
+		let cut = num(f[3]);
+		var h = crypto::hash_new(num(f[1]));
+		crypto::hash_update(h, m[..cut]);
+		let a = crypto::hash_final(h);
+		crypto::hash_update(h, m[cut..]);
+		var o = hx(a[..]);
+		o.push(' ');
+		o.append(hx(crypto::hash_final(h)[..]));
+		return o;
+	}
+	if op == "A" {
+		let o, ok = crypto::aead_seal(num(f[1]), unhex(f[2])[..], unhex(f[3])[..], unhex(f[4])[..], unhex(f[5])[..]);
+		return if ok { hx(o[..]) } else { "ERR" };
+	}
+	if op == "AO" {
+		let o, ok = crypto::aead_open(num(f[1]), unhex(f[2])[..], unhex(f[3])[..], unhex(f[4])[..], unhex(f[5])[..]);
+		return if ok { hx(o[..]) } else { "ERR" };
+	}
+	if op == "X" { return hx(crypto::x25519(unhex(f[1])[..], unhex(f[2])[..])[..]); }
+	if op == "XB" { return hx(crypto::x25519_base(unhex(f[1])[..])[..]); }
+	if op == "XI" {
+		var k = unhex(f[1]);
+		var u = unhex(f[1]);
+		for i in num(f[2]) { let r = crypto::x25519(k[..], u[..]); u = copy(k); k = copy(r); }
+		return hx(k[..]);
+	}
+	if op == "EP" { return hx(crypto::ed25519_public(unhex(f[1])[..])[..]); }
+	if op == "ES" { return hx(crypto::ed25519_sign(unhex(f[1])[..], unhex(f[2])[..])[..]); }
+	if op == "EV" { return if crypto::ed25519_verify(unhex(f[1])[..], unhex(f[2])[..], unhex(f[3])[..]) { "1" } else { "0" }; }
+	if op == "RV" { return if crypto::rsa_pkcs1_verify(num(f[1]), unhex(f[2])[..], unhex(f[3])[..], unhex(f[4])[..], unhex(f[5])[..]) { "1" } else { "0" }; }
+	if op == "RP" { return if crypto::rsa_pss_verify(num(f[1]), num(f[2]), num(f[3]), unhex(f[4])[..], unhex(f[5])[..], unhex(f[6])[..], unhex(f[7])[..]) { "1" } else { "0" }; }
+	if op == "PK" { let o, ok = crypto::ec_public(num(f[1]), unhex(f[2])[..]); return if ok { hx(o[..]) } else { "ERR" }; }
+	if op == "PD" { let o, ok = crypto::ecdh(num(f[1]), unhex(f[2])[..], unhex(f[3])[..]); return if ok { hx(o[..]) } else { "ERR" }; }
+	if op == "PV" { return if crypto::ecdsa_verify(num(f[1]), num(f[2]), unhex(f[3])[..], unhex(f[4])[..], unhex(f[5])[..]) { "1" } else { "0" }; }
+	if op == "PVD" { return if crypto::ecdsa_verify_der(num(f[1]), num(f[2]), unhex(f[3])[..], unhex(f[4])[..], unhex(f[5])[..]) { "1" } else { "0" }; }
+	if op == "PS" { let o, ok = crypto::ecdsa_sign(num(f[1]), num(f[2]), unhex(f[3])[..], unhex(f[4])[..]); return if ok { hx(o[..]) } else { "ERR" }; }
+	if op == "PG" {
+		let d = crypto::ec_generate(num(f[1]));
+		let pk, ok = crypto::ec_public(num(f[1]), d[..]);
+		var o = hx(d[..]);
+		o.push(' ');
+		o.append(hx(pk[..]));
+		return o;
+	}
+	if op == "RB" { let a = crypto::random_bytes(num(f[1])); let b = crypto::random_bytes(num(f[1])); var o = hx(a[..]); o.push(' '); o.append(hx(b[..])); return o; }
+	if op == "KD" { let o, ok = crypto::pbkdf2(num(f[1]), unhex(f[2])[..], unhex(f[3])[..], num(f[4]), num(f[5])); return if ok { hx(o[..]) } else { "ERR" }; }
+	if op == "M" { return hx(crypto::hmac(num(f[1]), unhex(f[2])[..], unhex(f[3])[..])[..]); }
+	if op == "K" {
+		let o, ok = crypto::hkdf(num(f[1]), unhex(f[2])[..], unhex(f[3])[..], unhex(f[4])[..], num(f[5]));
+		return if ok { hx(o[..]) } else { "ERR" };
+	}
+	"?"
+}
+fn main() {
+	var d byte[>..] = [];
+	if !read_file(args()[1], d) { print("no input"); exit(1); }
+	for line in split(d[..], '\n') {
+		if line.len == 0 { continue; }
+		print(run(split(line, ' ')));
+	}
+}

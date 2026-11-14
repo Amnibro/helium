@@ -1,0 +1,8 @@
+HeLLo say hello 4 9
+HeLLo say hello -1 -1
+(?i)[a-c]+X zzABcx! 2 6
+\bWORLD\b big world 4 9
+[^a-z]+ abcDEF1 6 7
+\W Ab_c-d 4 5
+[^A-Z]+ abcDEF1 6 7
+[^x] XxXa 3 4

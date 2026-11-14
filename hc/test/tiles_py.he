@@ -1,0 +1,32 @@
+use json
+use tiles.py
+INTS := ["42", " -7 ", "+3", "1_000", "1__0", "_1", "1_", "007", "3.0", "0x10", "", "-", "9223372036854775807", "9223372036854775808", "-9223372036854775808", " 12 34"]
+FLOATS := [" 1.5 ", "1e3", "-inf", "Infinity", "+nan", "1_0.5", ".5", "5.", "1e", "abc", "", "1_", "+.5e-2", " 3 ", "1e1_0", "-0", "1e400", "0x1p3"]
+JSONS := ["null", "true", "false", "0", "3", "-2.9", "2.9", "1.0", "1e-05", "1e300", "\"\"", "\"12\"", "\" 5 \"", "\"x\"", "\"0\"", "[]", "[0]", "[1, \"a\", null, true, 2.5]", "{}", "{\"k\": [1], \"s\": \"it's\", \"q\": \"say \\\"hi\\\"\"}"]
+ISOS := ["2026-11-02T12:00:00+00:00", "2026-11-02", "2026-11-02T12:00:00Z", "2026-11-02 12:00", "2026-11-02T12:00:00.123+05:30", "20261102T120000", "2026-11-02T12", "2026-13-01", "2026-02-29", "2024-02-29T23:59:59.999999", "bad", "2026-11-02T12:00:00-07:00", "2026-W45-1", "2026W451", "2026-W45", "2026-11-02T12:00:00.1234567", "2026-11-02T12:00:00,5", "2026-11-02X12:30", "2026-11-02T1230", "2026-11-02T24:00", "2026-11-02T12:00+0530", "2026-11-02T12:00+05", "2026-11-02T12:00:00+05:30:15", "2026-11-02T12:00:00+24:00", "1970-01-01", "0001-01-01", "2026-11-02T12:00:00.", "2026-11-2"]
+ADDRS := ["Ann <ann@x.com>, me@amni.com", "\"Doe, John\" <john@x.com>", "", "bob@corp.io", "Bob (comment) <b@x.com>", "b@x.com (Bob)", "<a@b.com>", "Group: a@b.com, c@d.com;", "undisclosed-recipients:;", "Bob (a, b) <b@x.com>", "\"Unclosed <u@x.com>", "Ann (unbalanced <ann@x.com>", "a@b.com,,c@d.com", "Bob <@route:b@x.com>", "\"A \\\"quoted\\\" name\" <q@x.com>", "Ann Lee  <ann.lee@x.com> , Bob <bob@y.org>", "x@[1.2.3.4]", "Billing Team <billing@acme.com>", "ME@Amni.com, alerts@bank.com", "plainword"]
+main():
+	for t INTS:
+		n, ok := py::int_of(t)
+		print("int [", t, "] ", n, " ", ok)
+	for t FLOATS:
+		x, ok := py::float_of(t)
+		print("float [", t, "] ", pyfmt(x), " ", ok)
+	for t JSONS:
+		d ~= default<json::Doc>()
+		root, err := json::parse(t, d)
+		n, ok := py::int_of(d, root)
+		print("json ", t, " int=", n, ",", ok, " str=", py::str_of(d, root), " truthy=", py::truthy(d, root))
+	for t ISOS:
+		us, ok := py::fromisoformat(t)
+		print("iso [", t, "] ", us, " ", ok)
+	for t ADDRS:
+		names byte[>..][>..] ~= []
+		addrs byte[>..][>..] ~= []
+		py::getaddresses(t, names, addrs)
+		line byte[>..] ~= []
+		format(line, "addr [", t, "] ", names.len, ":")
+		for nm, i names:
+			for ad, j addrs:
+				if i == j: format(line, " (", nm, "|", ad, ")")
+		print(line);

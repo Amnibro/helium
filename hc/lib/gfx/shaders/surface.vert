@@ -12,6 +12,8 @@ layout(location = 7) in vec4 in_weight;
 
 layout(std430, set = 0, binding = 0) readonly buffer Joints { vec4 joint_cols[]; };   // four columns per matrix
 layout(std430, set = 0, binding = 1) readonly buffer Morphs { vec4 morph_data[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Insts { vec4 inst_cols[]; };
+layout(std430, set = 0, binding = 3) readonly buffer InstIds { vec4 inst_ids[]; };
 
 layout(set = 1, binding = 0) uniform Draw {
 	mat4 model;
@@ -19,12 +21,21 @@ layout(set = 1, binding = 0) uniform Draw {
 	mat4 view_proj;
 	mat4 prev_model;     // last frame's model matrix (velocity)
 	vec4 deform;         // x joint base (-1 none), y morph first, z targets, w first vertex
-	vec4 weights_lo;
-	vec4 weights_hi;
 	vec4 misc;           // x vertex count, y last frame's joint base (-1: reuse this frame's)
 	mat4 cur_vp;         // this frame's view-projection without the sub-pixel jitter
 	mat4 prev_vp;        // last frame's view-projection without jitter
+	vec4 weights[16];    // morph weights, four per vec4
+	vec4 prev_weights[16];
+	vec4 inst;
+	vec4 sway_o;
+	vec4 wind;
+	vec4 wind_t;
+	vec4 push[4];
+	vec4 prev_push[4];
+	vec4 water;
+	vec4 water_t;
 };
+#include "water.glsl"
 
 layout(location = 0) out vec3 out_world;
 layout(location = 1) out vec3 out_nrm;
@@ -47,20 +58,45 @@ mat4 skin(int base) {
 }
 
 float morph_weight(int t) {
-	return t < 4 ? weights_lo[t] : weights_hi[t - 4];
+	return weights[t >> 2][t & 3];
+}
+
+vec3 bend(vec3 wp, vec3 o, float hw, float sw, bool prev) {
+	float t = clamp((wp.y - o.y) / max(hw, 0.0001), 0.0, 1.0);
+	float w = t * t;
+	float time = prev ? wind_t.y : wind_t.x;
+	float g = 0.6 + 0.4 * sin(time * wind.w + 0.7 * (o.x + o.z));
+	vec3 q = wp + vec3(wind.x, 0.0, wind.z) * (g * w * sw * hw);
+	int n = int(prev ? wind_t.w : wind_t.z);
+	vec3 a = vec3(o.x, wp.y, o.z);
+	for (int i = 0; i < 4; i++) {
+		if (i < n) {
+			vec4 c = prev ? prev_push[i] : push[i];
+			vec3 d = a - c.xyz;
+			float l = length(d);
+			float hl = length(d.xz);
+			vec2 h = hl > 0.0001 ? d.xz / max(hl, 0.0001) : vec2(1.0, 0.0);
+			if (l < c.w) q += vec3(h.x, 0.0, h.y) * ((c.w - l) * w * min(sw, 1.0));
+		}
+	}
+	return q;
 }
 
 void main() {
 	vec3 p = in_pos;
+	vec3 pp = in_pos;
 	vec3 n = in_nrm;
 	int targets = int(deform.z);
 	if (targets > 0) {
 		int local_v = gl_VertexIndex - int(deform.w);
 		int count = int(misc.x);
-		for (int t = 0; t < targets && t < 8; t++) {
-			int e = (int(deform.y) + t * count + local_v) * 2;
+		for (int t = 0; t < targets && t < 64; t++) {
 			float w = morph_weight(t);
+			float pw = prev_weights[t >> 2][t & 3];
+			if (w == 0.0 && pw == 0.0) continue;
+			int e = (int(deform.y) + t * count + local_v) * 2;
 			p += morph_data[e].xyz * w;
+			pp += morph_data[e].xyz * pw;
 			n += morph_data[e + 1].xyz * w;
 		}
 	}
@@ -77,13 +113,37 @@ void main() {
 		vec3 c2 = s[2].xyz;
 		wn = cross(c1, c2) * n.x + cross(c2, c0) * n.y + cross(c0, c1) * n.z;
 	}
+	vec3 so = sway_o.xyz;
+	float sh = sway_o.w;
+	if (inst.y >= 0.0) {
+		int q = int(inst.y) + gl_InstanceIndex;
+		int k = (int(inst.x) + int(inst_ids[q >> 2][q & 3])) * 4;
+		mat4 im = mat4(inst_cols[k], inst_cols[k + 1], inst_cols[k + 2], inst_cols[k + 3]);
+		m = im * model;
+		pm = im * prev_model;
+		vec3 i0 = m[0].xyz;
+		vec3 i1 = m[1].xyz;
+		vec3 i2 = m[2].xyz;
+		wn = cross(i1, i2) * n.x + cross(i2, i0) * n.y + cross(i0, i1) * n.z;
+		so = im[3].xyz;
+		sh = inst.w * length(im[1].xyz);
+	}
 	vec4 w = m * vec4(p, 1.0);
+	vec4 pw = pm * vec4(pp, 1.0);
+	if (inst.z > 0.0) {
+		w = vec4(bend(w.xyz, so, sh, inst.z, false), 1.0);
+		pw = vec4(bend(pw.xyz, so, sh, inst.z, true), 1.0);
+	}
+	if (water.w > 0.5) {
+		w.y += water_wave(w.xz, water_t.x, water.xyz, 11).z;
+		pw.y += water_wave(pw.xz, water_t.y, water.xyz, 11).z;
+	}
 	out_world = w.xyz;
 	out_nrm = wn;
 	out_tan = vec4((m * vec4(in_tan.xyz, 0.0)).xyz, in_tan.w);
 	out_uv = vec4(in_uv0, in_uv1);
 	out_col = in_col;
 	out_cur = cur_vp * w;
-	out_prev = prev_vp * (pm * vec4(p, 1.0));
+	out_prev = prev_vp * pw;
 	gl_Position = view_proj * w;
 }

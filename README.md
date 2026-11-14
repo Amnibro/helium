@@ -24,6 +24,7 @@ build/hcn check hc/hc.he
 | `hc check file` | parse and typecheck only |
 | `hc fetch [--update] file` | clone the git packages the program declares (`import name from "owner/repo@ref";`) |
 | `hc lsp` | language server: diagnostics, hover, definition, references, rename, symbols, completion, signature help, inlay hints |
+| `hc --wgsl shader out.wgsl` | translate a `.vert`, `.frag` or `.comp` GLSL shader to WGSL for WebGPU (`--blob` writes the shader blob `embed_shader` embeds: SPIR-V, MSL, HLSL and WGSL) |
 
 Options: `--debug` (overflow, range and tag checks naming the source line), `-DNAME=V` (runtime defines), `--offline` (fetch nothing). The library directory is `HC_LIB`, else `lib` beside the executable.
 
@@ -31,7 +32,7 @@ Options: `--debug` (overflow, range and tag checks naming the source line), `-DN
 
 Two syntaxes with the same semantics: `.amni` (braces and `;`) and `.he` (indentation, no `;`, `x := e`, `fn` optional), which hc and its library are written in. [HELIUM.md](HELIUM.md) teaches the whole language in about 3.9k tokens; `hc/TODO.md` §0 lists what `.he` changes.
 
-The library in `hc/lib` is Helium throughout: `std`, `os`, `math`, `json`, `regex`, `dictionary`, `csv`, `base64`, `binary`, `ffi`, `gf` (GF(2^8) and AES-round math over byte buffers, on the CPU's GFNI and VAES instructions when present); `gfx` straight on SDL3's GPU API with a GLSL to SPIR-V/MSL/HLSL shader compiler inside hc; `ui` (a port of Nuklear); `physics` (a port of Box3D); `audio`; `web` and `webgl` for the browser. `std`, `os`, `math`, `json`, `regex`, `dictionary`, `csv`, `binary`, `ffi`, `exception` and `vec` are being rewritten and are not in this repository yet, so the bootstrap does not build until `std` is back.
+The library in `hc/lib` is Helium throughout: `std`, `os`, `math`, `json`, `regex`, `dictionary`, `base64`, `binary`, `ffi`, `gf` (GF(2^8) and AES-round math over byte buffers, on the CPU's GFNI and VAES instructions when present); `crypto` (hashes, authenticated encryption, X25519, Ed25519, ECDSA, RSA verification, X.509); `net` (sockets, TCP, TLS, HTTP, WebSocket, Socket.IO); `gfx` straight on SDL3's GPU API with a GLSL to SPIR-V/MSL/HLSL shader compiler inside hc; `ui` (a port of Nuklear); `physics` (a port of Box3D); `audio`; `web` and `webgl` for the browser.
 
 ## Performance
 
@@ -73,7 +74,7 @@ is compared both with per-node allocation and with a C arena) are in
 tools/hc/ci.sh
 ```
 
-Bootstraps if needed, then runs the corpus in `test/` and `samples/` natively, through C and as WebAssembly (each against the pass lists in `tools/hc/baseline/`), hc's own tests in `hc/test`, the vectorizer fuzzer, the language server fixtures, the web host and git package fetching. The test corpus is being rewritten and is only partly in this repository; the pass lists in `tools/hc/baseline/` still name programs that are not here yet. CI runs on your machine; nothing uses hosted runners.
+Bootstraps if needed, then runs the corpus in `test/` and `samples/` natively, through C and as WebAssembly (each against the pass lists in `tools/hc/baseline/`), hc's own tests in `hc/test`, the vectorizer fuzzer, the language server fixtures, the web host and git package fetching. The test corpus is being rewritten and is only partly in this repository; the pass lists in `tools/hc/baseline/` still name programs that are not here yet. `HELIUM_GFX_TEST=1` adds the GPU renderer checks, and `HELIUM_WGSL_TEST=1` translates every shader in `hc/lib` and `hc/test/wgsl` to WGSL and has headless Chrome's WebGPU compile each one and build the pipelines `hc/lib/gfx` makes from them (`node tools/hc/wgsltest.mjs build/hcn`). CI runs on your machine; nothing uses hosted runners.
 
 ## License
 

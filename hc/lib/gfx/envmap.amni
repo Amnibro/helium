@@ -1,0 +1,250 @@
+import gfx;
+import os;
+import math;
+import gfx.linalg;
+import gfx.codec_hdr;
+namespace envmap;
+var on bool = false;
+var physical bool = false;
+var intensity f32 = 1.0;
+var rotation f32 = 0.0;
+var blur f32 = 0.0;
+var size int = 512;
+var samples int = 512;
+var irr_samples int = 2048;
+var cube gfx::Texture;
+var dummy gfx::Texture;
+var smp gfx::Sampler;
+var smp_wrap gfx::Sampler;
+var pipe_equi gfx::Pipeline;
+var pipe_ggx gfx::Pipeline;
+var ready bool = false;
+var lv int = 0;
+var cubes int = 0;
+var cube_n int = 0;
+var gen int = 0;
+var pipe_copy gfx::Pipeline;
+var clear gfx::Texture;
+var clear_on bool = false;
+struct CopyU { p float4 }
+struct EnvU { p float4 }
+fn setup() {
+	if ready { return; }
+	pipe_equi = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_equi.frag"));
+	pipe_ggx = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_ggx.frag"));
+	pipe_copy = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_copy.frag"));
+	smp = gfx::sampler(gfx::LINEAR, gfx::CLAMP);
+	smp_wrap = gfx::sampler(gfx::SamplerDesc { min_filter: gfx::LINEAR, mag_filter: gfx::LINEAR, mip_filter: gfx::LINEAR, wrap_u: gfx::REPEAT, wrap_v: gfx::CLAMP, wrap_w: gfx::CLAMP });
+	dummy = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE_ARRAY, format: gfx::RGBA8, usage: gfx::SAMPLED, width: 1, height: 1, depth: 6 });
+	let zeros byte[4] = [0; 4];
+	for f in 0..6 {
+		gfx::update_texture(dummy, gfx::Region { layer: f as i32, w: 1, h: 1, d: 1 }, zeros[..]);
+	}
+	clear = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: 1, height: 1 });
+	ready = true;
+}
+fn levels(s int) int {
+	var n = 0;
+	var x = s;
+	while x >= 16 { n++; x /= 2; }
+	max(n, 2)
+}
+fn faces(t gfx::Texture, m int, p gfx::Pipeline, src gfx::Texture, s gfx::Sampler, rough f32, count f32, src_size f32, base int) {
+	for f in 0..6 {
+		guard gfx::begin_pass(gfx::PassDesc { color: [t, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: (base + f) as i32, mip: m as i32, .. }) else { continue; }
+		gfx::bind(p);
+		gfx::bind_texture(gfx::FRAGMENT, 0, src, s);
+		gfx::uniforms(gfx::FRAGMENT, 0, EnvU { p: float4 { f as f32, rough, count, src_size } });
+		gfx::draw(3);
+		gfx::end_pass();
+	}
+}
+fn make(n int, k int) {
+	setup();
+	let old = cube;
+	let keep = if old.id != 0 && cube_n == n { cubes } else { 0 };
+	lv = levels(n);
+	cube_n = n;
+	cubes = k;
+	cube = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE_ARRAY, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: n as i32, height: n as i32, depth: (k * 6) as i32, mips: lv as i32 });
+	for c in min(keep, k) {
+		for m in 0..lv {
+			for f in 0..6 {
+				guard gfx::begin_pass(gfx::PassDesc { color: [cube, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: (c * 6 + f) as i32, mip: m as i32, .. }) else { continue; }
+				gfx::bind(pipe_copy);
+				gfx::bind_texture(gfx::FRAGMENT, 0, old, smp);
+				gfx::uniforms(gfx::FRAGMENT, 0, CopyU { p: float4 { f as f32, c as f32, m as f32, 0.0 } });
+				gfx::draw(3);
+				gfx::end_pass();
+			}
+		}
+	}
+	if old.id != 0 { gfx::release(old); }
+	if keep == 0 { gen += 1; }
+}
+fn reserve(k int) {
+	if cube.id == 0 { make(size, k); } else if cubes < k { make(cube_n, k); }
+}
+fn filter(raw gfx::Texture, n int, at int, irr bool) {
+	if cube.id == 0 || cube_n != n { make(n, max(cubes, at + 1)); } else if cubes <= at { make(n, at + 1); }
+	for m in 0..(if irr { lv } else { lv - 1 }) {
+		var rough f32 = m as f32 / (lv - 2) as f32;
+		var count f32 = samples as f32;
+		if m == lv - 1 {
+			rough = -1.0;
+			count = irr_samples as f32;
+		} else if m == 0 {
+			rough = 0.0;
+		}
+		faces(cube, m, pipe_ggx, raw, smp, rough, count, n as f32, at * 6);
+	}
+	if at == 0 { gen += 1; }
+}
+fn sun_color(to_sun float3, power f32, haze f32) float3 {
+	let oy = 6360.2;
+	let ty = to_sun.y as real;
+	let hz = sqrt(max(1.0 - ty * ty, 0.0));
+	let b = oy * ty;
+	let c = 6360.2 * 6360.2 - 6360.0 * 6360.0;
+	if b < 0.0 && b * b > c { return float3 { 0.0, 0.0, 0.0 }; }
+	let far = -b + sqrt(b * b - (6360.2 * 6360.2 - 6460.0 * 6460.0));
+	let step = far / 64.0;
+	var dr = 0.0;
+	var dg = 0.0;
+	var db = 0.0;
+	for i in 64 {
+		let t = (i as real + 0.5) * step;
+		let px = hz * t;
+		let py = oy + ty * t;
+		let h = sqrt(px * px + py * py) - 6360.0;
+		let r = exp(-h / 8.0);
+		let m = (haze as real) * exp(-h / 1.2);
+		let z = max(1.0 - abs(h - 25.0) / 15.0, 0.0);
+		dr += (5.802e-3 * r + 4.44e-3 * m + 0.650e-3 * z) * step;
+		dg += (13.558e-3 * r + 4.44e-3 * m + 1.881e-3 * z) * step;
+		db += (33.1e-3 * r + 4.44e-3 * m + 0.085e-3 * z) * step;
+	}
+	let pw = power as real;
+	float3 { (pw * exp(-dr)) as f32, (pw * exp(-dg)) as f32, (pw * exp(-db)) as f32 }
+}
+struct EnvSkyU { p float4, sun float4, cloud float4 }
+var pipe_ms gfx::Pipeline;
+var pipe_sky gfx::Pipeline;
+var noise gfx::Texture;
+var smp_noise gfx::Sampler;
+var sky_ready bool = false;
+fn mip_count(n int) int {
+	var c = 0;
+	var x = n;
+	while x >= 1 { c++; x /= 2; }
+	c
+}
+fn setup_sky() {
+	if sky_ready { return; }
+	pipe_ms = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_ms.frag"));
+	pipe_sky = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/env_sky.frag"));
+	sky_ready = true;
+}
+fn noise_l(lat const byte[:], x int, y int, z int) real { lat[(z % 80 * 80 + y % 80) * 80 + x % 80] as real / 255.0 }
+fn noise_m(a real, b real, t real) real { a + (b - a) * t * t * (3.0 - 2.0 * t) }
+fn noise_o(lat const byte[:], st int, sh int, i int, j int, k int, bil bool) real {
+	let x = i / st * st + sh;
+	let y = j / st * st + sh / 2;
+	let z = k / st * st + sh / 4;
+	let tx = (i % st) as real / st as real;
+	let ty = (j % st) as real / st as real;
+	let v0 = noise_m(noise_m(noise_l(lat, x, y, z), noise_l(lat, x + st, y, z), tx), noise_m(noise_l(lat, x, y + st, z), noise_l(lat, x + st, y + st, z), tx), ty);
+	let v1 = noise_m(noise_m(noise_l(lat, x, y, z + st), noise_l(lat, x + st, y, z + st), tx), noise_m(noise_l(lat, x, y + st, z + st), noise_l(lat, x + st, y + st, z + st), tx), ty);
+	let v = noise_m(v0, v1, (k % st) as real / st as real);
+	let w = if v < 0.5 { 1.0 - 2.0 * v } else { 2.0 * v - 1.0 };
+	if bil { w } else { v }
+}
+fn noise_tex() gfx::Texture {
+	if noise.id != 0 { return noise; }
+	var lat byte[>..] = [];
+	for t in 512000 {
+		let v = sin((t % 80) as real * 12.9898 + (t / 80 % 80) as real * 78.233 + (t / 80 / 80) as real * 37.719) * 43758.5453;
+		lat.push(((v - floor(v)) * 255.99) as int as byte);
+	}
+	var px byte[>..] = [];
+	for t in 512000 {
+		let i = t % 80;
+		let j = t / 80 % 80;
+		let k = t / 80 / 80;
+		px.push(((0.7 * noise_o(lat[..], 4, 3, i, j, k, false) + 0.3 * noise_o(lat[..], 2, 1, i, j, k, false)) * 255.0 + 0.5) as int as byte);
+		px.push(((0.7 * noise_o(lat[..], 4, 5, i, j, k, true) + 0.3 * noise_o(lat[..], 2, 2, i, j, k, true)) * 255.0 + 0.5) as int as byte);
+		px.push(((0.7 * noise_o(lat[..], 4, 7, i, j, k, true) + 0.3 * noise_o(lat[..], 2, 4, i, j, k, true)) * 255.0 + 0.5) as int as byte);
+		px.push(255 as byte);
+	}
+	noise = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_3D, format: gfx::RGBA8, usage: gfx::SAMPLED, width: 80, height: 80, depth: 80 });
+	let _ = gfx::update_texture(noise, gfx::Region { w: 80, h: 80, d: 80 }, px[..]);
+	smp_noise = gfx::sampler(gfx::SamplerDesc { min_filter: gfx::LINEAR, mag_filter: gfx::LINEAR, mip_filter: gfx::LINEAR, wrap_u: gfx::REPEAT, wrap_v: gfx::REPEAT, wrap_w: gfx::REPEAT });
+	noise
+}
+fn sky_faces(t gfx::Texture, ms gfx::Texture, to_sun float3, power f32, haze f32, clouds f32, wind_x f32, wind_z f32) {
+	let nt = noise_tex();
+	for f in 0..6 {
+		guard gfx::begin_pass(gfx::PassDesc { color: [t, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], layer: f as i32, .. }) else { continue; }
+		gfx::bind(pipe_sky);
+		gfx::bind_texture(gfx::FRAGMENT, 0, ms, smp);
+		gfx::bind_texture(gfx::FRAGMENT, 1, nt, smp_noise);
+		gfx::uniforms(gfx::FRAGMENT, 0, EnvSkyU { p: float4 { f as f32, 0.2, 0.18, haze }, sun: float4 { to_sun.x, to_sun.y, to_sun.z, power }, cloud: float4 { clouds, wind_x, wind_z, 0.0 } });
+		gfx::draw(3);
+		gfx::end_pass();
+	}
+}
+fn set_sky(to_sun float3, power f32, haze f32, clouds f32, n int, wind_x f32, wind_z f32) {
+	setup();
+	setup_sky();
+	let ms = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: 32, height: 32 });
+	if gfx::begin_pass(gfx::PassDesc { color: [ms, gfx::Texture { 0 }, gfx::Texture { 0 }, gfx::Texture { 0 }], .. }) {
+		gfx::bind(pipe_ms);
+		gfx::uniforms(gfx::FRAGMENT, 0, EnvU { p: float4 { 0.0, 0.0, 0.18, haze } });
+		gfx::draw(3);
+		gfx::end_pass();
+	}
+	let raw = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: n as i32, height: n as i32, mips: mip_count(n) as i32 });
+	sky_faces(raw, ms, to_sun, power, haze, clouds, wind_x, wind_z);
+	gfx::release(clear);
+	clear_on = clouds > 0.0;
+	let cn = if clear_on { max(n / 2, 1) } else { 1 };
+	clear = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: cn as i32, height: cn as i32 });
+	if clear_on { sky_faces(clear, ms, to_sun, power, haze, 0.0, 0.0, 0.0); }
+	gfx::generate_mips(raw);
+	filter(raw, n, 0, true);
+	gfx::release(ms);
+	gfx::release(raw);
+	on = true;
+	physical = true;
+}
+fn set_equirect(rgba const f32[:], w int, h int) {
+	setup();
+	var bytes byte[>..] = [];
+	codec_hdr::half_pixels(rgba, bytes);
+	let t = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D, format: gfx::RGBA16F, usage: gfx::SAMPLED, width: w as i32, height: h as i32 });
+	gfx::update_texture(t, bytes[..]);
+	let raw = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_CUBE, format: gfx::RGBA16F, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: size as i32, height: size as i32, mips: mip_count(size) as i32 });
+	faces(raw, 0, pipe_equi, t, smp_wrap, 0.0, 0.0, 0.0, 0);
+	gfx::generate_mips(raw);
+	filter(raw, size, 0, true);
+	gfx::release(t);
+	gfx::release(raw);
+	on = true;
+	physical = false;
+	clear_on = false;
+}
+fn load(path const byte[:]) bool {
+	var bytes byte[>..] = [];
+	guard read_file(path, bytes) else { return false; }
+	var pix f32[>..] = [];
+	let w, h, ok = codec_hdr::decode(bytes, pix);
+	guard ok else { return false; }
+	set_equirect(pix, w, h);
+	return true;
+}
+fn texture() gfx::Texture {
+	setup();
+	if (on || cubes > 1) && cube.id != 0 { cube } else { dummy }
+}
+fn spec_lod() f32 { (lv - 2) as f32 }
+fn irr_lod() f32 { (lv - 1) as f32 }

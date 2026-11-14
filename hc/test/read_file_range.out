@@ -1,0 +1,9 @@
+whole true 100000 true
+start true 10 true
+middle true 10 true
+past end true 5 true
+after end true 0
+appended true 70010 true
+missing false 0
+negative false false 0
+removed true

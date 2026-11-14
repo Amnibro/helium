@@ -1,0 +1,13 @@
+Gate summary for commit a0f98c3, branch amnibro/vis, 2026-11-09. Same card as the gfxtest results next to this file.
+Other work shared the GPU throughout: two llama-server processes, and for part of the run an Android emulator.
+tools/hc/ci.sh: ok. native 73/73, c 68/73, web 72/73 (nothing lost against the baselines in tools/hc/baseline), vecfuzz 600/600, vecweb 140/140, he 141, lsp 29, webhost 2 (includes 140 parallel thread_pingpong runs), pkg 7, lut ok, warn 15, nav ok, net ok.
+tools/hc/gfxtest.sh: ok on the last try, TSR resolve p95 0.4511 ms (bar 0.5).
+TSR p95 on this commit, every try in order, ms: 2.3298 2.2842 2.3922 1.0783 1.9318 0.5125 1.8016 1.1779 0.83 1.3833 1.0221 1.4316 1.2066 0.9966 0.4511
+TSR p95 on main e9dccb6 at the same time, ms: 0.4998 1.4374 2.3794 2.1511 1.1343
+No other gfxtest check failed in any of these runs. The bar passes about as rarely on main as on this branch, so it needs an idle card to mean anything.
+tools/hc/webgputest.mjs: 10 scenes, a window and a compute check, 0 failures.
+tools/hc/wgsltest.mjs: 57 modules, 48 pipelines, 0 failures, 0 warnings.
+Jedi-King gate at 8e1c224: 31/32, same as baseline 7341cd9 (31/32). The one failure on both is G2, four over-long lines in the game's own sim.amni and test_sim.amni.
+Jedi-King co-op, G9.2 and G9.3, interleaved rounds with little other GPU work: this commit 4/4, baseline 4/4.
+Three earlier full Jedi-King gates on this commit under heavy GPU load failed G9.2 and G9.3. One failure was the 120 s timer on the 4078 tick win run (traced to load, baseline slows the same way). The logs of the other two were not kept, so their cause is not known.
+Thread race in hc/web/host.mjs, thread_pingpong, same wasm and load, interleaved: old host 45 traps in 560 runs, new host 0 in 560.

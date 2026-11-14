@@ -1,0 +1,33 @@
+=== -6dde6d6ffde5aa9
+pair(s const byte[:]) real, int, bool:
+	sp ~= 0
+	while sp < s.len && s[sp] != ' ': sp += 1
+	if sp >= s.len: return 0.0, 0, false
+	x, ok1 := parse_flt(s[..sp])
+	n, ok2 := parse_int(s[sp + 1..])
+	return x, n, ok1 && ok2
+main():
+	for s NUMS:
+		x, ok := parse_flt(s)
+		print("num [", s, "] ", js::num_str(x))
+	for s FIXED:
+		x, n, ok := pair(s)
+		print("fixed [", s, "] ", js::to_fixed(x, n))
+	for s LOC:
+		x, n, ok := pair(s)
+		print("loc [", s, "] ", js::locale_string(x, n))
+	for s FL:
+		x, n, ok := pair(s)
+		print("fl [", s, "] ", js::fixed_locale(x, n), " ", js::fixed_locale(x, n, true))
+	bad ~= -1
+	for i 20000:
+		x := ((i * 7919 % 2000003 - 1000001) as real) / 8.0
+		c := i % 5
+		a := js::fixed_locale(x, c)
+		t := js::to_fixed(x, c)
+		y, ok := parse_flt(t)
+		b := js::locale_string(y, c)
+		if a != b:
+			bad = i
+			break
+	if bad < 0: print("fl sweep ok") else: print("fl sweep bad ", bad);

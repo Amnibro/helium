@@ -1,0 +1,127 @@
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.scene3d;
+import gfx.shapes;
+import gfx.fx;
+import gfx.cloth;
+fn num(s const byte[:]) f32 {
+	var v real = 0.0;
+	var neg = false;
+	var frac real = 0.0;
+	for c in s { if c == '-' { neg = true; } else if c == '.' { frac = 1.0; } else if c >= '0' && c <= '9' { if frac > 0.0 { frac = frac / 10.0; v = v + (c - '0') as real * frac; } else { v = v * 10.0 + (c - '0') as real; } } }
+	(if neg { -v } else { v }) as f32
+}
+fn arg_of(i int) byte[>..] { var a byte[>..] = []; arg(i, a); a }
+fn main() {
+	if arg_count() < 12 { print("usage: scene_frame model.glb out.png width height eye_x eye_y eye_z target_x target_y target_z fov anim_time [gi]"); return; }
+	let model = arg_of(1);
+	let out_path = arg_of(2);
+	gltf::lazy_pixels = true;
+	let a = gltf::load(model[..]);
+	if a < 0 { print("scene_frame: ", gltf::error()); return; }
+	let w = num(arg_of(3)[..]) as int;
+	let h = num(arg_of(4)[..]) as int;
+	if !gfx::open_headless(w, h) { print("scene_frame: no device: ", gfx::error()[..]); return; }
+	let floor = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.55, 0.55, 0.52), if arg_count() > 13 && arg_of(13)[..] == "rtr" { 1.0 } else { 0.0 }, if arg_count() > 13 && arg_of(13)[..] == "rtr" { 0.05 } else if arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "probe" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rect") { 0.17 } else { 0.8 })));
+	s3d::place(floor, gfx::mat4_identity);
+	let it = s3d::add(a);
+	s3d::place(it, gfx::mat4_identity);
+	if gltf::assets[a].animations.count > 0 { s3d::animate(it, gltf::assets[a].animations.first, num(arg_of(12)[..])); }
+	s3d::view = s3d::Camera { eye: float3 { num(arg_of(5)[..]), num(arg_of(6)[..]), num(arg_of(7)[..]) }, target: float3 { num(arg_of(8)[..]), num(arg_of(9)[..]), num(arg_of(10)[..]) }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: num(arg_of(11)[..]), near: 0.05, far: 60.0 };
+	s3d::sun = s3d::Sun { to_sun: float3 { 0.75, 0.6, -0.45 }, rgb: float3 { 3.0, 2.85, 2.6 }, shadows: true, shadow_far: 20.0, map_size: 2048 };
+	s3d::temporal = 0;
+	let gi = arg_count() > 13 && arg_of(13)[..] == "1";
+	let e3 = arg_count() > 13 && arg_of(13)[..] == "e3";
+	let e8 = arg_count() > 13 && arg_of(13)[..] == "e8";
+	let e2 = arg_count() > 13 && (arg_of(13)[..] == "e2" || arg_of(13)[..] == "decal" || arg_of(13)[..] == "rain" || arg_of(13)[..] == "rect");
+	if e2 { s3d::ssr_on = true; s3d::ao_mode = 1; }
+	let sg = arg_count() > 13 && arg_of(13)[..] == "ssgi";
+	if sg { s3d::ssgi_on = true; }
+	if arg_count() > 13 && arg_of(13)[..] == "decal" {
+		var px byte[>..] = [];
+		for k in 64 * 64 {
+			let x = (k % 64) as f32 - 31.5;
+			let y = (k / 64) as f32 - 31.5;
+			let r = sqrt((x * x + y * y) as real) as f32;
+			px.push((if r < 14.0 { 30 } else { 220 }) as byte);
+			px.push((if r < 14.0 { 60 } else { 120 }) as byte);
+			px.push((if r < 14.0 { 160 } else { 40 }) as byte);
+			px.push(clamp((30.0 - r) * 64.0, 0.0, 255.0) as int as byte);
+		}
+		let _ = s3d::add_decal(s3d::Decal { pos: float3 { 0.5, 0.0, 1.0 }, rot: linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.5), size: float3 { 1.2, 0.6, 1.2 }, base: gltf::add_texture_rgba(px[..], 64, 64, 33071), rough: 0.8, .. });
+	}
+	if arg_count() > 13 && arg_of(13)[..] == "rain" { let _ = fx::init(65536); fx::burst(fx::add(fx::rain()), 20000); s3d::fx_dt = 1.0 / 60.0; }
+	if arg_count() > 13 && arg_of(13)[..] == "rect" {
+		s3d::sun.rgb = float3 { 0.3, 0.28, 0.26 };
+		s3d::add_rect(float3 { -1.0, 2.2, 0.5 }, float3 { -1.0, 0.0, 0.5 }, float3 { 1.0, 0.0, 0.0 }, 1.5, 0.7, float3 { 20.0, 18.0, 15.0 }, 15.0, true);
+		s3d::add_rect(float3 { 1.5, 1.2, 1.5 }, float3 { 0.0, 0.6, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 0.8, 0.8, float3 { 8.0, 10.0, 16.0 }, 15.0, false);
+	}
+	if arg_count() > 13 && arg_of(13)[..] == "inst" {
+		var mats gfx::mat4[>..] = [];
+		for k in 400 {
+			let a = 0.37 * k as f32;
+			let s = 0.8 + 0.4 * ((k * 7) % 11) as f32 / 11.0;
+			let c = cos(a as real) as f32;
+			let sn = sin(a as real) as f32;
+			mats.push(gfx::mat4 { c0: float4 { s * c, 0.0, -s * sn, 0.0 }, c1: float4 { 0.0, s, 0.0, 0.0 }, c2: float4 { s * sn, 0.0, s * c, 0.0 }, c3: float4 { -1.8 + 0.18 * (k % 20) as f32 + 0.07 * sn, 0.0, -1.8 + 0.18 * (k / 20) as f32 + 0.07 * c, 1.0 } });
+		}
+		let set = s3d::add_instances(shapes::blade(0.35, 0.03, 0.0, 3, shapes::material(linalg::v3(0.25, 0.55, 0.2), 0.0, 0.7)), mats[..]);
+		s3d::instances[set].sway = 1.0;
+		s3d::wind = s3d::Wind { dir: float3 { 1.0, 0.0, 0.3 }, strength: 0.25, speed: 2.0, time: 0.7 };
+	}
+	if arg_count() > 13 && arg_of(13)[..] == "caust" { s3d::caustics = s3d::Caustics { on: true, manual: true, focus: 3.0, level: 1.2, lo: float3 { -4.0, 1.2, -4.0 }, hi: float3 { 4.0, 1.2, 4.0 }, .. }; s3d::world_time = 1.5; }
+	let st = arg_count() > 13 && arg_of(13)[..] == "stream";
+	if st || (arg_count() > 13 && arg_of(13)[..] == "bc") {
+		s3d::tex_compress = true;
+		s3d::tex_stream = st;
+		s3d::tex_wait = st;
+		let n = if st { 512 } else { 256 };
+		var px byte[>..] = [];
+		for k in n * n {
+			let x = (k % n) as f32 * 256.0 / n as f32;
+			let y = (k / n) as f32 * 256.0 / n as f32;
+			let ring = 0.5 + 0.5 * sin(sqrt(((x - 128.0) * (x - 128.0) + (y - 128.0) * (y - 128.0)) as real) * 0.35) as f32;
+			px.push((60.0 + 180.0 * ring) as int as byte);
+			px.push((40.0 + 0.7 * x) as int as byte);
+			px.push((220.0 - 0.7 * y) as int as byte);
+			px.push(255);
+		}
+		var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 0.7);
+		m.base_tex = gltf::TexRef { texture: gltf::add_texture_rgba(px[..], n, n, 10497), uv: 0, .. };
+		s3d::place(s3d::add(shapes::cube(float3 { 0.45, 0.45, 0.45 }, m)), gfx::translate(float3 { 1.1, 0.45, 0.9 }));
+	}
+	if arg_count() > 13 && arg_of(13)[..] == "probe" { s3d::add_probe(float3 { 0.0, 1.0, 0.0 }, float3 { -2.0, 0.0, -2.0 }, float3 { 2.0, 2.5, 2.0 }, 0.5); }
+	if e8 {
+		s3d::look.auto_exposure = true; s3d::look.lut = 1.0; s3d::motion_blur = 0.5; s3d::dof_aperture = 0.08;
+		let d = s3d::view.eye - s3d::view.target;
+		s3d::dof_focus = sqrt((d.x * d.x + d.y * d.y + d.z * d.z) as real) as f32;
+	}
+	if e3 {
+		s3d::sun.angle = 0.07; s3d::sun.fit = true; s3d::sun.contact = 0.07;
+		s3d::add_spot(float3 { -3.0, 3.5, -2.0 }, float3 { 0.0, 0.8, 0.0 }, float3 { 40.0, 30.0, 60.0 }, 30.0, 0.4, true);
+		s3d::lights.push(s3d::Light { pos: float3 { 2.0, 1.5, 2.0 }, range: 20.0, rgb: float3 { 6.0, 6.0, 7.0 }, kind: 0, shadows: true, .. });
+	}
+	s3d::gi_on = gi;
+	s3d::rt_shadows = gi;
+	s3d::gi_updates_per_frame = 8;
+	if arg_count() > 13 && arg_of(13)[..] == "rtr" { s3d::rt_reflect = true; }
+	if arg_count() > 13 && arg_of(13)[..] == "sss" { var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5); skin.shading = 1; skin.shade_a = gltf::shade_preset(1, 0); skin.shade_b = gltf::shade_preset(1, 1); skin.shade_c = gltf::shade_preset(1, 2); skin.shade_c.y = 0.7; skin.shade_c.z = 0.35; s3d::sss_on = true; s3d::place(s3d::add(shapes::sphere(0.1, 48, 24, skin)), gfx::translate(float3 { 1.409, 1.448, 2.908 })); }
+	if arg_count() > 13 && arg_of(13)[..] == "cloth" { var cm = shapes::material(linalg::v3(0.2, 0.35, 0.8), 0.0, 0.8); cm.double_sided = true; cm.shading = 3; cm.shade_a = float4 { 0.25, 0.3, 0.3, 0.0 }; cm.shade_c = float4 { 0.7, 28.0, 3.0, 0.5 }; let ca = shapes::sheet(33, float3 { 0.6, 1.5, 0.9 }, float3 { 1.0, 0.0, 0.0 }, float3 { 0.0, -1.0, 0.0 }, cm); let ck = s3d::add_cloth(ca); let _ = s3d::add(ca); for i in 33 { cloth::pin(s3d::cloths[ck].c, i, 0.6 + i as real / 32.0, 1.5, 0.9); } cloth::ball(1.1, 0.9, 1.25, 0.25); s3d::place(s3d::add(shapes::sphere(0.25, 32, 16, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { 1.1, 0.9, 1.25 })); for s in 90 { s3d::step_cloth(ck, 1.0 / 60.0, float3 { 0.0, 0.0, 3.0 }); } }
+	if arg_count() > 13 && arg_of(13)[..] == "meshlet" { s3d::meshlets = true; s3d::place(s3d::add(shapes::sphere(0.5, 128, 64, shapes::material(linalg::v3(0.2, 0.7, 0.3), 0.0, 0.7))), gfx::translate(float3 { 1.1, 0.5, 0.9 })); }
+	if arg_count() > 13 && arg_of(13)[..] == "taa" { s3d::temporal = 1; s3d::ao_mode = 1; }
+	s3d::init(w, h);
+	if arg_count() > 13 && arg_of(13)[..] == "fog" { s3d::fog_on = true; s3d::fog_density = 0.08; s3d::fog_falloff = 0.0; s3d::fog_far = 20.0; s3d::fog_steps = 48; s3d::fog_lights = 8.0; s3d::fog_ambient = float3 { 0.1, 0.11, 0.13 }; s3d::fog_noise = 1.0; s3d::fog_noise_size = 4.0; s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { 0.0, 0.4, 0.0 }, half: float3 { 2.0, 0.5, 2.0 }, density: 0.7, rgb: float3 { 0.6, 0.8, 1.0 }, soft: 0.7, round: true }); s3d::add_spot(float3 { 2.0, 3.0, 1.5 }, float3 { 0.0, 0.4, 0.0 }, float3 { 60.0, 52.0, 40.0 }, 9.0, 0.35, true); }
+	if arg_count() > 13 && arg_of(13)[..] == "sea" { let a = shapes::sea(7.0, 65); gltf::materials[gltf::materials.len - 1].shade_c.w = 1.0; s3d::place(s3d::add(a), gfx::translate(float3 { 0.0, 0.35, 0.0 })); s3d::world_time = 1.5; }
+	if arg_count() > 13 && arg_of(13)[..] == "clouds" { s3d::atmosphere(float3 { 0.7071, 0.5657, -0.4243 }, 3.5, 1.0, 0.0); s3d::clouds = s3d::Clouds { on: true, cover: 0.7 }; }
+	let out = gfx::render_target(w, h, gfx::RGBA8);
+	for k in if gi || sg { 7 } else if e2 { 3 } else { 2 } {
+		if e8 { s3d::place(it, gfx::translate(float3 { 0.04 * k as f32, 0.0, 0.0 })); }
+		s3d::render(out);
+	}
+	let mcam, mall, mlost = s3d::meshlet_stats();
+	var son = 0;
+	for s in s3d::streams { if s.on { son += 1; } }
+	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " e2 ", e2, " compressed textures ", s3d::tex_encoded, " streamed textures ", son, " meshlet triangles ", mcam, " skin pass ", s3d::sss_ran, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
+	gfx::close();
+}

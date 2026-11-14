@@ -155,6 +155,7 @@ recursive wsig(n int, o byte[>..]&):
 	x := ND[n]; format(o, "(", x.k as int, ":", x.op as int, ":", x.s)
 	k := x.k as int
 	if k == N_INT || k == N_FLT || k == N_STR: o.append(tok_text(x.t))
+	if k == N_SLICE: format(o, ":", x.fl as int, if x.b < 0 { "<" } else { "" }, if x.c < 0 { ">" } else { "" })
 	ks i32[>..] ~= []; wkids(n, ks)
 	for c ks: wsig(c as int, o)
 	o.append(")")

@@ -1,0 +1,50 @@
+use os
+struct Snap { tick u32, bodies u32[], blob byte[] }
+enum Pkt { Hello { name byte[], n int }, Bye }
+struct Box { a Snap, k int }
+mk(t int) Snap:
+	g u32[>..] ~= []; g.resize(100, t as u32); bl byte[>..] ~= []; bl.resize(400, (t & 255) as byte)
+	Snap{t as u32, copy(g[..]), copy(bl[..])}
+pk(t int) Pkt, bool:
+	bl byte[>..] ~= []; bl.resize(300, (t & 255) as byte)
+	return Pkt.Hello{copy(bl[..]), t}, true
+one(t int) Pkt:
+	bl byte[>..] ~= []; bl.resize(300, (t & 255) as byte)
+	Pkt.Hello{copy(bl[..]), t}
+bx(t int) Box: Box{mk(t), t}
+pair(t int) Snap, Snap: return mk(t), mk(t + 1)
+sum(s Snap&) int:
+	n ~= 0
+	for i s.bodies.len: n += s.bodies[i] as int
+	for i s.blob.len: n += s.blob[i] as int
+	n
+noise() int: q byte[>..] ~= []; q.resize(900, 255); z := copy(q[..]); z.len
+plen(p Pkt&) int: match p { Hello h => h.name.len * 1000 + h.name[0] as int, Bye => -1 }
+rss() int:
+	b byte[>..] ~= []; ok := read_file("/proc/self/statm", b); n ~= 0; i ~= 0
+	if !ok || b.len == 0: return 0
+	while i < b.len && b[i] != ' ' { i += 1 }
+	i += 1
+	while i < b.len && b[i] != ' ' { n = n * 10 + (b[i] - '0') as int; i += 1 }
+	n * 4
+main():
+	keep ~= mk(1); total ~= 0
+	for t 5 { if t == 3 { keep = mk(40) } total += noise() }
+	print("outer assign ", sum(keep))
+	c := if total > 0 { mk(7) } else { mk(8) }
+	total += noise()
+	print("if value ", sum(c))
+	p, ok := pk(9)
+	q := one(11)
+	w := if total > 0 { one(12) } else { one(13) }
+	total += noise()
+	print("enum ", plen(p), " ", ok, " ", plen(q), " ", plen(w))
+	b ~= bx(2)
+	for t 3 { nb := bx(t + 20); if t == 1 { b = copy(nb) } total += noise() }
+	print("box ", sum(b.a), " ", b.k)
+	x, y := pair(50)
+	total += noise()
+	print("pair ", sum(x), " ", sum(y))
+	r0 := rss(); acc ~= 0
+	for t 30000 { s := mk(t); k, f := pk(t); d := bx(t); e, g := pair(t); acc += s.bodies.len + d.k + e.blob.len + g.blob.len + plen(k) % 1000 }
+	print("loop ", acc, " flat ", rss() - r0 < 16000)

@@ -1,0 +1,161 @@
+layout(local_size_x = 64) in;
+#include "strand_common.glsl"
+layout(set = 0, binding = 0) uniform sampler2D tex_nd;
+layout(set = 0, binding = 1) uniform sampler2DArray tex_sm;
+layout(std430, set = 0, binding = 2) readonly buffer Pts { vec4 pts[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Segs { uvec4 segs[]; };
+layout(std430, set = 0, binding = 4) readonly buffer LFront { uint lfront[]; };
+layout(std430, set = 0, binding = 5) readonly buffer LAcc { uint lacc[]; };
+layout(std430, set = 1, binding = 0) buffer Front { uint front[]; };
+layout(std430, set = 1, binding = 1) buffer Acc { uint acc[]; };
+float hsh(uint a, uint b) { uint h = a * 747796405u + b * 2891336453u + 1u; h ^= h >> 16; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16; return float(h & 0xffffffu) / 16777216.0; }
+#include "strand_shade.glsl"
+float seg_g;
+float seg_w;
+float lightTx(ivec2 q, float w, uint s) {
+	if (q.x < 0 || q.y < 0 || q.x >= int(light.x) || q.y >= int(light.y)) return 0.0;
+	uint li = s * uint(light.x) * uint(light.y) + uint(q.y) * uint(light.x) + uint(q.x);
+	float x = (w - uintBitsToFloat(lfront[li])) / params.x - 0.5, d = 0.0;
+	for (uint k = 0u; k < 4u; k++) d += float(lacc[li * 4u + k]) / 4096.0 * clamp(x - float(k), 0.0, 1.0);
+	return d;
+}
+float bodyT(vec3 P) {
+	if (to_sun.w < 0.5) return 1.0;
+	vec4 c = shadow_vp * vec4(P + to_sun.xyz * 0.004, 1.0);
+	vec3 n = c.xyz / c.w;
+	vec2 uv = vec2(n.x * 0.5 + 0.5, 0.5 - n.y * 0.5);
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+	vec2 sz = vec2(textureSize(tex_sm, 0).xy);
+	float lit = 0.0;
+	for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) lit += n.z - 0.0008 <= texelFetch(tex_sm, ivec3(clamp(ivec2(uv * sz) + ivec2(x, y), ivec2(0), ivec2(sz) - 1), 0), 0).r ? 1.0 : 0.0;
+	return lit / 9.0;
+}
+vec2 lightD(vec3 P, mat4 vp, float fw, uint s) {
+	vec4 c = vp * vec4(P, 1.0);
+	if (c.w < 0.02) return vec2(0.0);
+	vec2 g = vec2(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5) * light.xy - 0.5, f = fract(g);
+	ivec2 q = ivec2(floor(g));
+	float d = mix(mix(lightTx(q, c.w, s), lightTx(q + ivec2(1, 0), c.w, s), f.x), mix(lightTx(q + ivec2(0, 1), c.w, s), lightTx(q + ivec2(1, 1), c.w, s), f.x), f.y);
+	return vec2(d, d * c.w / max(params.w * seg_w * fw, 1e-9));
+}
+vec3 lit1(vec3 P, vec3 T, vec3 V, vec3 L, vec3 sig, vec3 cms, float h, float bm, float ex, vec2 ld, float sb) {
+	float nf = min(ld.y * look.y, 60.0), tr = exp(-ld.x * light.z);
+	if (tr < 0.002 && nf >= 59.0) return vec3(0.0);
+	vec3 af, ab, fs = chiang(T, L, V, sig, h, bm, mel.z, 0.035, ex, af, ab);
+	float sl = dot(T, L) + dot(T, V), sf2 = bm * bm * (1.0 + nf) + ex;
+	vec3 tf = pow(max(af + ab * 0.5, vec3(1e-3)), vec3(nf)) * sb;
+	return tr * sb * fs + tf * cms * exp(-0.5 * sl * sl / sf2) * inversesqrt(6.2831853 * sf2) * 0.1591549 * 2.0 * look.w;
+}
+vec3 shadeAt(vec3 P, vec3 T, vec3 sig0, vec3 cms, float h, float bm) {
+	vec3 sig = sig0 * 1.7, V = normalize(cam.xyz - P);
+	vec3 col = vec3(0.0);
+	if (sun_rgb.r + sun_rgb.g + sun_rgb.b > 0.0) {
+		float sb = bodyT(P);
+		if (sb > 0.0) col = sun_rgb.rgb * params.y * seg_g * lit1(P, T, V, to_sun.xyz, sig, cms, h, bm, 0.0, lightD(P, light_vp, light.w, 0u), sb);
+	}
+	for (int i = 0; i < 4; i++) {
+		if (float(i) >= mel.w) break;
+		vec3 dl = pl[i * 2].xyz - P;
+		float dd = length(dl), q = clamp(1.0 - dd * dd / (pl[i * 2].w * pl[i * 2].w), 0.0, 1.0), ar = min(plx[i].y / dd, 1.2), tc = dot(core.xyz - P, dl) / dd, oc = tc <= 0.0 || core.w <= 0.0 ? 1.0 : smoothstep(core.w * 0.8, core.w, length(core.xyz - P - dl / dd * tc));
+		if (q * oc <= 0.0) continue;
+		col += params.y * seg_g * pl[i * 2 + 1].rgb * q * q / (1.0 + dd * dd * cam.w * cam.w) * lit1(P, T, V, dl / dd, sig, cms, h, bm, 0.25 * ar * ar, lightD(P, plvp[i], plx[i].x, uint(i) + 1u), oc);
+	}
+	return col + sky.rgb * cms;
+}
+vec3 ptan(uint p) { return normalize(cross(pts[p * 3u + 1u].xyz, pts[p * 3u + 2u].xyz) + vec3(0.0, -1e-7, 0.0)); }
+vec3 partShift(uint p, float u) {
+	vec4 a = pts[p * 3u], sd = pts[p * 3u + 1u];
+	vec3 x = a.xyz + sd.xyz * u;
+	float w = smoothstep(0.004, 0.0, abs(x.x)) * smoothstep(shape.y + 0.012, shape.y + 0.042, x.z) * smoothstep(shape.x - 0.064, shape.x - 0.024, x.y) * (1.0 - smoothstep(0.0, 0.6, sd.w));
+	return vec3(sign(x.x + 1e-6) * shape.z * w, 0.0, 0.0);
+}
+vec3 strandPos(uint p, float u, float dz, float wob, float ph, float fo) {
+	vec4 a = pts[p * 3u], s = pts[p * 3u + 1u], n = pts[p * 3u + 2u];
+	float t = s.w;
+	return a.xyz + s.xyz * u + n.xyz * (dz + fo * t * t + wob * t * sin(ph + t * 23.0)) + normalize(s.xyz + vec3(1e-7)) * wob * 0.5 * t * cos(ph * 1.7 + t * 17.0);
+}
+void main() {
+	uint si = gl_GlobalInvocationID.x, j = gl_GlobalInvocationID.y;
+	if (si >= uint(size.w) || float(j) >= size.z) return;
+	uvec4 sg = segs[si];
+	uint p = sg.x, g = sg.y, kz = sg.z & 255u, kg = (sg.z >> 8) & 255u, kw = (sg.z >> 16) & 255u;
+	seg_g = kg > 0u ? float(kg) / 64.0 : 1.0;
+	seg_w = kw > 0u ? float(kw) / 64.0 : 1.0;
+	float sc = kz > 0u ? min(float(kz), size.z) : size.z, lk = pts[p * 3u + 2u].w, sn = lk > 0.5 ? sc * 0.45 : sc, sx = max(sn * (ext.w > 0.0 ? min(ext.w, 1.0) : 1.0), min(sn, 1.0));
+	if (float(j) >= sx) return;
+	float cvs = sn / sx * min(sx - float(j), 1.0);
+	float h1 = hsh(g, j * 4u + 1u), h2 = hsh(g, j * 4u + 2u), h3 = hsh(g, j * 4u + 3u);
+	float t0 = pts[p * 3u + 1u].w, t1 = pts[p * 3u + 4u].w;
+	float tend = 1.0 - 0.32 * h2 * h2;
+	if (t0 >= tend) return;
+	float fly = step(0.965 - 0.1 * sun_rgb.w, hsh(g, j * 4u + 31u));
+	float nc = 3.0 + floor(hsh(g, 999u) * 5.0), cl = floor(h3 * nc), cc = (hsh(g, 1000u + uint(cl)) * 2.0 - 1.0) * 1.2, cz = (hsh(g, 2000u + uint(cl)) - 0.5) * params.z;
+	float u0 = (fract(hsh(g, 7u) + float(j) * 0.6180339887) * 2.0 - 1.0) * 1.4, cs = (lk > 0.5 ? 0.18 : 0.62) + 0.25 * hsh(g, j * 4u + 77u) - fly * 0.4;
+	float ua = mix(u0, cc, min(cs + 0.3 * t0, 0.97)), ub = mix(u0, cc, min(cs + 0.3 * t1, 0.97));
+	float dz = mix((h1 - 0.5) * params.z, cz, lk > 0.5 ? 0.3 : 0.75) * (lk > 0.5 ? 2.2 : 1.0), wob = (0.0007 + fly * (0.0047 + 0.004 * sun_rgb.w) + lk * 0.0011) * hsh(g, j + 500u), ph = 6.2831 * h3, fo = fly * sun_rgb.w * 0.012 * (0.3 + hsh(g, j * 4u + 41u));
+	vec3 A = strandPos(p, ua, dz, wob, ph, fo) + partShift(p, ua), B = strandPos(p + 1u, ub, dz, wob, ph, fo) + partShift(p + 1u, ub);
+	if (t1 > tend) B = mix(A, B, (tend - t0) / max(t1 - t0, 1e-5));
+	bool lit = look.z > 1.5;
+	float ws = lit ? 1.0 : cam.w;
+	mat4 VP = lit ? light_vp : view_proj;
+	vec2 SZ = lit ? light.xy : size.xy;
+	vec4 ca = VP * vec4(A, 1.0), cb = VP * vec4(B, 1.0);
+	if (ca.w < 0.02 || cb.w < 0.02) return;
+	vec2 sa = vec2(ca.x / ca.w * 0.5 + 0.5, 0.5 - ca.y / ca.w * 0.5) * SZ, sb = vec2(cb.x / cb.w * 0.5 + 0.5, 0.5 - cb.y / cb.w * 0.5) * SZ;
+	vec2 d = sb - sa;
+	if (max(sa.x, sb.x) < -2.0 || max(sa.y, sb.y) < -2.0 || min(sa.x, sb.x) > SZ.x + 2.0 || min(sa.y, sb.y) > SZ.y + 2.0) return;
+	if (!lit) {
+		ivec2 hi = ivec2(SZ) - 1;
+		float da = texelFetch(tex_nd, clamp(ivec2(sa), ivec2(0), hi), 0).w, db = texelFetch(tex_nd, clamp(ivec2(sb), ivec2(0), hi), 0).w, dm = texelFetch(tex_nd, clamp(ivec2((sa + sb) * 0.5), ivec2(0), hi), 0).w, mg = 0.03 * ws;
+		if (da > 0.0 && db > 0.0 && dm > 0.0 && ca.w > da + mg && cb.w > db + mg && (ca.w + cb.w) * 0.5 > dm + mg) return;
+	}
+	float len = length(d);
+	int n = int(clamp(ceil(max(abs(d.x), abs(d.y))), 1.0, 512.0));
+	bool xm = abs(d.x) >= abs(d.y);
+	float fpx = lit ? light.w : proj[1][1] * size.y * 0.5 * ws;
+	float wa = params.w * seg_w * (1.0 - 0.5 * t0) * (lk > 0.5 ? 0.8 : 1.0), wb = params.w * seg_w * (1.0 - 0.5 * t1) * (lk > 0.5 ? 0.8 : 1.0);
+	vec3 TA = ptan(p), TB = ptan(p + 1u), Ts = normalize(B - A + vec3(1e-7));
+	TA *= sign(dot(TA, Ts) + 1e-6); TB *= sign(dot(TB, Ts) + 1e-6);
+	float hs = hsh(g, j * 4u + 9u), hm = hsh(g, j * 4u + 11u);
+	vec2 mm = mel.xy * (1.0 + 0.05 * (hsh(g, 3u) * 2.0 - 1.0)) * (1.0 + 0.22 * (hs * 2.0 - 1.0)) * vec2(1.0, 1.0 + 0.5 * hm * hm);
+	float hh = hsh(g, j * 4u + 13u) * 1.9 - 0.95, bm = hair.w * 0.75;
+	bool shade = look.z > 0.5 && look.z < 1.5;
+	vec3 colA = vec3(0.0), colB = vec3(0.0);
+	if (shade) {
+		vec3 cb = hair.rgb * (1.0 + 0.05 * (hsh(g, 3u) * 2.0 - 1.0)) * (1.0 + 0.22 * (hs * 2.0 - 1.0)) * mix(vec3(1.0), vec3(1.07, 0.98, 0.86), hm * hm);
+		colA = shadeAt(A, TA, hSigma(mm * mix(1.7, 1.0, smoothstep(0.0, 0.35, t0)) * mix(1.0, 0.85, smoothstep(0.6, 1.0, t0))), cb * mix(0.62, 1.0, smoothstep(0.0, 0.35, t0)) * mix(1.0, 1.08, smoothstep(0.6, 1.0, t0)), hh, bm);
+		colB = shadeAt(B, TB, hSigma(mm * mix(1.7, 1.0, smoothstep(0.0, 0.35, t1)) * mix(1.0, 0.85, smoothstep(0.6, 1.0, t1))), cb * mix(0.62, 1.0, smoothstep(0.0, 0.35, t1)) * mix(1.0, 1.08, smoothstep(0.6, 1.0, t1)), hh, bm);
+	}
+	float occ0 = pts[p * 3u].w, occ1 = pts[p * 3u + 3u].w;
+	bool acc_mode = look.z > 0.5 && look.z < 1.5 || look.z > 2.5;
+	for (int i = 0; i < n; i++) {
+		float f = (float(i) + 0.5) / float(n);
+		vec2 q = mix(sa, sb, f);
+		float vz = mix(ca.w, cb.w, f);
+		float wpx = mix(wa, wb, f) * fpx / vz;
+		float cov = min(wpx * cvs * len / float(n), 1.0);
+		float mn = xm ? q.y - 0.5 : q.x - 0.5;
+		float m0 = floor(mn), fr = mn - m0;
+		for (int k = 0; k < 2; k++) {
+			float w = k == 0 ? 1.0 - fr : fr;
+			ivec2 px = xm ? ivec2(int(floor(q.x)), int(m0) + k) : ivec2(int(m0) + k, int(floor(q.y)));
+			if (px.x < 0 || px.y < 0 || px.x >= int(SZ.x) || px.y >= int(SZ.y) || w <= 0.0) continue;
+			float sd = lit ? 0.0 : texelFetch(tex_nd, px, 0).w;
+			if (sd > 0.0 && vz > sd + 0.006 * ws) continue;
+			uint pi = uint(px.y) * uint(SZ.x) + uint(px.x) + (lit ? uint(shape.w) * uint(SZ.x) * uint(SZ.y) : 0u);
+			if (!acc_mode) { atomicMin(front[pi], floatBitsToUint(vz)); continue; }
+			float fd = uintBitsToFloat(front[pi]);
+			int sl = clamp(int((vz - fd) / (params.x * ws)), 0, 3);
+			uint o = (pi * 4u + uint(sl)) * 4u;
+			if (lit) { atomicAdd(acc[pi * 4u + uint(sl)], uint(cov * w * 4096.0)); continue; }
+			float dv = max(vz - fd, 0.0) / ws;
+			float ao = mix(1.0, mix(occ0, occ1, f), 0.35) * mix(exp(-dv * sky.w), 1.0, smoothstep(0.04, 0.08, dv));
+			vec3 col = mix(colA, colB, f) * ao * look.x;
+			float cw = cov * w;
+			atomicAdd(acc[o], uint(min(col.r, 64.0) * cw * 4096.0));
+			atomicAdd(acc[o + 1u], uint(min(col.g, 64.0) * cw * 4096.0));
+			atomicAdd(acc[o + 2u], uint(min(col.b, 64.0) * cw * 4096.0));
+			atomicAdd(acc[o + 3u], uint(cw * 4096.0));
+		}
+	}
+}

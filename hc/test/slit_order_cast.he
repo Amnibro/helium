@@ -1,0 +1,9 @@
+use std
+struct T { format i32 = 1, usage i32 = 1, width i32, height i32, mips i32 = 1 }
+K := 3 as i32
+pick(n int, flag bool) T: T{format: if flag { 5 as i32 } else { 7 as i32 }, width: n as! i32, height: 2 as i32, mips: if flag { 1 as i32 } else { 0 as i32 }, usage: K | 4 as i32}
+main():
+	a := pick(70000000000, true)
+	b := pick(-1, false)
+	print(a.format, " ", a.usage, " ", a.width, " ", a.height, " ", a.mips)
+	print(b.format, " ", b.usage, " ", b.width, " ", b.height, " ", b.mips)
