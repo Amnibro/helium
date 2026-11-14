@@ -735,7 +735,7 @@ inline_into(fi int, fsz i32[>..<]&, mx int):
 				h := lq[y.c] as int; for p (h + 1)..i { z := IR[p]; q := z.op as int; if (q == I_BZ || q == I_BNZ) && z.c >= 0 && lq[z.c] > i as i32 && lq[z.c] <= j as i32 { return true } }
 		false
 	kr(c int) bool:
-		g := NFS[c]; q := if g.inst >= 0 { nm(FI_[g.inst].name) } else { "" }; if !NOKR && (q.len < 3 || q[..3] != "rt_"): return false
+		g := NFS[c]; q := if g.inst >= 0 { nm(FI_[g.inst].name) } else { "" }; if q == "rt_gf" { return true } if !NOKR && (q.len < 3 || q[..3] != "rt_"): return false
 		for k (g.i0 as int)..g.i1 as int { if IR[k].op as int == I_FUN && (IR[k].c == 10 || IR[k].c == 13 || IR[k].c == 14) { return true } } false
 	pdn := fi < PID.len && PID[fi] != 0; while PID.len <= fi { PID.push(0) } PID[fi] = 1
 	pinl(x Ir) bool:

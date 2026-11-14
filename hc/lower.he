@@ -1177,7 +1177,10 @@ barg(n int, i int) int:
 			kid(n, i - 1)
 	else:
 		kid(n, i)
+LGOL ~= -1
+lgf() bool: if LGOL < 0 { nb byte[>..] ~= []; LGOL = if env("HC_GFIN", nb) { 0 } else { 1 } } LGOL == 1
 lgrow(va int, k int, es int) int:
+	if WEB && LBRK.len == 0 && lgf(): return rtcall("rt_gf", [va as i32, k as i32, imm(es) as i32])
 	rz := hdef("GS_STACK_RESERVE"); lim := (if rz >= 0 { rz & -4096 } else { 1 << 31 }) / max(es, 1); b := ldw(va, 0, 3); n := ldw(va, 8, 3); nn := bin(B_ADD, 3, n, k, -1); p := nv(); ls := nlbl(); le := nlbl()
 	ir(I_BZ, 3, -1, b, -1, ls); ir(I_BZ, 3, -1, if WEB { lcmp(bin(B_MUL, 3, nn, imm(es), -1), ldw(b, -16, 3), CC_LE) } else { lcmp(nn, imm(lim), CC_LE) }, -1, ls); stw(va, 8, nn, 3); ir(I_MOV, 3, p, bin(B_ADD, 3, b, bin(B_MUL, 3, n, imm(es), -1), -1), -1, 0); ir(I_JMP, 3, -1, -1, -1, le)
 	ir(I_LBL, 3, -1, -1, -1, ls); ir(I_MOV, 3, p, rtcall("rt_grow", [va as i32, k as i32, imm(es) as i32]), -1, 0); ir(I_LBL, 3, -1, -1, -1, le); p

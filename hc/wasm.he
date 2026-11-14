@@ -73,11 +73,51 @@ wfma(a int, b int, c int, w int):
 	fg(1); fg(4); wb(0xA2); fg(0); wb(0xA1); fg(1); fg(5); wb(0xA2); wb(0xA0); fg(2); fg(4); wb(0xA2); wb(0xA0); fg(2); fg(5); wb(0xA2); wb(0xA0); fs(1)
 	fg(0); fg(6); wb(0xA0); fs(2); fg(2); fg(0); wb(0xA1); fs(3); fg(0); fg(2); fg(3); wb(0xA1); wb(0xA1); fg(6); fg(3); wb(0xA1); wb(0xA0); fg(1); wb(0xA0); fg(2); wb(0xA0); wb(0xA2)
 	if w & 3 == 2 { wb(0xB6) }
-rg(v int): if v >= 0 && VKS[v] == 1 { if VF[v] != 0 { wfk(VKC[v] as! u64) } else { i64c(VKC[v] as int) } return } wb(0x20); ul(WO, wl(v))
-rs(v int): wb(0x21); ul(WO, wl(v))
+var ZRC i32[>..<]; var ZK i8[>..<]; var ZV i32[>..<]; var ZP i32[>..<]; var ZF i8[>..<]; var ZA i8[>..<]; var ZS i32[>..<]; ZL ~= -1; ZE ~= -1; ZW ~= -1; ZN ~= -1; ZOFF ~= false
+zev(k int, v int, f int): ZK.push(k as i8); ZV.push(v as i32); ZP.push(WO.len as i32); ZF.push(f as i8); ZA.push(0)
+rg(v int):
+	if v >= 0 && VKS[v] == 1 { if VF[v] != 0 { wfk(VKC[v] as! u64) } else { i64c(VKC[v] as int) } return }
+	if v < 0 { if !ZOFF && ZW == v && WO.len == ZE { WO[ZL] = 0x22; ZW = -1; return } wb(0x20); ul(WO, wl(v)); return }
+	ld := WO.len == ZN; ZRC[v] += 1; zev(3, v, if ld { 2 } else { 0 }); wb(0x20); ul(WO, wl(v)); if ld { ZN = WO.len }
+rs(v int): ZL = WO.len; if v >= 0 { zev(2, v, 0) } wb(0x21); ul(WO, wl(v)); ZE = WO.len; ZW = v
+zrm(v int):
+	k ~= ZS.len - 1; lo := max(0, ZS.len - 48)
+	while k >= lo: if ZV[ZS[k]] as int == v { for t (k)..(ZS.len - 1) { ZS[t] = ZS[t + 1] } ZS.pop() } k -= 1
+zq(v int) int:
+	k ~= ZS.len - 1; lo := max(0, ZS.len - 48)
+	while k >= lo: if ZV[ZS[k]] as int == v { return k } k -= 1
+	-1
+zsq():
+	n := ZK.len; if ZOFF || n == 0: return
+	ZS.clear(); e ~= 0; any ~= false
+	while e < n:
+		k := ZK[e] as int; v := ZV[e] as int
+		if k == 0: ZS.clear(); e += 1; continue
+		if k == 2: zrm(v); if (ZF[e] as int) & 2 != 0 && ZRC[v] == 1 { ZS.push(e as i32) } e += 1; continue
+		if k == 3:
+			j ~= e - 1; while j >= 0 && ZK[j] < 2 { j -= 1 }
+			if j >= 0 && ZK[j] == 2 && ZA[j] == 0 && ZV[j] as int == v && wsk(WO[..], ZP[j] as int + 1) == ZP[e] as int: any = true; if ZRC[v] == 1 { ZA[j] = (1 + 2 * ((ZF[j] as int) & (ZF[e] as int) & 1)) as i8; ZA[e] = ZA[j]; zrm(v) } else { ZA[j] = 2; ZA[e] = 1 }
+			e += 1; continue
+		g := e + 1; q := if g < n && ZK[g] == 3 && (ZF[g] as int) & 2 != 0 { zq(ZV[g] as int) } else { -1 }
+		if q < 0: e += 1; continue
+		m ~= 0
+		loop:
+			s := ZS[q + m] as int; b := (ZF[s] as int) & (ZF[g + m] as int) & 1; ZA[s] = (1 + 2 * b) as i8; ZA[g + m] = ZA[s]; m += 1
+			if (ZF[g + m - 1] as int) & 1 != 0 && b == 0: break
+			if g + m >= n || ZK[g + m] != 3 || (ZF[g + m] as int) & 2 == 0 || q + m >= ZS.len || ZV[ZS[q + m]] != ZV[g + m]: break
+		while ZS.len > q { ZS.pop() }
+		any = true; e = g + m
+	if !any: return
+	nb byte[>..<] ~= []; c ~= 0
+	for i n:
+		a := ZA[i] as int; p := ZP[i] as int
+		if a == 0: continue
+		if a == 2: WO[p] = 0x22; continue
+		en := wsk(WO[..], p + 1); nb.append(WO[c..(if a == 3 && ZK[i] == 2 { p - 1 } else { p })]); c = if a == 3 && ZK[i] == 3 { en + 1 } else { en }
+	nb.append(WO[c..]); WO.clear(); WO.append(nb[..])
 wisf(v int) bool: v >= 0 && VF[v] != 0
-lg(v int): rg(v); if wisf(v) { wb(0xBD) }
-lst(v int): if wisf(v) { wb(0xBF) } rs(v)
+lg(v int): rg(v); if wisf(v) { if v >= 0 && VKS[v] != 1 { ZF[ZF.len - 1] = ((ZF[ZF.len - 1] as int) | 1) as i8; if ZN == WO.len { ZN += 1 } } wb(0xBD) }
+lst(v int): f := wisf(v); if f { wb(0xBF) } rs(v); if f && v >= 0 { ZF[ZF.len - 1] = 1 }
 i64c(v int): wb(0x42); sl(WO, v)
 fget(v int, w int): if wisf(v) && w & 3 == 3 { rg(v); return } lg(v); if w & 3 == 3 { wb(0xBF) } else { wb(0xA7); wb(0xBE) }
 fput(d int, w int): if wisf(d) && w & 3 == 3 { rs(d); return } if w & 3 == 3 { wb(0xBD) } else { wb(0xBC); wb(0xAD) } lst(d)
@@ -122,10 +162,11 @@ wbt(): wb(0x40)
 wfcmp(c int, w int): d := w & 3 == 3; wb([if d { 0x61 } else { 0x5B }, if d { 0x62 } else { 0x5C }, if d { 0x63 } else { 0x5D }, if d { 0x64 } else { 0x5E }, if d { 0x65 } else { 0x5F }, if d { 0x66 } else { 0x60 }][c])
 wcc(c int): wb(if c == CC_E { 0x51 } else if c == CC_NE { 0x52 } else if c == CC_L { 0x53 } else if c == CC_GE { 0x59 } else if c == CC_LE { 0x57 } else if c == CC_G { 0x55 } else if c == CC_B { 0x54 } else if c == CC_AE { 0x5A } else if c == CC_BE { 0x58 } else { 0x56 })
 wfop(w int, f int, d int): wb(if w & 3 == 3 { d } else { f })
-wins(i int):
+wins(i int): ZN = WO.len; zev(1, 0, 0); n := ZK.len; wins0(i); if ZK.len > n && ZK[ZK.len - 1] == 2 && ZP[ZK.len - 1] as int == ZL && ZE == WO.len { ZF[ZK.len - 1] = ((ZF[ZK.len - 1] as int) | 2) as i8 }
+wins0(i int):
 	x := IR[i]; op := x.op as int; w := x.w as int; d := x.d as int; a := x.a as int; b := x.b as int; c := x.c; l := x.l as int
 	if op == I_NOP || op == I_LBL || op == I_JMP || op == I_BZ || op == I_BNZ: return
-	if op == I_IMM: if wisf(d) { wb(0x44); for q 8 { wb((c >> (8 * q) & 255) as int) } rs(d) } else { i64c(c); lst(d) } return
+	if op == I_IMM: if !ZOFF && VKS[d] == 1 { return } if wisf(d) { wb(0x44); for q 8 { wb((c >> (8 * q) & 255) as int) } rs(d) } else { i64c(c); lst(d) } return
 	if op == I_MOV: if wisf(a) && wisf(d) { rg(a); rs(d) } else { lg(a); lst(d) } return
 	if op == I_EXT: lg(a); wext(w); lst(d); return
 	if op == I_PARAM: wb(0x20); ul(WO, c); lst(d); return
@@ -146,9 +187,9 @@ wins(i int):
 			if c == B_DIV && l >= 0 && w & 3 != 3 && DBG: lg(-2); lg(-2); wext(w); wb(0x52); wif(); wtrap(K_OVF, l, a, b); wb(0x0B)
 			lg(-2); wext(w); lst(d); return
 		if (c == B_UDIV || c == B_UMOD) && l >= 0: lg(b); wb(0x50); wif(); wtrap(K_DIV0, l, a, b); wb(0x0B)
-		lg(a); lg(b); wb([0x7C, 0x7D, 0x7E, 0, 0, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x80, 0x82][c]); lst(-2)
-		if c <= B_MUL && l >= 0: wovf(c as int, w, l, a, b); lg(-2); lst(d); return
-		lg(-2); wext(w); lst(d); return
+		lg(a); lg(b); wb([0x7C, 0x7D, 0x7E, 0, 0, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x80, 0x82][c])
+		if c <= B_MUL && l >= 0: lst(-2); wovf(c as int, w, l, a, b); lg(-2); lst(d); return
+		wext(w); lst(d); return
 	if op == I_CMP: lg(a); lg(b); wcc(c as int); wb(0xAD); lst(d); return
 	if op == I_UN:
 		if c == 0:
@@ -415,6 +456,43 @@ wdepth(t int, back bool) int:
 	i ~= CK.len - 1
 	while i >= 0: if CT[i] == t && (back && CK[i] == 1 || !back && CK[i] == 0) { return CK.len - 1 - i } i -= 1
 	0
+ZKV ~= 0
+zk(c int, a int, x int) bool:
+	if (WO[a - 1] as int) & 64 != 0 || a - c > 6: return false
+	wrl(WO[..], c + 1); ZKV = WLV
+	if ZKV < 1024: return true
+	if x < 0 || WO[x] != 0x20 || ZKV >= 1 << 30: return false
+	wrl(WO[..], x + 1); WLV == WFP
+zpp():
+	if ZOFF: return
+	src byte[>..<] ~= []; src.append(WO[..]); b := src[..]; WO.clear(); p ~= 0; r0 ~= -1; r1 ~= -1; r2 ~= -1; r3 ~= -1; r4 ~= -1; vb byte[>..<] ~= []
+	while p < b.len:
+		o := b[p] as int; e := wnx(b, p); n := WO.len; l1 := r4 >= 0 && r4 == n - 1
+		if o == 0x45 && l1 && WO[r4] >= 0x51 && WO[r4] <= 0x5A: WO[r4] = [0x52, 0x51, 0x59, 0x5A, 0x57, 0x58, 0x55, 0x56, 0x53, 0x54][WO[r4] as int - 0x51] as byte; p = e; continue
+		if o == 0x45 && l1 && WO[r4] == 0x45 && e < b.len && (b[e] == 0x0D || b[e] == 0x04): WO.pop(); r4 = r3; r3 = r2; r2 = r1; r1 = r0; r0 = -1; p = e; continue
+		if o == 0x51 && r4 >= 0 && r4 == n - 2 && WO[r4] == 0x42 && WO[r4 + 1] == 0: WO.pop(); WO[r4] = 0x50; p = e; continue
+		if o == 0xA7 && r4 >= 0 && WO[r4] == 0x42 && n - r4 <= 5: WO[r4] = 0x41; p = e; continue
+		if o >= 0x28 && o <= 0x35 && r2 >= 0 && WO[r4] == 0xA7 && WO[r3] == 0x7C && WO[r2] == 0x42 && zk(r2, r3, r1):
+			r := wrl(b, p + 1); al := WLV; wrl(b, r); off := WLV; while WO.len > r2 { WO.pop() }
+			r2 = r1; r1 = r0; r0 = -1; r3 = WO.len; WO.push(0xA7); r4 = WO.len; WO.push(o as byte); ul(WO, al); ul(WO, off + ZKV); p = e; continue
+		v := if r4 >= 0 { WO[r4] as int } else { -1 }
+		if o >= 0x36 && o <= 0x3E && r1 >= 0 && (v == 0x20 || v == 0x42 || v == 0x44) && WO[r3] == 0xA7 && WO[r2] == 0x7C && WO[r1] == 0x42 && zk(r1, r2, r0):
+			r := wrl(b, p + 1); al := WLV; wrl(b, r); off := WLV; vb.clear(); vb.append(WO[r4..]); while WO.len > r1 { WO.pop() }
+			r1 = r0; r0 = -1; r2 = WO.len; WO.push(0xA7); r3 = WO.len; WO.append(vb[..]); r4 = WO.len; WO.push(o as byte); ul(WO, al); ul(WO, off + ZKV); p = e; continue
+		WO.append(b[p..e]); r0 = r1; r1 = r2; r2 = r3; r3 = r4; r4 = n; p = e
+zrn(tot int, h byte[>..<]&):
+	cn int[>..<] ~= []; cn.resize(tot, 0); src byte[>..<] ~= []; src.append(WO[..]); b := src[..]; p ~= 0
+	while p < b.len { o := b[p] as int; if o >= 0x20 && o <= 0x22 { wrl(b, p + 1); cn[WLV] += 1 } p = wnx(b, p) }
+	ks int[>..] ~= []; for i (WAR)..(tot): if cn[i] > 0 { ks.push(cn[i] << 24 | i) }
+	sort(ks[..]); nm i32[>..<] ~= []; nm.resize(tot, 0); for i WAR { nm[i] = i as i32 }
+	hot := max(0, 128 - WAR); nx ~= WAR; nr ~= 0; rb byte[>..<] ~= []
+	for g 8:
+		ty := [0x7E, 0x7C, 0x7F, 0x7B][g & 3]; c ~= 0
+		for k ks.len: i := ks[ks.len - 1 - k] & 16777215; if (if k < hot { 0 } else { 4 }) == (g & 4) && wlt(i) == ty { nm[i] = nx as i32; nx += 1; c += 1 }
+		if c > 0 { ul(rb, c); rb.push(ty as byte); nr += 1 }
+	ul(h, nr); h.append(rb[..]); WO.clear(); p = 0
+	while p < b.len { o := b[p] as int; e := wnx(b, p); if o >= 0x20 && o <= 0x22 { wrl(b, p + 1); WO.push(o as byte); ul(WO, nm[WLV] as int) } else { WO.append(b[p..e]) } p = e }
+wisb(s int, t int) bool: BRPO[t] <= BRPO[s] || BMRG[t] || XF[t]
 recursive wbranch(s int, t int):
 	if BRPO[t] <= BRPO[s] || BMRG[t] || XF[t]: wb(0x0C); ul(WO, wdepth(t, BRPO[t] <= BRPO[s])); return
 	wtree(t)
@@ -428,19 +506,25 @@ recursive wwithin(x int, k int, lp bool):
 	j ~= BE[x] - 1; while j > BS[x] && IR[j].op as int == I_NOP { j -= 1 }
 	op := IR[j].op as int; p ~= j - 1; while p > BS[x] && IR[p].op as int == I_NOP { p -= 1 }
 	po := if p >= BS[x] && p < j { IR[p].op as int } else { -1 }; fz := !WNOFZ && (op == I_BZ || op == I_BNZ) && (po == I_CMP || po == I_FCMP) && IR[p].d == IR[j].a && IR[j].a >= 0 && VUC[IR[j].a] == 1
+	zev(0, 0, 0)
 	for i (BS[x] as int)..(BE[x] as int): if !fz || i != p { wins(i) }
+	ZN = WO.len; zev(1, 0, 0)
 	if op == I_RET: return
 	if op == I_BZ || op == I_BNZ:
-		if fz { y := IR[p]; if po == I_CMP { lg(y.a as int); lg(y.b as int); wcc(y.c as int) } else { fget(y.a as int, y.w as int); fget(y.b as int, y.w as int); wfcmp(y.c as int, y.w as int) } if op == I_BZ { wb(0x45) } } else { lg(IR[j].a as int); if op == I_BZ { wb(0x50) } else { i64c(0); wb(0x52) } }
+		ng ~= false; t0 := BS0[x] as int; t1 := BS1[x] as int
+		if fz { y := IR[p]; if po == I_CMP { lg(y.a as int); lg(y.b as int); wcc(y.c as int) } else { fget(y.a as int, y.w as int); fget(y.b as int, y.w as int); wfcmp(y.c as int, y.w as int) } ng = (op == I_BZ) } else { lg(IR[j].a as int); if ZOFF && op == I_BNZ { i64c(0); wb(0x52) } else { wb(0x50); ng = (op == I_BNZ) } }
+		if !ZOFF && wisb(x, t0): if ng { wb(0x45) } wb(0x0D); ul(WO, wdepth(t0, BRPO[t0] <= BRPO[x])); wbranch(x, t1); return
+		if !ZOFF && wisb(x, t1): if !ng { wb(0x45) } wb(0x0D); ul(WO, wdepth(t1, BRPO[t1] <= BRPO[x])); wbranch(x, t0); return
+		if ng { wb(0x45) }
 		wif(); CK.push(2); CT.push(-1); wbranch(x, BS0[x] as int); wb(0x05); wbranch(x, BS1[x] as int); wb(0x0B); CK.pop(); CT.pop(); return
 	if BNS[x] > 0: wbranch(x, BS0[x] as int); return
 	wb(0x00)
 	return
 wfn(fi int, o byte[>..<]&):
-	f := NFS[fi]; WAR = WARI[fi] as int; WFP = WAR; WT0 = WAR + 1; WSBA = al(f.sb as int, 16); WO.clear(); CK.clear(); CT.clear(); wcolor(fi); wvneed(fi)
+	f := NFS[fi]; WAR = WARI[fi] as int; WFP = WAR; WT0 = WAR + 1; WSBA = al(f.sb as int, 16); WO.clear(); CK.clear(); CT.clear(); wcolor(fi); wvneed(fi); ZRC.clear(); ZRC.resize(f.nv as int, 0); ZK.clear(); ZV.clear(); ZP.clear(); ZF.clear(); ZA.clear(); ZW = -1; ZN = -1
 	if WSBA > 0: wb(0x23); ul(WO, 0); i64c(WSBA); wb(0x7D); wb(0x22); ul(WO, WFP); wb(0x24); ul(WO, 0); if fi != RT_SOVF { wb(0x20); ul(WO, WFP); wb(0x23); ul(WO, 2); wb(0x53); wif(); wb(0x20); ul(WO, WFP); i64c(WSBA); wb(0x7C); wb(0x24); ul(WO, 0); wcall(RT_SOVF, 0); wb(0x00); wb(0x0B) }
-	wcfg(fi); if BS.len > 0 { wtree(0) } wb(0x00); wb(0x0B); lo := wlo(fi)
-	h byte[>..<] ~= []; ul(h, 3 + (if VNF > 0 || WVI > 0 { 1 } else { 0 }) + (if WVI > 0 { 2 } else { 0 }) + (if lo { 2 } else { 0 })); ul(h, 4); h.push(0x7E); ul(h, 8); h.push(0x7C); ul(h, VN); h.push(0x7E); if VNF > 0 || WVI > 0 { ul(h, VNF); h.push(0x7C) } if WVI > 0 { ul(h, WVI); h.push(0x7F); ul(h, WVV); h.push(0x7B) } if lo { ul(h, 1); h.push(0x7F); ul(h, 2); h.push(0x7E) } ul(o, h.len + WO.len); o.append(h[..]); o.append(WO[..])
+	wcfg(fi); if BS.len > 0 { wtree(0) } wb(0x00); wb(0x0B); zsq(); zpp(); WLBA = WAR + 12 + VN + VNF + (if WVI > 0 { WVI + WVV } else { 0 }); lo := wlo(fi)
+	h byte[>..<] ~= []; if ZOFF { ul(h, 3 + (if VNF > 0 || WVI > 0 { 1 } else { 0 }) + (if WVI > 0 { 2 } else { 0 }) + (if lo { 2 } else { 0 })); ul(h, 4); h.push(0x7E); ul(h, 8); h.push(0x7C); ul(h, VN); h.push(0x7E); if VNF > 0 || WVI > 0 { ul(h, VNF); h.push(0x7C) } if WVI > 0 { ul(h, WVI); h.push(0x7F); ul(h, WVV); h.push(0x7B) } if lo { ul(h, 1); h.push(0x7F); ul(h, 2); h.push(0x7E) } } else { zrn(WLBA + (if lo { 3 } else { 0 }), h) } ul(o, h.len + WO.len); o.append(h[..]); o.append(WO[..])
 	for v VUSED: VMAP[v] = -1
 	VUSED.clear()
 wsec(o byte[>..<]&, id int, b byte[>..<]&): o.push(id as byte); ul(o, b.len); o.append(b[..])
@@ -475,7 +559,7 @@ wasm_program(out byte[>..]&) bool:
 	WSD.clear(); WSB.clear(); WSL.clear(); wseg(WRO, RO[..]); rz := hdef("GS_STACK_RESERVE")
 	for g ["RT_RSZ", "RT_SBUD", "RT_DBG", "RT_TIER", "RT_TEND"]: v := if g == "RT_TIER" { 1 } else if g == "RT_TEND" { pages * 65536 } else if g == "RT_RSZ" { if rz >= 0 { rz & -4096 } else { 1 << 25 } } else if g == "RT_SBUD" { sb := hdef("GS_STACK_BUDGET"); if sb > 0 { sb } else { 1 << 32 } } else { if DBG { 1 } else { 0 } }; if v > 0 { wgset(g, v) }
 	irw byte[>..] ~= []; dump := env("HC_IR", irw)
-	c byte[>..<] ~= []; WLC.clear(); WLT.clear(); WLNM.clear(); WLN = 0; WOF = WIMP + n + 3 + ne; WLOFF = env("HC_NOWLO", noi); WNOFZ = env("HC_NOFZ", noi); whot()
+	c byte[>..<] ~= []; WLC.clear(); WLT.clear(); WLNM.clear(); WLN = 0; WOF = WIMP + n + 3 + ne; WLOFF = env("HC_NOWLO", noi); ZOFF = env("HC_NOZSQ", noi); WNOFZ = env("HC_NOFZ", noi); whot()
 	for k n: if dump && NFS[k].inst >= 0 && nm(FI_[NFS[k].inst].name) == irw[..] { ir_dump(k) } wfn(k, c)
 	WO.clear(); ul(WO, 0); WAR = 0
 	for k WSD.len: wb(0x41); sl(WO, WSD[k]); wb(0x41); sl(WO, 0); wb(0x41); sl(WO, WSL[k]); wb(0xFC); ul(WO, 8); ul(WO, k); wb(0); wb(0xFC); ul(WO, 9); ul(WO, k)
