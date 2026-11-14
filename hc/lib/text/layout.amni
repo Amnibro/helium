@@ -1,0 +1,289 @@
+// Spans, markdown, measurement hooks, and a simple text-layout pass.
+namespace text;
+import text.utf;
+import text.bidi;
+
+let FX_BOLD = 1;
+let FX_ITALIC = 2;
+let FX_UNDER = 4;
+let FX_STRIKE = 8;
+let FX_CODE = 16;
+let FX_LINK = 32;
+let FX_H1 = 64;
+let FX_H2 = 128;
+let FX_H3 = 256;
+
+let EF_PLAIN = 0;
+let EF_BOLD = 1;
+let EF_OUTLINE = 2;
+let EF_SHADOW = 3;
+let EF_GLOW = 4;
+let EF_GRADIENT = 5;
+let EF_TYPE = 6;
+let EF_WIDE = 7;
+let EF_UNDER = 8;
+let EF_STRIKE = 9;
+
+var AD_CP int[>..] = [];
+var AD_PX f32[>..] = [];
+var ST byte[>..] = [];
+var SA int[>..] = [];
+var SB int[>..] = [];
+var SF int[>..] = [];
+var SS int[>..] = [];
+var SC int[>..] = [];
+struct TBox { x f32, y f32, w f32, h f32, span int, off int, len int }
+var BOX TBox[>..] = [];
+
+fn set_advance(cp int, px f32) {
+	for i in AD_CP.len { if AD_CP[i] == cp { AD_PX[i] = px; return; } }
+	AD_CP.push(cp);
+	AD_PX.push(px);
+}
+fn clear_advances() { AD_CP.clear(); AD_PX.clear(); }
+
+fn cluster_w(g const byte[:], size f32) f32 {
+	var custom = false;
+	var sum = 0.0;
+	var i = 0;
+	while i < g.len {
+		let cp, n = utf8_next(g, i);
+		var hit = false;
+		for k in AD_CP.len {
+			if AD_CP[k] == cp { sum += AD_PX[k] * size / 16.0; hit = true; custom = true; }
+		}
+		if !hit { sum += cp_width(cp) as f32 * size * 0.5; }
+		i += n;
+	}
+	if custom { return sum as f32; }
+	(grapheme_width(g) as f32 * size * 0.5) as f32
+}
+
+fn measure(s const byte[:], size f32) f32 {
+	var i = 0;
+	var w f32 = 0.0;
+	while i < s.len {
+		let e = grapheme_end(s, i);
+		w += cluster_w(s[i..e], size);
+		i = e;
+	}
+	w
+}
+
+fn take_graphemes(s const byte[:], n int) byte[>..] {
+	var out byte[>..] = [];
+	var i = 0;
+	var c = 0;
+	while i < s.len && c < n {
+		let e = grapheme_end(s, i);
+		out.append(s[i..e]);
+		i = e;
+		c += 1;
+	}
+	out
+}
+
+fn preset_count() int { 12 }
+fn effect_count() int { 10 }
+
+fn preset_name(i int) const byte[:] {
+	if i == 0 { return "display"; }
+	if i == 1 { return "h1"; }
+	if i == 2 { return "h2"; }
+	if i == 3 { return "h3"; }
+	if i == 4 { return "title"; }
+	if i == 5 { return "body"; }
+	if i == 6 { return "label"; }
+	if i == 7 { return "caption"; }
+	if i == 8 { return "overline"; }
+	if i == 9 { return "mono"; }
+	if i == 10 { return "dialogue"; }
+	"damage"
+}
+
+fn preset_size(i int) f32 {
+	if i == 0 { return 40.0; }
+	if i == 1 { return 32.0; }
+	if i == 2 { return 24.0; }
+	if i == 3 { return 20.0; }
+	if i == 4 { return 18.0; }
+	if i == 5 { return 16.0; }
+	if i == 6 { return 14.0; }
+	if i == 7 { return 12.0; }
+	if i == 8 { return 11.0; }
+	if i == 9 { return 15.0; }
+	if i == 10 { return 18.0; }
+	22.0
+}
+
+fn preset_effect(i int) int {
+	if i == 0 { return EF_BOLD; }
+	if i == 1 { return EF_BOLD; }
+	if i == 6 { return EF_WIDE; }
+	if i == 8 { return EF_WIDE; }
+	if i == 9 { return EF_PLAIN; }
+	if i == 10 { return EF_TYPE; }
+	if i == 11 { return EF_GLOW; }
+	EF_PLAIN
+}
+
+fn effect_name(i int) const byte[:] {
+	if i == 0 { return "plain"; }
+	if i == 1 { return "bold"; }
+	if i == 2 { return "outline"; }
+	if i == 3 { return "shadow"; }
+	if i == 4 { return "glow"; }
+	if i == 5 { return "gradient"; }
+	if i == 6 { return "typewriter"; }
+	if i == 7 { return "wide"; }
+	if i == 8 { return "underline"; }
+	"strike"
+}
+
+fn spans_clear() {
+	ST.clear(); SA.clear(); SB.clear(); SF.clear(); SS.clear(); SC.clear(); BOX.clear();
+}
+
+fn span_add(text const byte[:], flags int, size f32, color int) {
+	SA.push(ST.len);
+	ST.append(text);
+	SB.push(text.len);
+	SF.push(flags);
+	SS.push((size * 100.0) as int);
+	SC.push(color);
+}
+
+fn span_count() int { SA.len }
+fn span_flags(i int) int { SF[i] }
+fn span_size(i int) f32 { SS[i] as f32 / 100.0 }
+fn span_color(i int) int { SC[i] }
+fn span_text(i int) byte[>..] { var o byte[>..] = []; o.append(ST[SA[i]..SA[i] + SB[i]]); o }
+
+fn push_span(text const byte[:], flags int, size f32, color int) {
+	if text.len == 0 { return; }
+	span_add(text, flags, size, color);
+}
+
+fn tags_to_spans(src const byte[:]) {
+	spans_clear();
+	var flags int[16] = [0; 16];
+	var sizes f32[16] = [16.0; 16];
+	var cols int[16] = [0xFFFFFF; 16];
+	var sp = 1;
+	flags[0] = 0; sizes[0] = 16.0; cols[0] = 0xFFFFFF;
+	var at = 0;
+	var buf byte[>..] = [];
+	while at < src.len {
+		if src[at] == 60 {
+			var e = at + 1;
+			while e < src.len && src[e] != 62 { e += 1; }
+			if e < src.len {
+				if buf.len > 0 { push_span(buf[..], flags[sp - 1], sizes[sp - 1], cols[sp - 1]); buf.clear(); }
+				let tag = src[at + 1..e];
+				if tag == "b" && sp < 16 { flags[sp] = flags[sp - 1] | FX_BOLD; sizes[sp] = sizes[sp - 1]; cols[sp] = cols[sp - 1]; sp += 1; }
+				else if tag == "i" && sp < 16 { flags[sp] = flags[sp - 1] | FX_ITALIC; sizes[sp] = sizes[sp - 1]; cols[sp] = cols[sp - 1]; sp += 1; }
+				else if tag == "u" && sp < 16 { flags[sp] = flags[sp - 1] | FX_UNDER; sizes[sp] = sizes[sp - 1]; cols[sp] = cols[sp - 1]; sp += 1; }
+				else if tag == "s" && sp < 16 { flags[sp] = flags[sp - 1] | FX_STRIKE; sizes[sp] = sizes[sp - 1]; cols[sp] = cols[sp - 1]; sp += 1; }
+				else if tag == "code" && sp < 16 { flags[sp] = flags[sp - 1] | FX_CODE; sizes[sp] = sizes[sp - 1]; cols[sp] = cols[sp - 1]; sp += 1; }
+				else if tag.len > 7 && tag[..7] == "color=#" && sp < 16 {
+					var v = 0;
+					for k in 7..tag.len { let c = tag[k]; let d = if c >= 97 { c - 87 } else if c >= 65 { c - 55 } else { c - 48 }; v = v * 16 + d as int; }
+					flags[sp] = flags[sp - 1]; sizes[sp] = sizes[sp - 1]; cols[sp] = v; sp += 1;
+				} else if tag.len > 5 && tag[..5] == "size=" && sp < 16 {
+					var v = 0;
+					for k in 5..tag.len { v = v * 10 + (tag[k] - 48) as int; }
+					flags[sp] = flags[sp - 1]; sizes[sp] = v as f32; cols[sp] = cols[sp - 1]; sp += 1;
+				} else if tag.len > 0 && tag[0] == 47 && sp > 1 { sp -= 1; }
+				else { buf.append(src[at..e + 1]); }
+				at = e + 1;
+				continue;
+			}
+		}
+		buf.push(src[at]);
+		at += 1;
+	}
+	if buf.len > 0 { push_span(buf[..], flags[sp - 1], sizes[sp - 1], cols[sp - 1]); }
+}
+
+fn md_inline(line const byte[:], flags int, size f32, color int) {
+	var i = 0;
+	var buf byte[>..] = [];
+	var fl = flags;
+	while i < line.len {
+		if i + 1 < line.len && line[i] == 42 && line[i + 1] == 42 {
+			if buf.len > 0 { push_span(buf[..], fl, size, color); buf.clear(); }
+			fl = fl ^ FX_BOLD;
+			i += 2;
+			continue;
+		}
+		if line[i] == 42 { if buf.len > 0 { push_span(buf[..], fl, size, color); buf.clear(); } fl = fl ^ FX_ITALIC; i += 1; continue; }
+		if i + 1 < line.len && line[i] == 126 && line[i + 1] == 126 {
+			if buf.len > 0 { push_span(buf[..], fl, size, color); buf.clear(); }
+			fl = fl ^ FX_STRIKE;
+			i += 2;
+			continue;
+		}
+		if line[i] == 96 { if buf.len > 0 { push_span(buf[..], fl, size, color); buf.clear(); } fl = fl ^ FX_CODE; i += 1; continue; }
+		if line[i] == 91 {
+			var j = i + 1;
+			while j < line.len && line[j] != 93 { j += 1; }
+			if j + 1 < line.len && line[j] == 93 && line[j + 1] == 40 {
+				if buf.len > 0 { push_span(buf[..], fl, size, color); buf.clear(); }
+				var k = j + 2;
+				while k < line.len && line[k] != 41 { k += 1; }
+				push_span(line[i + 1..j], fl | FX_LINK | FX_UNDER, size, 0x7EB6FF);
+				i = k + 1;
+				continue;
+			}
+		}
+		buf.push(line[i]);
+		i += 1;
+	}
+	if buf.len > 0 { push_span(buf[..], fl, size, color); }
+}
+
+fn markdown(src const byte[:]) {
+	spans_clear();
+	var i = 0;
+	while i < src.len {
+		var e = i;
+		while e < src.len && src[e] != 10 { e += 1; }
+		let line = src[i..e];
+		if line.len >= 4 && line[0] == 35 && line[1] == 35 && line[2] == 35 && line[3] == 32 { md_inline(line[4..], FX_H3 | FX_BOLD, 20.0, 0xFFFFFF); }
+		else if line.len >= 3 && line[0] == 35 && line[1] == 35 && line[2] == 32 { md_inline(line[3..], FX_H2 | FX_BOLD, 24.0, 0xFFFFFF); }
+		else if line.len >= 2 && line[0] == 35 && line[1] == 32 { md_inline(line[2..], FX_H1 | FX_BOLD, 32.0, 0xFFFFFF); }
+		else if line.len >= 2 && line[0] == 45 && line[1] == 32 { md_inline(line[2..], 0, 16.0, 0xFFFFFF); }
+		else { md_inline(line, 0, 16.0, 0xFFFFFF); }
+		i = e + 1;
+	}
+}
+
+fn layout_spans(max_w f32) int {
+	BOX.clear();
+	var lines = 0;
+	var x f32 = 0.0;
+	var y f32 = 0.0;
+	var line_h f32 = 0.0;
+	for s in SA.len {
+		let size = SS[s] as f32 / 100.0 as f32;
+		let text = ST[SA[s]..SA[s] + SB[s]];
+		var i = 0;
+		while i < text.len {
+			let e = grapheme_end(text, i);
+			let w = cluster_w(text[i..e], size);
+			let h = (size * 1.25) as f32;
+			if x > 0.0 && x + w > max_w {
+				lines += 1;
+				x = 0.0 as f32;
+				y += line_h;
+				line_h = 0.0 as f32;
+			}
+			BOX.push(TBox { x: x, y: y, w: w, h: h, span: s, off: SA[s] + i, len: e - i });
+			x += w;
+			if h > line_h { line_h = h; }
+			i = e;
+		}
+	}
+	if BOX.len > 0 { lines += 1; }
+	lines
+}

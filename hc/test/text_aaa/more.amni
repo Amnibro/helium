@@ -1,0 +1,85 @@
+import text;
+fn cps(s const byte[:]) byte[>..] {
+	var xs int[>..] = [];
+	var i = 0;
+	while i < s.len { let cp, n = text::utf8_next(s, i); xs.push(cp); i += n; }
+	var o byte[>..] = [];
+	for c in xs { if o.len > 0 { o.push(44); } format(o, c); }
+	o
+}
+fn eq(got const byte[:], want const byte[:], name const byte[:]) int {
+	if got != want { print("FAIL ", name, " [", got, "] != [", want, "]"); return 1; }
+	print("PASS ", name);
+	0
+}
+fn eqi(got int, want int, name const byte[:]) int {
+	if got != want { print("FAIL ", name, " ", got, " != ", want); return 1; }
+	print("PASS ", name);
+	0
+}
+fn main() {
+	var fail = 0;
+	var heb byte[>..] = [];
+	text::utf8_put(heb, 0x5D0);
+	text::utf8_put(heb, 0x5D1);
+	let vis = text::bidi_visual(heb[..]);
+	fail += eq(cps(vis[..]), "1489,1488", "bidi hebrew");
+	var mix byte[>..] = [];
+	mix.append("ab");
+	mix.append(heb[..]);
+	let vis2 = text::bidi_visual(mix[..]);
+	fail += eq(cps(vis2[..]), "97,98,1489,1488", "bidi mixed");
+	fail += eq(text::wrap("hello world", 5)[..], "hello\nworld", "wrap");
+	fail += eq(text::slugify("Hello, World!")[..], "hello-world", "slug");
+	fail += eq(text::truncate("hello", 4, "...")[..], "h...", "trunc");
+	var slots byte[>..][>..] = [];
+	slots.push([]); slots[0].append("Ann");
+	slots.push([]); slots[1].append("42");
+	slots.push([]); slots[2].append("1234.5");
+	slots.push([]); slots[3].append("hi");
+	fail += eq(text::interpolate("Hi {0}", slots)[..], "Hi Ann", "interp name");
+	fail += eq(text::interpolate("{1:06d}", slots)[..], "000042", "interp d");
+	fail += eq(text::interpolate("{2:,.2f}", slots)[..], "1,234.50", "interp f");
+	fail += eq(text::interpolate("{3:>6}", slots)[..], "    hi", "interp align");
+	fail += eq(text::interpolate("{{ok}}", slots)[..], "{ok}", "interp brace");
+	fail += eq(text::currency(12.5, "USD")[..], "$12.50", "usd");
+	fail += eq(text::format_date(2026, 11, 13, "YYYY-MM-DD")[..], "2026-11-13", "date");
+	fail += eq(text::format_time(15, 4, 5, "HH:mm:ss")[..], "15:04:05", "time");
+	let id = text::rope_new();
+	text::rope_append(id, "hello");
+	text::rope_insert(id, 5, "!");
+	text::rope_insert(id, 0, "X");
+	fail += eq(text::rope_flatten(id)[..], "Xhello!", "rope insert");
+	text::rope_delete(id, 1, 5);
+	fail += eq(text::rope_flatten(id)[..], "X!", "rope delete");
+	let b = text::builder();
+	text::b_add(b, "aa");
+	text::b_add(b, "bb");
+	fail += eq(text::b_text(b)[..], "aabb", "builder");
+	fail += eq(text::re_match("ab12cd", "\\d+")[..], "12", "re digits");
+	fail += eq(text::re_match("cat", "c(a|o)t")[..], "cat", "re alt");
+	let a0, b0 = text::re_find("zzab", "(ab)");
+	let g0, g1 = text::re_group(1);
+	fail += eqi(g1 - g0, 2, "re group len");
+	text::markdown("**hi** *there*");
+	fail += eqi(text::span_count(), 3, "md spans");
+	fail += eqi(text::span_flags(0) & 1, 1, "md bold");
+	fail += eqi(text::span_flags(2) & 2, 2, "md italic");
+	text::set_advance(65, 10.0);
+	let mw = text::measure("A", 16.0);
+	fail += eqi(if mw > 9.9 && mw < 10.1 { 1 } else { 0 }, 1, "advance hook");
+	text::clear_advances();
+	text::spans_clear();
+	text::span_add("hello world", 0, 16.0, 0xFFFFFF);
+	let lines = text::layout_spans(40.0);
+	fail += eqi(if lines >= 2 { 1 } else { 0 }, 1, "layout wrap");
+	fail += eq(text::take_graphemes("abcdef", 3)[..], "abc", "type prefix");
+	fail += eqi(if text::preset_count() >= 5 { 1 } else { 0 }, 1, "presets");
+	fail += eqi(if text::effect_count() >= 5 { 1 } else { 0 }, 1, "effects");
+	var wide byte[>..] = [];
+	text::utf8_put(wide, 0x3042);
+	fail += eqi(text::display_width(wide[..]), 2, "kana width");
+	fail += eq(text::wrap("hello, world", 8)[..], "hello,\nworld", "no break before comma stay");
+	print("more fails ", fail);
+	if fail != 0 { abort("text tests failed"); }
+}

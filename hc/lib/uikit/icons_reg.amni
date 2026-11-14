@@ -1,0 +1,63 @@
+// Dispatch for named pictogram batches. Generated from pictogram_src.py.
+namespace uikit;
+import uikit.icons_b0;
+import uikit.icons_b1;
+import uikit.icons_b2;
+import uikit.icons_b3;
+import uikit.icons_b4;
+
+fn icon_named() int { ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 + ICON_N4 }
+
+fn icon_len(id int) int {
+	if id < 0 || id >= icon_named() { return 0; }
+	if id < ICON_N0 { return ICON_AT0[id + 1] - ICON_AT0[id]; }
+	if id < ICON_N0 + ICON_N1 {
+		let j1 = id - (ICON_N0);
+		return ICON_AT1[j1 + 1] - ICON_AT1[j1];
+	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 {
+		let j2 = id - (ICON_N0 + ICON_N1);
+		return ICON_AT2[j2 + 1] - ICON_AT2[j2];
+	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 {
+		let j3 = id - (ICON_N0 + ICON_N1 + ICON_N2);
+		return ICON_AT3[j3 + 1] - ICON_AT3[j3];
+	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 + ICON_N4 {
+		let j4 = id - (ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3);
+		return ICON_AT4[j4 + 1] - ICON_AT4[j4];
+	}
+	0
+}
+
+fn icon_byte(id int, k int) int {
+	if id < 0 || id >= icon_named() { return 0; }
+	if id < ICON_N0 { return ICON_OPS0[ICON_AT0[id] + k] as int; }
+	if id < ICON_N0 + ICON_N1 {
+		let j1 = id - (ICON_N0);
+		return ICON_OPS1[ICON_AT1[j1] + k] as int;
+	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 {
+		let j2 = id - (ICON_N0 + ICON_N1);
+		return ICON_OPS2[ICON_AT2[j2] + k] as int;
+	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 {
+		let j3 = id - (ICON_N0 + ICON_N1 + ICON_N2);
+		return ICON_OPS3[ICON_AT3[j3] + k] as int;
+	}
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 + ICON_N4 {
+		let j4 = id - (ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3);
+		return ICON_OPS4[ICON_AT4[j4] + k] as int;
+	}
+	0
+}
+
+fn icon_name(id int) const byte[:] {
+	if id < 0 { return "sword"; }
+	if id < ICON_N0 { return icon_name_0(id); }
+	if id < ICON_N0 + ICON_N1 { return icon_name_1(id - (ICON_N0)); }
+	if id < ICON_N0 + ICON_N1 + ICON_N2 { return icon_name_2(id - (ICON_N0 + ICON_N1)); }
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 { return icon_name_3(id - (ICON_N0 + ICON_N1 + ICON_N2)); }
+	if id < ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3 + ICON_N4 { return icon_name_4(id - (ICON_N0 + ICON_N1 + ICON_N2 + ICON_N3)); }
+	"blob"
+}

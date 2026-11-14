@@ -1,0 +1,697 @@
+// Software painter. Looks, theme families, and text effects are drawn here.
+namespace uikit;
+import text;
+import uikit.font;
+import uikit.theme;
+import uikit.core;
+import uikit.widgets;
+import uikit.vtext;
+import uikit.icons;
+import uikit.drawx;
+
+var PIX byte[>..] = [];
+var PW = 0;
+var PH = 0;
+var HIT_GAP f32 = 0.14;
+var HIT_A = 255;
+var APP_UI = 0;
+var CX = 0; var CY = 0; var CW = 0; var CH = 0;
+var SPIN f32 = 0.0;
+var TMP byte[>..] = [];
+
+fn canvas(w int, h int) {
+	PW = w; PH = h;
+	PIX.resize(w * h * 4, 0);
+	CX = 0; CY = 0; CW = w; CH = h;
+}
+
+fn put(x int, y int, rgb u32, a int) {
+	if a <= 0 || x < CX || y < CY || x >= CX + CW || y >= CY + CH || x < 0 || y < 0 || x >= PW || y >= PH { return; }
+	let i = (y * PW + x) * 4;
+	let sr = ((rgb >> 16) & 255) as int;
+	let sg = ((rgb >> 8) & 255) as int;
+	let sb = (rgb & 255) as int;
+	if a >= 255 { PIX[i] = sr as! byte; PIX[i + 1] = sg as! byte; PIX[i + 2] = sb as! byte; PIX[i + 3] = 255 as! byte; return; }
+	let dr = PIX[i] as int; let dg = PIX[i + 1] as int; let db = PIX[i + 2] as int;
+	let nr = dr + (sr - dr) * a / 255;
+	let ng = dg + (sg - dg) * a / 255;
+	let nb = db + (sb - db) * a / 255;
+	PIX[i] = nr as! byte; PIX[i + 1] = ng as! byte; PIX[i + 2] = nb as! byte; PIX[i + 3] = 255 as! byte;
+}
+
+fn fill_rect(x int, y int, w int, h int, rgb u32, a int) {
+	if w <= 0 || h <= 0 { return; }
+	for yy in y..y + h { for xx in x..x + w { put(xx, yy, rgb, a); } }
+}
+
+fn round_rect(x int, y int, w int, h int, rad int, rgb u32, a int) {
+	if rad <= 0 || THEME.pixel != 0 { fill_rect(x, y, w, h, rgb, a); return; }
+	let r = if rad > w / 2 { w / 2 } else if rad > h / 2 { h / 2 } else { rad };
+	for yy in y..y + h {
+		for xx in x..x + w {
+			var dx = 0;
+			var dy = 0;
+			if xx < x + r && yy < y + r { dx = x + r - xx; dy = y + r - yy; }
+			else if xx >= x + w - r && yy < y + r { dx = xx - (x + w - r - 1); dy = y + r - yy; }
+			else if xx < x + r && yy >= y + h - r { dx = x + r - xx; dy = yy - (y + h - r - 1); }
+			else if xx >= x + w - r && yy >= y + h - r { dx = xx - (x + w - r - 1); dy = yy - (y + h - r - 1); }
+			if dx == 0 && dy == 0 || dx * dx + dy * dy <= r * r { put(xx, yy, rgb, a); }
+		}
+	}
+}
+
+fn stroke_rect(x int, y int, w int, h int, rgb u32, t int) {
+	fill_rect(x, y, w, t, rgb, 255);
+	fill_rect(x, y + h - t, w, t, rgb, 255);
+	fill_rect(x, y, t, h, rgb, 255);
+	fill_rect(x + w - t, y, t, h, rgb, 255);
+}
+
+fn glyph_at(x int, y int, ch int, sc int, rgb u32, a int) {
+	for row in 7 {
+		let bits = glyph_row(ch, row);
+		for col in 5 {
+			if bits & (1 << (4 - col)) != 0 {
+				fill_rect(x + col * sc, y + row * sc, sc, sc, rgb, a);
+			}
+		}
+	}
+}
+
+var TXT_BOLD = false;
+var TXT_ITAL = false;
+var TXT_MONO = false;
+var RIP f32[>..] = [];
+var RIPX f32[>..] = [];
+var RIPY f32[>..] = [];
+
+fn ensure_rip(id int) {
+	while RIP.len <= id { RIP.push(0.0); RIPX.push(0.0); RIPY.push(0.0); }
+}
+fn ripple_at(id int, x f32, y f32) { ensure_rip(id); RIP[id] = 0.15; RIPX[id] = x; RIPY[id] = y; }
+fn ripple_tick(dt f32) { for i in RIP.len { if RIP[i] > 0.0 { RIP[i] += dt * 2.2; if RIP[i] > 1.4 { RIP[i] = 0.0; } } } }
+
+fn blit_run(rgb u32, dx int, dy int, mul int) {
+	for i in GI.len {
+		let id = GI[i];
+		let x0 = GX[i] as int + C_X[id] + dx;
+		let y0 = GY[i] as int + C_Y[id] + dy;
+		for py in C_H[id] {
+			for px in C_W[id] {
+				let a = alpha(id, px, py) * mul / 255;
+				if a > 0 { put(x0 + px, y0 + py, rgb, a); }
+			}
+		}
+	}
+}
+
+fn draw_text_base(x int, baseline int, s const byte[:], size f32, rgb u32, effect int, limit int) {
+	if THEME.pixel == 0 && fonts_ready() {
+		TRACK = if effect == 7 { size * 0.08 } else { 0.0 };
+		let n = place_run(s, x as f32, baseline as f32, size, TXT_MONO, TXT_BOLD || effect == 1, TXT_ITAL, limit);
+		if n > 0 {
+			if effect != 2 && effect != 3 { blit_run(0x000000, 1, 1, 170); }
+			if effect == 2 { blit_ring(0x000000, 2, 255); blit_ring(0x000000, 1, 220); }
+			if effect == 3 { blit_shadow(0x000000); }
+			if effect == 4 { blit_ring(THEME.accent, 4, 80); blit_ring(THEME.accent, 2, 140); }
+			if effect == 5 && n > 1 {
+				for i in n {
+					let col = lerp_rgb(rgb, THEME.accent, i as f32 / n as f32);
+					let id = GI[i];
+					let x0 = GX[i] as int + C_X[id];
+					let y0 = GY[i] as int + C_Y[id];
+					for py in C_H[id] { for px in C_W[id] { let a = alpha(id, px, py); if a > 0 { put(x0 + px, y0 + py, col, a); } } }
+				}
+			} else { blit_run(rgb, 0, 0, 255); }
+			if effect == 8 || effect == 9 {
+				let y1 = baseline + (if effect == 8 { 2 } else { -(size * 0.3) as int });
+				let x1 = GX[0] as int;
+				let x2 = GX[n - 1] as int + 8;
+				let thick = if SCALE > 1.5 { 2 } else { 1 };
+				fill_rect(x1, y1, x2 - x1, thick, rgb, 255);
+			}
+		}
+		TRACK = 0.0;
+		return;
+	}
+	let sc = font_scale(size);
+	let y = baseline - 6 * sc;
+	var pen = x;
+	var n = 0;
+	var i = 0;
+	let total = text::grapheme_count(s);
+	while i < s.len {
+		if limit >= 0 && n >= limit { break; }
+		let e = text::grapheme_end(s, i);
+		let cp = s[i] as int;
+		let wide = if text::cp_width(cp) == 2 { 2 } else { 1 };
+		var col = rgb;
+		if effect == 5 && total > 1 { col = lerp_rgb(rgb, THEME.accent, n as f32 / total as f32); }
+		if effect != 2 && effect != 3 { glyph_at(pen + sc, y + sc, cp, sc, 0x000000, 150); }
+		let gw = 6 * sc * wide;
+		if effect == 3 { glyph_at(pen + sc, y + sc, cp, sc, 0x000000, 140); }
+		if effect == 2 {
+			glyph_at(pen - sc, y, cp, sc, 0x000000, 255);
+			glyph_at(pen + sc, y, cp, sc, 0x000000, 255);
+			glyph_at(pen, y - sc, cp, sc, 0x000000, 255);
+			glyph_at(pen, y + sc, cp, sc, 0x000000, 255);
+		}
+		if effect == 4 { glyph_at(pen, y, cp, sc + 1, THEME.accent, 90); }
+		if effect == 1 { glyph_at(pen + sc, y, cp, sc, col, 255); }
+		glyph_at(pen, y, cp, sc, col, 255);
+		if effect == 8 { fill_rect(pen, y + 7 * sc, gw - sc, sc, col, 255); }
+		if effect == 9 { fill_rect(pen, y + 3 * sc, gw - sc, sc, col, 255); }
+		let extra = if effect == 7 { sc * 2 } else { 0 };
+		pen += gw + extra;
+		n += 1;
+		i = e;
+	}
+}
+
+fn paint_star(cx int, cy int, r int, rgb u32) {
+	var i = 0;
+	while i < 5 {
+		let a0 = -90 + i * 72;
+		let a1 = a0 + 36;
+		let a2 = a0 + 72;
+		let x0 = cx + cos_milli(a0) * r / 1000;
+		let y0 = cy + sin_milli(a0) * r / 1000;
+		let x1 = cx + cos_milli(a1) * (r / 2) / 1000;
+		let y1 = cy + sin_milli(a1) * (r / 2) / 1000;
+		let x2 = cx + cos_milli(a2) * r / 1000;
+		let y2 = cy + sin_milli(a2) * r / 1000;
+		fill_tri(cx, cy, x0, y0, x1, y1, rgb);
+		fill_tri(cx, cy, x1, y1, x2, y2, rgb);
+		i += 1;
+	}
+}
+
+fn paint_ticks(x int, y int, rgb u32) {
+	stroke_line(x, y + 8, x + 4, y + 12, rgb);
+	stroke_line(x + 4, y + 12, x + 11, y + 3, rgb);
+	stroke_line(x + 8, y + 8, x + 12, y + 12, rgb);
+	stroke_line(x + 12, y + 12, x + 19, y + 3, rgb);
+}
+
+fn draw_text(x int, y int, s const byte[:], size f32, rgb u32, effect int, limit int) {
+	if s.len == 2 && s[0] == 118 && s[1] == 118 { paint_ticks(x, y + 2, rgb); return; }
+	let asc, desc = em_box(size);
+	draw_text_base(x, y + (asc + 0.5) as int, s, size, rgb, effect, limit);
+}
+
+fn draw_centered(bx int, by int, bw int, bh int, s const byte[:], size f32, rgb u32, effect int) {
+	let tw = text_advance(s, size);
+	let x = (bx as f32 + (bw as f32 - tw) / 2.0 + 0.5) as int;
+	let asc, desc = em_box(size);
+	let base = (by as f32 + (bh as f32 - asc - desc) / 2.0 + asc + 0.5) as int;
+	draw_text_base(x, base, s, size, rgb, effect, -1);
+}
+
+fn label_shift(bw f32, bh f32, s const byte[:], size f32, left int, top_bias f32) f32, f32 {
+	let tw = text_advance(s, size);
+	let x = if left < 0 { bw / 2.0 - tw / 2.0 } else { left as f32 };
+	var errx = (x + tw / 2.0) - bw / 2.0;
+	let asc, desc = em_box(size);
+	let base = if top_bias < 0.0 { (bh - asc - desc) / 2.0 + asc } else { top_bias + size * 0.80 };
+	let mid = base - (asc - desc) / 2.0;
+	var erry = mid - bh / 2.0;
+	if errx < 0.0 { errx = 0.0 - errx; }
+	if erry < 0.0 { erry = 0.0 - erry; }
+	return errx, erry;
+}
+
+fn icon_center_err(cell int, glyph int) f32 {
+	let left = (cell - glyph) / 2;
+	var e = (left as f32 + glyph as f32 / 2.0) - cell as f32 / 2.0;
+	if e < 0.0 { e = 0.0 - e; }
+	e
+}
+
+fn node_text(id int) const byte[:] { if N[id].str_i < 0 { "" } else { s_text(N[id].str_i) } }
+
+fn blur_rect(x int, y int, w int, h int, rad int) {
+	if w < 2 || h < 2 || rad < 1 { return; }
+	var src byte[>..] = [];
+	src.resize(w * h * 4, 0);
+	for yy in h {
+		for xx in w {
+			let sx = x + xx;
+			let sy = y + yy;
+			let di = (yy * w + xx) * 4;
+			if sx >= 0 && sy >= 0 && sx < PW && sy < PH {
+				let si = (sy * PW + sx) * 4;
+				src[di] = PIX[si]; src[di + 1] = PIX[si + 1]; src[di + 2] = PIX[si + 2]; src[di + 3] = PIX[si + 3];
+			}
+		}
+	}
+	for yy in h {
+		for xx in w {
+			var r = 0; var g = 0; var b = 0; var n = 0;
+			for k in -rad..rad + 1 {
+				let sx = xx + k;
+				if sx >= 0 && sx < w {
+					let si = (yy * w + sx) * 4;
+					r += src[si] as int; g += src[si + 1] as int; b += src[si + 2] as int; n += 1;
+				}
+			}
+			if n > 0 {
+				let si = (yy * w + xx) * 4;
+				src[si] = (r / n) as! byte; src[si + 1] = (g / n) as! byte; src[si + 2] = (b / n) as! byte;
+			}
+		}
+	}
+	for yy in h {
+		for xx in w {
+			var r = 0; var g = 0; var b = 0; var n = 0;
+			for k in -rad..rad + 1 {
+				let sy = yy + k;
+				if sy >= 0 && sy < h {
+					let si = (sy * w + xx) * 4;
+					r += src[si] as int; g += src[si + 1] as int; b += src[si + 2] as int; n += 1;
+				}
+			}
+			if n > 0 { put(x + xx, y + yy, ((r / n) << 16 | (g / n) << 8 | (b / n)) as u32, 255); }
+		}
+	}
+}
+
+fn noise(x int, y int) int {
+	var n = x * 374761393 + y * 668265263;
+	n = (n ^ (n >> 13)) * 1274126177;
+	(n ^ (n >> 16)) & 255
+}
+
+fn chrome(x int, y int, w int, h int, look int, hot int, on int) u32, u32 {
+	var fill = THEME.surface;
+	var ink = THEME.ink;
+	var rad = if look == LOOK_SHARP || THEME.pixel != 0 || THEME.family == FAM_BRUTAL { 0 } else { (THEME.radius * SCALE) as int };
+	if look == LOOK_FILLED || look == LOOK_ELEVATED { fill = THEME.accent; ink = THEME.on_accent; }
+	else if look == LOOK_TONAL { fill = THEME.surface2; ink = THEME.ink; }
+	else if look == LOOK_OUTLINE || look == LOOK_GHOST || look == LOOK_SHARP { fill = THEME.surface; ink = THEME.ink; }
+	if on != 0 && look != LOOK_FILLED { fill = THEME.accent; ink = THEME.on_accent; }
+	if hot != 0 { fill = mix_rgb(fill, THEME.ink); }
+	if THEME.glass != 0 {
+		var yy = 6;
+		while yy < h - 6 {
+			fill_rect(x + 4, y + yy, w - 8, 3, THEME.accent, 160);
+			yy += 8;
+		}
+		blur_rect(x, y, w, h, (3.0 * SCALE) as int);
+	}
+	let a = if THEME.glass != 0 { 120 } else { 255 };
+	if APP_UI != 0 && w >= 160 && h >= 48 {
+		round_rect(x + 4, y + 12, w - 4, h - 4, rad, 0x000000, 110);
+		blur_rect(x - 12, y, w + 28, h + 28, 6);
+		blur_rect(x - 12, y, w + 28, h + 28, 4);
+		blur_rect(x - 12, y, w + 28, h + 28, 2);
+	} else if THEME.family == FAM_BRUTAL || THEME.shadow == 2 { fill_rect(x + (6.0 * SCALE) as int, y + (6.0 * SCALE) as int, w, h, 0x000000, 255); }
+	else if look == LOOK_ELEVATED || THEME.shadow == 1 {
+		fill_rect(x + 2, y + (3.0 * SCALE) as int, w, h, 0x000000, 28);
+		fill_rect(x + 1, y + (6.0 * SCALE) as int, w, h, 0x000000, 18);
+	}
+	if THEME.shadow == 3 || THEME.family == FAM_NEON {
+		round_rect(x, y, w, h, rad, THEME.accent, 220);
+		blur_rect(x, y, w, h, (3.0 * SCALE) as int);
+		let inset = (3.0 * SCALE) as int;
+		if w > inset * 2 && h > inset * 2 { round_rect(x + inset, y + inset, w - inset * 2, h - inset * 2, rad, THEME.accent, 255); }
+	}
+	if look == 6 || look == 16 { rad = h / 2; }
+	if look == 7 || look == 17 { rad = 0; }
+	if look != LOOK_GHOST {
+		if THEME.family == FAM_FANTASY {
+			for yy in h {
+				for xx in w {
+					let n = noise(x + xx, y + yy);
+					let tint = if (n & 15) == 0 { mix_rgb(fill, 0xFFFFFF) } else { fill };
+					put(x + xx, y + yy, tint, 255);
+				}
+			}
+		} else { round_rect(x, y, w, h, rad, fill, a); }
+	}
+	let bw = if look == LOOK_SHARP || THEME.family == FAM_BRUTAL { if THEME.border_w < 2.0 { (2.0 * SCALE) as int } else { (THEME.border_w * SCALE) as int } } else { (THEME.border_w * SCALE) as int };
+	if bw > 0 && look != LOOK_FILLED { stroke_rect(x, y, w, h, if look == LOOK_OUTLINE || look == LOOK_SHARP || THEME.family == FAM_NEON { THEME.accent } else { THEME.border }, bw); }
+	if APP_UI != 0 && look == LOOK_FILLED { stroke_rect(x, y, w, h, THEME.border, 1); }
+	if THEME.glass != 0 {
+		fill_rect(x + 2, y + 2, w - 4, (2.0 * SCALE) as int, 0xFFFFFF, 110);
+		fill_rect(x + 2, y + h - 3, w - 4, 1, 0x000000, 40);
+	}
+	if THEME.pixel != 0 {
+		var yy = y;
+		while yy < y + h { if yy % 3 == 2 { fill_rect(x, yy, w, 1, 0x000000, 80); } yy += 1; }
+	}
+	if look == 8 { fill_rect(x, y, (5.0 * SCALE) as int, h, THEME.accent, 255); }
+	if look == 9 { fill_rect(x, y, w / 2, h, THEME.accent, 255); }
+	if look == 12 { fill_rect(x, y + h - (4.0 * SCALE) as int, w, (4.0 * SCALE) as int, 0x000000, 50); }
+	if look == 13 {
+		var dx = x;
+		while dx < x + w { fill_rect(dx, y, 6, (2.0 * SCALE) as int, THEME.accent, 255); dx += 10; }
+	}
+	if look == 15 { fill_rect(x, y + h - (3.0 * SCALE) as int, w, (3.0 * SCALE) as int, THEME.accent, 255); }
+	if THEME.family == FAM_FANTASY {
+		var tick = x + 8;
+		while tick < x + w - 8 { fill_rect(tick, y, 2, 3, THEME.accent, 200); fill_rect(tick, y + h - 3, 2, 3, THEME.accent, 200); tick += 8; }
+		var ticky = y + 8;
+		while ticky < y + h - 8 { fill_rect(x, ticky, 3, 2, THEME.accent, 200); fill_rect(x + w - 3, ticky, 3, 2, THEME.accent, 200); ticky += 8; }
+		let arm = (10.0 * SCALE) as int;
+		let t = if bw > 1 { bw } else { 2 };
+		stroke_rect(x, y, arm, t, THEME.accent, t);
+		stroke_rect(x, y, t, arm, THEME.accent, t);
+		stroke_rect(x + w - arm, y, arm, t, THEME.accent, t);
+		stroke_rect(x + w - t, y, t, arm, THEME.accent, t);
+		stroke_rect(x, y + h - t, arm, t, THEME.accent, t);
+		stroke_rect(x, y + h - arm, t, arm, THEME.accent, t);
+		stroke_rect(x + w - arm, y + h - t, arm, t, THEME.accent, t);
+		stroke_rect(x + w - t, y + h - arm, t, arm, THEME.accent, t);
+	}
+	if APP_UI == 0 && look != LOOK_GHOST && w >= 48 && h >= 32 { panel_depth(x, y, w, h); }
+	return fill, ink;
+}
+
+fn panel_depth(x int, y int, w int, h int) {
+	let top = h / 3;
+	if top > 1 { fill_rect(x + 1, y + 1, w - 2, top, 0xFFFFFF, 26); }
+	let bot = h / 3;
+	if bot > 1 { fill_rect(x + 1, y + h - bot, w - 2, bot, 0x000000, 40); }
+	fill_rect(x, y, w, 1, 0xFFFFFF, 100);
+	fill_rect(x, y + 1, 1, h - 2, 0xFFFFFF, 55);
+	fill_rect(x, y + h - 1, w, 1, 0x000000, 120);
+	fill_rect(x + w - 1, y + 1, 1, h - 2, 0x000000, 80);
+	if h > 16 { fill_rect(x + 2, y + 2, w - 4, 3, 0x000000, 60); }
+}
+
+fn icon(x int, y int, kind int, rgb u32) {
+	if kind == 0 { fill_rect(x + 8, y + 2, 4, 16, rgb, 255); fill_rect(x + 2, y + 8, 16, 4, rgb, 255); }
+	else if kind == 1 { fill_rect(x + 4, y + 10, 4, 4, rgb, 255); fill_rect(x + 7, y + 7, 10, 4, rgb, 255); }
+	else if kind == 2 { fill_rect(x + 3, y + 3, 14, 3, rgb, 255); fill_rect(x + 3, y + 14, 14, 3, rgb, 255); }
+	else if kind == 3 { fill_rect(x + 2, y + 4, 16, 2, rgb, 255); fill_rect(x + 2, y + 9, 16, 2, rgb, 255); fill_rect(x + 2, y + 14, 12, 2, rgb, 255); }
+	else if kind == 4 { fill_rect(x + 4, y + 6, 4, 4, rgb, 255); fill_rect(x + 8, y + 8, 4, 4, rgb, 255); fill_rect(x + 12, y + 10, 4, 4, rgb, 255); }
+	else if kind == 5 { fill_rect(x + 6, y + 3, 4, 14, rgb, 255); fill_rect(x + 6, y + 13, 10, 4, rgb, 255); }
+	else if kind == 6 { fill_rect(x + 8, y + 4, 4, 4, rgb, 255); fill_rect(x + 4, y + 8, 12, 4, rgb, 255); fill_rect(x + 8, y + 12, 4, 4, rgb, 255); }
+	else { fill_rect(x + 8, y + 2, 4, 4, rgb, 255); fill_rect(x + 4, y + 6, 12, 4, rgb, 255); fill_rect(x + 2, y + 10, 16, 3, rgb, 255); }
+}
+
+fn bar(x int, y int, w int, h int, v f32, fill u32, look int) {
+	round_rect(x, y, w, h, 4, THEME.surface2, 255);
+	var fw = (w as f32 * v) as int;
+	if fw < 0 { fw = 0; }
+	if fw > w { fw = w; }
+	var trail = v + HIT_GAP;
+	if trail > 1.0 { trail = 1.0; }
+	var tw = (w as f32 * trail) as int;
+	if tw < fw { tw = fw; }
+	if tw > w { tw = w; }
+	let chip = if HIT_A > 200 { 0xFFE7A8 } else if HIT_A > 140 { 0xF0C36A } else { 0xC4A060 };
+	if tw > fw { fill_rect(x + fw, y, tw - fw, h, chip as u32, HIT_A); }
+	if look == 1 {
+		var i = 0;
+		while i < fw { fill_rect(x + i, y, 8, h, fill, 255); i += 12; }
+	} else if look == 4 || THEME.pixel != 0 {
+		var i = 0;
+		while i < fw { fill_rect(x + i, y, 6, h, fill, 255); i += 8; }
+	} else {
+		round_rect(x, y, fw, h, 4, fill, 255);
+	}
+	if fw > 2 && h > 3 { fill_rect(x, y, fw, 2, 0xFFFFFF, 70); }
+	var tick = 16;
+	while tick < w { fill_rect(x + tick, y, 1, h, 0x000000, 110); tick += 16; }
+	if look == 2 { stroke_rect(x, y, w, h, THEME.accent, 2); }
+	if look == 5 { fill_rect(x, y, w, 2, 0xFFFFFF, 180); }
+}
+
+recursive fn paint_node(id int) {
+	if !shown(id) || N[id].w < 1.0 || N[id].h < 1.0 { return; }
+	TXT_MONO = N[id].preset == 9;
+	TXT_BOLD = N[id].preset <= 1;
+	TXT_ITAL = N[id].flags & 256 != 0;
+	let x = N[id].x as int;
+	let y = N[id].y as int;
+	let w = N[id].w as int;
+	let h = N[id].h as int;
+	let clipx = CX; let clipy = CY; let clipw = CW; let cliph = CH;
+	let look = N[id].look;
+	let hot = if N[id].flags & FL_HOVER != 0 || N[id].flags & FL_PRESS != 0 { 1 } else { 0 };
+	let on = if N[id].flags & FL_ON != 0 { 1 } else { 0 };
+	let k = N[id].kind;
+	if k != K_LABEL && k != K_DIV && k != K_FLEX && k != K_GRID && k != K_STACK && k != K_WRAP && k != K_SCROLL && k != K_FRAME {
+		let fill, ink = chrome(x, y, w, h, look, hot, on);
+		let tx = node_text(id);
+		let size = label_size(id);
+		if k == K_BUTTON || k == K_FAB || k == K_SEG || k == K_BADGE || k == K_CHIP || k == K_TAG || k == K_TOAST || k == K_TIP || k == K_MSG || k == K_CRUMB {
+			draw_centered(x, y, w, h, tx, size, ink, N[id].effect);
+		} else if k == K_ICON {
+			icon_draw(N[id].i0, x + 4, y + 4, if h - 8 < 8 { 8 } else { h - 8 }, ink);
+		} else if k == K_LABEL {
+			draw_text(x, y, tx, size, if N[id].fg != 0 { N[id].fg } else { THEME.ink }, N[id].effect, -1);
+		} else if k == K_TOGGLE || k == K_CHECK || k == K_RADIO {
+			if k == K_TOGGLE {
+				round_rect(x + 8, y + h / 2 - 8, 32, 16, 8, if on != 0 { THEME.accent } else { THEME.surface2 }, 255);
+				let kx = if on != 0 { x + 24 } else { x + 10 };
+				round_rect(kx, y + h / 2 - 6, 12, 12, 6, THEME.on_accent, 255);
+			} else if k == K_CHECK {
+				stroke_rect(x + 8, y + h / 2 - 8, 16, 16, THEME.accent, 2);
+				if on != 0 { fill_rect(x + 12, y + h / 2 - 4, 8, 8, THEME.accent, 255); }
+			} else {
+				round_rect(x + 8, y + h / 2 - 8, 16, 16, 8, THEME.surface, 255);
+				stroke_rect(x + 8, y + h / 2 - 8, 16, 16, THEME.accent, 2);
+				if on != 0 { round_rect(x + 12, y + h / 2 - 4, 8, 8, 4, THEME.accent, 255); }
+			}
+			draw_text(x + 32, y + 8, tx, size, THEME.ink, 0, -1);
+		} else if k == K_SLIDER || k == K_RANGE {
+			let t = y + h / 2;
+			fill_rect(x + 8, t, w - 16, 4, THEME.surface2, 255);
+			if k == K_SLIDER {
+				let kx = x + 8 + ((w - 24) as f32 * N[id].val) as int;
+				fill_rect(x + 8, t, kx - x, 4, THEME.accent, 255);
+				round_rect(kx, t - 6, 12, 14, 6, THEME.accent, 255);
+			} else {
+				let ax = x + 8 + ((w - 24) as f32 * N[id].val) as int;
+				let bx = x + 8 + ((w - 24) as f32 * N[id].val2) as int;
+				fill_rect(ax, t, bx - ax, 4, THEME.accent, 255);
+				round_rect(ax, t - 6, 12, 14, 6, THEME.accent, 255);
+				round_rect(bx, t - 6, 12, 14, 6, THEME.on_accent, 255);
+			}
+		} else if k == K_FIELD || k == K_AREA || k == K_COMBO {
+			let limit = if N[id].effect == 6 { N[id].i0 } else { -1 };
+			draw_text(x + 8, y + 8, tx, size, THEME.ink, N[id].effect, limit);
+			if N[id].flags & FL_FOCUS != 0 {
+				let caret = x + 8 + text_advance(tx, size) as int;
+				fill_rect(caret, y + 6, 2, h - 12, THEME.accent, 255);
+			}
+		} else if k == K_SELECT || k == K_DATE || k == K_TIME {
+			TMP.clear();
+			if k == K_DATE { format(TMP, N[id].i0, "-", N[id].i1, "-", N[id].i2); }
+			else if k == K_TIME {
+				if N[id].i1 < 10 { format(TMP, N[id].i0, ":0", N[id].i1); }
+				else { format(TMP, N[id].i0, ":", N[id].i1); }
+			}
+			else { TMP.append(tx); }
+			draw_text(x + 8, y + 8, TMP[..], size, THEME.ink, 0, -1);
+		} else if k == K_COLOR {
+			let hue = if N[id].i1 == 0 { 210 } else { N[id].i1 };
+			let ss = if N[id].val <= 0.0 { 0.8 } else { N[id].val };
+			let vv = if N[id].val2 <= 0.0 { 0.9 } else { N[id].val2 };
+			paint_picker(x, y, w, h, hue, ss, vv);
+		} else if k == K_PROGRESS || k == K_HEALTH || k == K_MANA {
+			let col = if k == K_HEALTH { 0xE23B3B } else if k == K_MANA { 0x3B6FE2 } else { THEME.accent };
+			bar(x + 6, y + 4, w - 12, h - 8, N[id].val, col as u32, look);
+		} else if k == K_SPIN {
+			let ang = (SPIN * 8.0) as int % 8;
+			fill_rect(x + w / 2 - 2, y + 6 + ang, 4, 10, THEME.accent, 255);
+		} else if k == K_SKELETON {
+			fill_rect(x + 8, y + 8, w / 2, 8, THEME.surface2, 255);
+		} else if k == K_AVATAR {
+			let seed = if tx.len > 0 { tx[0] as int } else { 0 };
+			let face = h - 10;
+			let cx = x + h / 2;
+			let cy = y + h / 2 + 2;
+			var skin = 0xF1C7A4;
+			var hair = 0x2A2118;
+			if seed % 5 == 1 { skin = 0xE0AC7A; hair = 0xC4A35A; }
+			else if seed % 5 == 2 { skin = 0xC68642; hair = 0x4A2C1A; }
+			else if seed % 5 == 3 { skin = 0x8D5524; hair = 0x1A120C; }
+			else if seed % 5 == 4 { skin = 0xF6D7B0; hair = 0x6B3A2A; }
+			fill_ell(cx, cy - face / 5, face / 2 + 2, face / 2, hair as u32, 255);
+			if seed % 3 == 1 {
+				fill_ell(cx - face / 3, cy, face / 5, face / 3, hair as u32, 255);
+				fill_ell(cx + face / 3, cy, face / 5, face / 3, hair as u32, 255);
+			} else if seed % 3 == 2 {
+				fill_ell(cx, cy - face / 3, face / 3, face / 6, hair as u32, 255);
+			}
+			fill_ell(cx, cy + 2, face / 2 - 1, face / 2 - 2, skin as u32, 255);
+			fill_ell(cx - face / 6, cy, 2, 2, 0x2A2118, 255);
+			fill_ell(cx + face / 6, cy, 2, 2, 0x2A2118, 255);
+		} else if k == K_PAGE {
+			let ps = 14.0 * SCALE;
+			draw_text(x + 8, y + 8, "<", ps, THEME.ink, 0, -1);
+			TMP.clear();
+			format(TMP, N[id].i0 + 1, " / ", N[id].i1);
+			draw_text(x + (28.0 * SCALE) as int, y + 8, TMP[..], ps, THEME.ink, 0, -1);
+			draw_text(x + w - (20.0 * SCALE) as int, y + 8, ">", ps, THEME.ink, 0, -1);
+		} else if k == K_RATE {
+			var s = 0;
+			while s < 5 {
+				let cx = x + 12 + s * 16;
+				let cy = y + h / 2;
+				let col = if s < N[id].i0 { 0xE0A100 } else { THEME.border };
+				paint_star(cx, cy, 7, col as u32);
+				s += 1;
+			}
+		} else if k == K_MINI {
+			paint_minimap(x, y, w, h, N[id].i3);
+		} else if k == K_INV {
+			paint_inventory(x, y, w, h, N[id].i0, N[id].i1, N[id].i3);
+		} else if k == K_QUEST {
+			paint_quest(x, y, w, h, N[id].i3);
+		} else if k == K_BOSS {
+			paint_boss(x, y, w, h, tx, N[id].val);
+		} else if k == K_BUFF {
+			paint_buffs(x, y, w, h, N[id].i3);
+		} else if k == K_COOL {
+			paint_cooldowns(x, y, w, h, N[id].i3);
+		} else if k == K_CHART {
+			fill_rect(x + 2, y + 2, w - 4, h - 4, THEME.surface, 255);
+			paint_chart(x, y, w, h, N[id].i0);
+		} else if k == K_RADIAL {
+			paint_radial(x, y, w, h, N[id].i0, N[id].i1, N[id].i3);
+		} else if k == K_DIALOGUE {
+			let shown = N[id].i0;
+			draw_text(x + 12, y + 12, tx, size, THEME.ink, 6, shown);
+			if N[id].flags & FL_FOCUS != 0 || shown < text::grapheme_count(tx) { fill_rect(x + w - 24, y + h - 16, 8, 8, THEME.accent, 255); }
+		} else if k == K_DAMAGE {
+			var col = if look == 1 { 0xFFE14A } else if look == 2 { 0x5DFF8A } else if look == 3 { 0xC46BFF } else if look == 4 { 0xB0B0B0 } else if look == 5 { 0xFF7A3C } else { 0xFFFFFF };
+			if contrast_ratio(col as u32, THEME.surface) < 4.5 { col = THEME.ink; }
+			draw_centered(x, y, w, h, tx, size, col as u32, 2);
+		} else if k == K_STEP {
+			let ps = 14.0 * SCALE;
+			draw_text(x + 8, y + 8, "-", ps, THEME.ink, 0, -1);
+			TMP.clear();
+			format(TMP, N[id].val as int);
+			draw_text(x + w / 2 - 8, y + 8, TMP[..], ps, THEME.ink, 0, -1);
+			draw_text(x + w - (20.0 * SCALE) as int, y + 8, "+", ps, THEME.ink, 0, -1);
+		} else if k == K_TABLE {
+			let cols = if N[id].i1 < 1 { 1 } else if N[id].i1 > 8 { 8 } else { N[id].i1 };
+			var rowf f32 = 36.0;
+			var textf f32 = 22.0;
+			if APP_UI != 0 { rowf = 32.0; textf = 16.0; }
+			let rh = (rowf * SCALE) as int;
+			let ts = textf * SCALE;
+			let pin = if N[id].i3 < 0 { 0 } else if N[id].i3 > cols { cols } else { N[id].i3 };
+			var xs int[8] = [0; 8];
+			var acc = x + 4;
+			for c in cols { xs[c] = acc; acc += col_width(id, c, w - 8, cols); }
+			table_query(id, TMP);
+			var head = y + 4;
+			if TMP.len > 0 {
+				fill_rect(x + 4, y + 2, w - 8, (28.0 * SCALE) as int, THEME.surface2, 255);
+				draw_text(x + 8, y + 4, TMP[..], ts, THEME.ink, 0, -1);
+				head = y + (32.0 * SCALE) as int;
+			}
+			for c in cols {
+				let cap = table_get(id, -1, c);
+				let fallback = if c == 0 { "Stat" } else { "Value" };
+				draw_text(xs[c], head + 6, if cap.len > 0 { cap } else { fallback }, ts, THEME.ink, 0, -1);
+				if c > 0 { fill_rect(xs[c] - 3, head, 2, rh, THEME.border, 255); fill_rect(xs[c] - 6, head + 4, 2, rh / 2, THEME.border, 255); }
+			}
+			if pin > 0 { fill_rect(x + 2, head, (4.0 * SCALE) as int, rh, THEME.accent, 255); }
+			let rows = if N[id].i0 < 1 { 0 } else { N[id].i0 };
+			var slot = 0;
+			var shown = 0;
+			var yy = head + rh;
+			while slot < rows && yy + rh <= y + h {
+				let row = table_row(id, slot);
+				slot += 1;
+				if !table_filtered(id, row) { continue; }
+				if shown % 2 == 0 { fill_rect(x + 2, yy, w - 4, rh, THEME.surface2, 80); }
+				for c in cols {
+					let cx = if c < pin { x + 4 + c * col_width(id, c, w - 8, cols) } else { xs[c] };
+					draw_text(cx, yy + 6, table_get(id, row, c), ts, THEME.ink, 0, -1);
+				}
+				if pin > 0 { fill_rect(x + col_width(id, 0, w - 8, cols), yy, (2.0 * SCALE) as int, rh, THEME.border, 255); }
+				yy += rh;
+				shown += 1;
+			}
+		} else if k == K_VLIST {
+			let first, last = list_window(id);
+			let rh = N[id].val2 as int;
+			var row = first;
+			var yy = y + 4;
+			while row < last && yy < y + h {
+				TMP.clear();
+				format(TMP, "Row ", row);
+				if row == N[id].i1 { fill_rect(x + 4, yy, w - 8, rh - 2, THEME.accent, 180); }
+				draw_text(x + 8, yy + 2, TMP[..], 14.0, THEME.ink, 0, -1);
+				yy += rh;
+				row += 1;
+			}
+		} else if tx.len > 0 {
+			draw_text(x + 8, y + 8, tx, size, THEME.ink, N[id].effect, if N[id].effect == 6 { N[id].i0 } else { -1 });
+		}
+	} else if k == K_LABEL {
+		var col = if N[id].fg != 0 { N[id].fg } else { THEME.ink };
+		if N[id].fg == 0 && LIGHT_SCENE != 0 { col = title_ink(y); }
+		if N[id].flags & FL_ANCHOR != 0 || N[id].i2 == 1 {
+			draw_centered(x, y, w, h, node_text(id), label_size(id), col, N[id].effect);
+		} else {
+			draw_text(x, y, node_text(id), label_size(id), col, N[id].effect, if N[id].effect == 6 { N[id].i0 } else { -1 });
+		}
+	} else if k == K_DIV {
+		fill_rect(x, y + h / 2, w, 1, THEME.border, 255);
+	}
+	if id < RIP.len && RIP[id] > 0.0 && RIP[id] < 1.25 && (k == K_BUTTON || k == K_FAB || k == K_ICON) {
+		let rad = (RIP[id] * w as f32) as int;
+		let cx = RIPX[id] as int;
+		let cy = RIPY[id] as int;
+		for yy in y..y + h {
+			for xx in x..x + w {
+				let dx = xx - cx;
+				let dy = yy - cy;
+				if dx * dx + dy * dy < rad * rad { put(xx, yy, 0xFFFFFF, 48); }
+			}
+		}
+	}
+	if N[id].flags & FL_FOCUS != 0 && k != K_LABEL {
+		stroke_rect(x - 2, y - 2, w + 4, h + 4, THEME.focus, 2);
+	}
+	if (k == K_ACC || k == K_TREE || k == K_SELECT || k == K_POP || k == K_CONTEXT) && N[id].flags & FL_OPEN == 0 {
+		CX = clipx; CY = clipy; CW = clipw; CH = cliph;
+		return;
+	}
+	let x0 = if x > clipx { x } else { clipx };
+	let y0 = if y > clipy { y } else { clipy };
+	let x1 = if x + w < clipx + clipw { x + w } else { clipx + clipw };
+	let y1 = if y + h < clipy + cliph { y + h } else { clipy + cliph };
+	if k == K_FRAME { paint_stage_back(id, x, y, w, h); }
+	if x1 > x0 && y1 > y0 { CX = x0; CY = y0; CW = x1 - x0; CH = y1 - y0; }
+	for c in KIDS[id] { paint_node(c); }
+	CX = clipx; CY = clipy; CW = clipw; CH = cliph;
+}
+
+fn paint_roots() {
+	for i in N.len { if N[i].parent < 0 { paint_node(i); } }
+}
+
+fn paint(w int, h int) {
+	canvas(w, h);
+	fill_rect(0, 0, w, h, THEME.bg, 255);
+	if THEME.glass != 0 {
+		fill_rect(40, 30, 220, 140, THEME.accent, 40);
+		fill_rect(w - 260, h - 180, 200, 120, 0xFFFFFF, 30);
+	}
+	paint_roots();
+	if THEME.pixel != 0 {
+		for y in PH {
+			if y % 3 == 2 { for x in PW { put(x, y, 0x000000, 70); } }
+			if y % 2 == 0 {
+				for x in PW {
+					if (x + y) % 4 == 0 { put(x, y, 0x000000, 28); }
+				}
+			}
+		}
+	}
+}
+
+fn pixel(x int, y int) int {
+	if x < 0 || y < 0 || x >= PW || y >= PH { return 0; }
+	let i = (y * PW + x) * 4;
+	(PIX[i] as int) << 16 | (PIX[i + 1] as int) << 8 | PIX[i + 2] as int
+}

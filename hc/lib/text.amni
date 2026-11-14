@@ -1,0 +1,10 @@
+namespace text;
+import text.utf;
+import text.case;
+import text.norm;
+import text.bidi;
+import text.lines;
+import text.fmt;
+import text.rope;
+import text.re;
+import text.layout;
