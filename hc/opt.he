@@ -877,7 +877,8 @@ dmsr(fi int) bool:
 			IR[q as int] = Ir{I_MOV as u8, 3, y.d, if y.c == B_DIV as i64 { qv[t] } else { rv[t] }, -1, 0, -1}
 		s2 := ins.len
 		for t kb.len:
-			e := em(I_CMP, nw(), rv[t] as int, am[t] as int, CC_E as i64, -1); r1 := em(I_BIN, nw(), rv[t] as int, one, B_ADD as i64, -1); em(I_SEL, rv[t] as int, e, zero, r1 as i64, -1); em(I_BIN, qv[t] as int, qv[t] as int, em(I_SEL, nw(), e, sg[t] as int, zero as i64, -1), B_ADD as i64, -1)
+			e := em(I_CMP, nw(), rv[t] as int, am[t] as int, CC_E as i64, -1); r1 := em(I_BIN, nw(), rv[t] as int, one, B_ADD as i64, -1)
+			if WEB { mn := em(I_BIN, nw(), zero, em(I_CMP, nw(), rv[t] as int, am[t] as int, CC_NE as i64, -1), B_SUB as i64, -1); me := em(I_BIN, nw(), zero, e, B_SUB as i64, -1); em(I_BIN, rv[t] as int, r1, mn, B_AND as i64, -1); em(I_BIN, qv[t] as int, qv[t] as int, em(I_BIN, nw(), sg[t] as int, me, B_AND as i64, -1), B_ADD as i64, -1) } else { em(I_SEL, rv[t] as int, e, zero, r1 as i64, -1); em(I_BIN, qv[t] as int, qv[t] as int, em(I_SEL, nw(), e, sg[t] as int, zero as i64, -1), B_ADD as i64, -1) }
 		put(ic, s2)
 	if at.len == 0: return false
 	od i32[>..<] ~= []; for t at.len { p ~= od.len; od.push(t as i32); while p > 0 && at[od[p - 1]] > at[t] { od[p] = od[p - 1]; p-- } od[p] = t as i32 }

@@ -27,7 +27,7 @@ rt_dlbind():
 		if h == 0: rt_es("helium runtime error: cannot load "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es("): "); e := ccall0(mld(g + 16)); if e != 0 { rt_esz(e); } else { rt_es("unknown error"); } rt_dlx()
 		for k nb: q := b0 + 24 * k; if mld(q) == l: sy := RT_DLR + mld(q + 8); f := ccall2(mld(g + 8), h, sy); if f == 0 && op { f = rt_dlmiss() } if f == 0 { rt_es("helium runtime error: "); rt_esz(nm); rt_es(" ("); rt_esz(sp); rt_es(") has no symbol "); rt_esz(sy); rt_dlx() } mst(RT_DLB + mld(q + 16), f)
 struct RtV { b int, n int, top int, fl int, fln int, flc int }
-var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int; var RT_TMAX int
+var RT_RSZ int; var RT_SBUD int; var RT_TIER int; var RT_TEND int; var RT_TMAX int; var RT_RG int[4096]; var RT_NRG int; var RT_SQW int
 var RT_FREE int[4096]
 var RT_NFREE int
 var RT_FUS int[4096]
@@ -68,21 +68,39 @@ rt_nard(v int, c int, loc const byte[:]):
 	w := c >> 8; rt_es("helium runtime error: as conversion out of range (debug): "); if c & 4 != 0 { rt_ei(v) } else { rt_eu(v as! u64) }
 	rt_es(if w & 12 == 0 { " as i" } else { " as u" }); rt_ei(8 << (w & 3)); rt_fail(loc)
 rt_oob(i int, n int, loc const byte[:]): rt_es("helium runtime error: index "); rt_ei(i); rt_es(" out of bounds (length "); rt_ei(n); rt_es(")"); rt_fail(loc);
-rt_take(w int) int: if RT_TIER == 0 { if RT_NFREE > 0 { RT_NFREE -= 1; RT_FR -= RT_FUS[RT_NFREE]; RT_FLO = min(RT_FLO, RT_NFREE); return RT_FREE[RT_NFREE] } return rt_map(0) } z := if w > 0 { w + 65535 & -65536 } else { rt_tsz() }; j ~= -1; lj ~= 0; for q RT_NFREE { l := rt_lim(RT_FREE[q]); if l >= z && (j < 0 || l < lj) { j = q; lj = l } } if j < 0 { return rt_map(z) } b := RT_FREE[j]; RT_FR -= RT_FUS[j]; RT_NFREE -= 1; RT_FREE[j] = RT_FREE[RT_NFREE]; RT_FUS[j] = RT_FUS[RT_NFREE]; RT_FLO = min(RT_FLO, j); b
+rt_take(w int) int: if RT_TIER == 0 { if RT_NFREE > 0 { RT_NFREE -= 1; RT_FR -= RT_FUS[RT_NFREE]; RT_FLO = min(RT_FLO, RT_NFREE); return RT_FREE[RT_NFREE] } return rt_map(0) } rt_taket(w)
+rt_taket(w int) int: z := if w > 0 { w + 65535 & -65536 } else { rt_tsz() }; j ~= rt_ffit(z); if j < 0 && RT_TEND + z + 131072 > rt_tmx() { rt_sqz(); rt_coal(); j = rt_ffit(z) } if j < 0 { return rt_map(z) } rt_fpop(j)
+rt_ffit(z int) int: j ~= -1; lj ~= 0; for q RT_NFREE { l := rt_lim(RT_FREE[q]); if l >= z && (j < 0 || l < lj) { j = q; lj = l } } j
+rt_cut(b int, kp int): l := mld(b - 8); b2 := b + kp + 131072; l2 := l - kp - 131072; mst(b - 8, kp); mst(b - 16, min(mld(b - 16), kp)); mst(b2 - 8, l2); mst(b2 - 16, l2); if RT_NRG < 4096 { RT_RG[RT_NRG] = b2; RT_NRG += 1 } rt_give(b2, 0)
+rt_coal(): q ~= 0; while q < RT_NFREE { b := RT_FREE[q]; b2 := b + mld(b - 8) + 131072; j ~= -1; for k RT_NFREE { if RT_FREE[k] == b2 { j = k } } if j < 0 { q += 1 } else { rt_fpop(j); rt_rgdel(b2); l := mld(b - 8) + 131072 + mld(b2 - 8); mst(b - 8, l); mst(b - 16, l); if RT_FREE[q] != b { q = j } } }
 rt_tmx() int: if RT_TMAX == 0 { q := sys3(97, 9, 0, 0); RT_TMAX = if q >= 1 << 24 && q <= 1 << 32 { q } else { 1 << 32 } } RT_TMAX
 rt_tsz() int: r := rt_tmx() - RT_TEND; if r >= RT_RSZ * 64 { return RT_RSZ } z ~= 1 << 18; while z * 128 <= r && z * 2 <= RT_RSZ { z *= 2 } z
 rt_map(w int) int:
 	z := if w > 0 { w } else if RT_TIER != 0 { rt_tsz() } else { RT_RSZ }; h := if RT_TIER != 0 { 65536 } else { 0 }
 	a := if RT_TIER != 0 { 0 } else { 1 << 21 }; m := sys6(9, 0, z + 65536 + h + a, 3, 0x4022, -1, 0); if m < 0 && m > -4096 { rt_es("helium runtime error: out of address space\n"); rt_write(2, RT_EB[..RT_EN]); sys3(231, 1, 0, 0) }
 	d := if a != 0 { (1 << 20) - (m + h) & a - 1 } else { 0 }; p := m + d; if d != 0 { sys3(11, m, d, 0) } if a - d != 0 { sys3(11, p + h + z + 65536, a - d, 0) } sys3(10, p + h + z, 65536, 0)
-	if RT_TIER != 0 { RT_TEND = max(RT_TEND, p + h + z + 65536); mst(p + h - 8, z) } p + h
+	if RT_TIER != 0 { RT_TEND = max(RT_TEND, p + h + z + 65536); mst(p + h - 8, z); mst(p + h - 16, z); if RT_NRG < 4096 { RT_RG[RT_NRG] = p + h; RT_NRG += 1 } } p + h
 rt_lim(b int) int: if RT_TIER != 0 { mld(b - 8) } else { RT_RSZ }
-rt_unmap(b int): h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);
+rt_unmap(b int): if RT_TIER != 0 { rt_rgdel(b) } h := if RT_TIER != 0 { 65536 } else { 0 }; sys3(11, b - h, rt_lim(b) + 65536 + h, 0);
 rt_tss() int: if RT_TIER == 0 { return 64 << 20 } r := rt_tmx() - RT_TEND; z ~= 1 << 20; while z * 512 <= r && z < 16 << 20 { z *= 2 } z
-rt_give(b int, used int): if b == 0 { return } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if RT_NFREE >= 4096 { rt_unmap(b); return } u := if used > 1 << 20 { min(used, rt_lim(b)) } else { 0 }; RT_FREE[RT_NFREE] = b; RT_FUS[RT_NFREE] = u; RT_NFREE += 1; RT_FR += u; while RT_FR > 1 << 27 && RT_FLO < RT_NFREE { v := RT_FUS[RT_FLO]; if v > 0 { sys3(28, RT_FREE[RT_FLO] + 65536, v - 65536 + 4095 & -4096, 4); RT_FR -= v; RT_FUS[RT_FLO] = 0 } RT_FLO += 1 }
+rt_give(b int, used int): if b == 0 { return } if RT_TIER != 0 { mst(b - 16, mld(b - 8)) } if RT_DBG > 0 { for q RT_NFREE { if RT_FREE[q] == b { rt_es("helium runtime error: a region was released twice"); rt_dlx() } } } if RT_NFREE >= 4096 { rt_unmap(b); return } u := if used > 1 << 20 { min(used, rt_lim(b)) } else { 0 }; RT_FREE[RT_NFREE] = b; RT_FUS[RT_NFREE] = u; RT_NFREE += 1; RT_FR += u; while RT_FR > 1 << 27 && RT_FLO < RT_NFREE { v := RT_FUS[RT_FLO]; if v > 0 { sys3(28, RT_FREE[RT_FLO] + 65536, v - 65536 + 4095 & -4096, 4); RT_FR -= v; RT_FUS[RT_FLO] = 0 } RT_FLO += 1 }
 rt_grow(va int, k int, esz int) int: if k == 0 && mld(va) == 0 { return 0 } rt_grow0(va, k, esz)
-rt_grow0(va int, k int, esz int) int: b ~= mld(va); n := mld(va + 8); w := (n + k) * esz; mst(va + 8, n + k); if b != 0 && w <= rt_lim(b) { return b + n * esz } if RT_TIER == 0 { if b == 0 { b = rt_take(0); mst(va, b) } if w > rt_lim(b) { rt_die(5, "push") } return b + n * esz } if n != 0 { rt_die(5, "push") } rt_give(b, 0); z ~= max(w, 1); if mld(va + 40) == 0 { z = rt_tsz(); while z < w { z *= 2 } } b = rt_take(z); mst(va, b); b + n * esz
-rt_rsv(va int, k int, esz int): if k <= 0 { return } b := mld(va); z := k * esz; if b != 0 && z <= rt_lim(b) { return } if RT_TIER == 0 { if z > RT_RSZ { rt_die(5, "reserve") } return } if mld(va + 8) != 0 { rt_die(5, "reserve") } if b != 0 { rt_give(b, 0) } mst(va, rt_take(z))
+rt_grow0(va int, k int, esz int) int: b ~= mld(va); n := mld(va + 8); w := (n + k) * esz; mst(va + 8, n + k); if b != 0 && w <= rt_lim(b) { if RT_TIER != 0 { rt_soft(b, w) } return b + n * esz } if RT_TIER == 0 { if b == 0 { b = rt_take(0); mst(va, b) } if w > rt_lim(b) { rt_die(5, "push") } return b + n * esz } if n != 0 { if !rt_ext(b, w) { rt_die(5, "push") } rt_soft(b, w); return b + n * esz } rt_give(b, 0); if mld(va + 40) != 0 { b = rt_take(max(w, 1)) } else { b = rt_takeg(max(w, 1)); mst(b - 16, 0); rt_soft(b, max(w, 1)) } mst(va, b); b + n * esz
+rt_fpop(j int) int: b := RT_FREE[j]; RT_FR -= RT_FUS[j]; RT_NFREE -= 1; RT_FREE[j] = RT_FREE[RT_NFREE]; RT_FUS[j] = RT_FUS[RT_NFREE]; RT_FLO = min(RT_FLO, j); mst(b - 16, mld(b - 8)); b
+rt_rgdel(b int): for q RT_NRG { if RT_RG[q] == b { RT_NRG -= 1; RT_RG[q] = RT_RG[RT_NRG]; return } }
+rt_soft(b int, w int): s ~= mld(b - 16); l := mld(b - 8); if w <= s || s >= l { return } s = max(s, 65536); while s < w { s *= 2 } mst(b - 16, min(s, l))
+rt_fbig(w int) int: j ~= -1; lj ~= 0; for q RT_NFREE { l := rt_lim(RT_FREE[q]); if l >= w && l > lj { j = q; lj = l } } j
+rt_sqz() bool: r ~= false; q ~= 0; while q < RT_NRG && RT_NFREE < 4000 { b := RT_RG[q]; l := mld(b - 8); s := mld(b - 16); kp := max(4 * s, 4 << 20); if s < l && l - kp >= 2 << 20 { rt_cut(b, kp); r = true } q += 1 } r
+rt_takeg(w int) int: t := rt_tsz(); z ~= t; while z < w { z *= 2 } j ~= rt_fbig(w); if (j < 0 || rt_lim(RT_FREE[j]) < z) && t < RT_RSZ { if RT_SQW == 0 { RT_SQW = if rt_sqz() { 0 } else { 256 }; rt_coal(); j = rt_fbig(w) } else { RT_SQW -= 1 } } if j >= 0 && (rt_lim(RT_FREE[j]) >= z || RT_TEND + z + 131072 > rt_tmx()) { return rt_fpop(j) } rt_map(z)
+rt_ext(b int, w int) bool:
+	loop:
+		l := mld(b - 8); if w <= l { return true } b2 := b + l + 131072; j ~= -1; for q RT_NFREE { if RT_FREE[q] == b2 { j = q } }
+		if j >= 0 { rt_fpop(j); rt_rgdel(b2); mst(b - 8, l + 131072 + mld(b2 - 8)); continue }
+		if b + l + 65536 != RT_TEND { return false }
+		d ~= max(w - l, l) + 65535 & -65536; if RT_TEND + d > rt_tmx() { d = rt_tmx() - RT_TEND & -65536 } if d < w - l { return false }
+		m := sys6(9, 0, d, 3, 0x4022, -1, 0); if m != RT_TEND { return false }
+		RT_TEND += d; mst(b - 8, l + d)
+rt_rsv(va int, k int, esz int): if k <= 0 { return } b := mld(va); z := k * esz; if b != 0 && z <= rt_lim(b) { return } if RT_TIER == 0 { if z > RT_RSZ { rt_die(5, "reserve") } return } if mld(va + 8) != 0 { rt_die(5, "reserve") } if b != 0 { rt_give(b, 0) } b2 := rt_take(z); kp := z + 65535 & -65536; if mld(b2 - 8) - kp >= 2 << 20 && RT_NFREE < 4000 && rt_tsz() < RT_RSZ { rt_cut(b2, kp) } mst(va, b2)
 rt_cap(va int, esz int) int: b := mld(va); if b == 0 { return if RT_TIER != 0 { 0 } else { RT_RSZ / esz } } rt_lim(b) / esz
 rt_rdrop(v RtV&): rt_rdropz(v, 64)
 rt_rdropz(v RtV&, esz int): rt_give(v.b, max(v.n * esz, v.top)); rt_give(v.fl, v.fln * 16); v.b = 0; v.n = 0; v.top = 0; v.fl = 0; v.fln = 0; v.flc = 0

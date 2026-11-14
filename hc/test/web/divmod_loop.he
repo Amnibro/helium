@@ -1,0 +1,14 @@
+use std
+f(n int, w int) int:
+	s ~= 0
+	for i n:
+		s += i / w * 3 + i % w
+	s
+g(n int, w int, h int) int:
+	s ~= 0
+	for i n:
+		if i % 7 == 3: continue
+		s += (i / w) * h + i % w + (i % h)
+	s
+main():
+	print(f(100, 7), " ", f(1000, 13), " ", g(500, 9, 4), " ", g(77, 1, 3), " ", f(0, 5), " ", f(50, -3))
