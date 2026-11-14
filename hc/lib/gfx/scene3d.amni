@@ -57,7 +57,7 @@ struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32,
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0, shadow bool = true }
-struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0 }
+struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0, shadow bool = true }
 struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool, wb int, pwb int, inst int, lod int, ml int }
@@ -533,7 +533,7 @@ fn sway(item int, amount f32) {
 fn inst_bound(set int, k int) {
 	let s = instances[set];
 	let m = inst_m[s.first + k];
-	let c = linalg::point(m, s.c);
+	let c = linalg::v3(m.c0.x * s.c.x + m.c1.x * s.c.y + m.c2.x * s.c.z + m.c3.x, m.c0.y * s.c.x + m.c1.y * s.c.y + m.c2.y * s.c.z + m.c3.y, m.c0.z * s.c.x + m.c1.z * s.c.y + m.c2.z * s.c.z + m.c3.z);
 	let sc = linalg::f(sqrt(max(m.c0.x * m.c0.x + m.c0.y * m.c0.y + m.c0.z * m.c0.z, max(m.c1.x * m.c1.x + m.c1.y * m.c1.y + m.c1.z * m.c1.z, m.c2.x * m.c2.x + m.c2.y * m.c2.y + m.c2.z * m.c2.z)) as real));
 	inst_c[s.first + k] = f4(c.x, c.y, c.z, s.r * sc);
 }
@@ -1528,6 +1528,7 @@ fn gather_instances() {
 			for k in s.count { sm = max(sm, inst_c[s.first + k].w); }
 			instances[si].smax = if s.r > 0.0 { sm / s.r } else { 1.0 };
 		}
+		if !s.shadow && instance_cull { let bl = instances[si].lo; let bh = instances[si].hi; let slack = (if s.sway > 0.0 { reach } else { 0.0 }) + 2.0 * s.sway * wind.strength * s.r * instances[si].smax; var gone = false; for p in fr { if p.x * (if p.x > 0.0 { bh.x } else { bl.x }) + p.y * (if p.y > 0.0 { bh.y } else { bl.y }) + p.z * (if p.z > 0.0 { bh.z } else { bl.z }) + p.w < -slack { gone = true; } } if gone { instances[si].ia = [0, 0]; instances[si].na = [0, 0]; instances[si].iv = [0, 0]; instances[si].nv = [0, 0]; continue; } }
 		inst_t0.clear(); inst_t1.clear(); inst_t2.clear(); inst_t3.clear();
 		let grow = 1.0 + 2.0 * s.sway * wind.strength;
 		let more = if s.sway > 0.0 { reach } else { 0.0 };
@@ -1916,7 +1917,7 @@ fn setup_cascades() {
 	var shi = linalg::v3(-1.0e30, -1.0e30, -1.0e30);
 	if sun.fit {
 		for b in batch {
-			if b.mode == gltf::ALPHA_BLEND || material_of(b.prim).no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; }
+			if b.mode == gltf::ALPHA_BLEND || material_of(b.prim).no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) { continue; }
 			if b.inst >= 0 {
 				for k in 8 {
 					let q = corner(instances[b.inst].lo, instances[b.inst].hi, k);
@@ -2263,7 +2264,7 @@ fn shadow_pass() {
 		for b in batch {
 			if b.mode == gltf::ALPHA_BLEND { continue; }
 			let m = material_of(b.prim);
-			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; }
+			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) { continue; }
 			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
 			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
 			bind_slot(0, m.base_tex, true, white);
@@ -2293,7 +2294,7 @@ fn shelter_pass() {
 	guard gfx::begin_pass(gfx::PassDesc { color: [shelter_map, none(), none(), none()], depth: shelter_depth, color_value: f4(-1.0e30, 0.0, 0.0, 1.0), cycle: 1, .. }) else { return; }
 	gfx::bind(pipe_shelter);
 	bind_geometry();
-	for b in batch { let m = material_of(b.prim); if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; } gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp)); gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m)); bind_slot(0, m.base_tex, true, white); draw_prim(b); }
+	for b in batch { let m = material_of(b.prim); if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) { continue; } gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp)); gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m)); bind_slot(0, m.base_tex, true, white); draw_prim(b); }
 	gfx::end_pass();
 	fx::shelter_tex = shelter_map;
 	fx::shelter_box = f4(cx, cz, 0.5 / he, 1.0);
@@ -2314,7 +2315,7 @@ fn local_shadow_pass() {
 		for b in batch {
 			if b.mode == gltf::ALPHA_BLEND { continue; }
 			let m = material_of(b.prim);
-			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; }
+			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) { continue; }
 			let pr = gltf::prims[b.prim];
 			if b.joint_base < 0 && b.inst < 0 && !in_view(gfx::mul(vp, b.model), pr.lo, pr.hi) { continue; }
 			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
