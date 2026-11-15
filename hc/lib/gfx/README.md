@@ -4362,7 +4362,10 @@ reached the probes, with no spot cone or rect facing. Now:
 
 * Each static mesh in the GI scene is tracked by item, node and primitive. When its
   transform changes, its triangles are rewritten in place and the BVH is refit from the
-  leaves up (the tree keeps its shape; only the boxes grow or shrink). A mesh that is no
+  leaves up (the tree keeps its shape; only the boxes grow or shrink). Only the leaves that changed and their
+  parents are refit (the whole tree when more than 1 in 40 nodes would be touched), and only
+  the changed ranges of the node and triangle buffers are uploaded, so the cost follows what
+  moved, not the size of the scene. A mesh that is no
   longer drawn has its triangles collapsed to a point. A new mesh, a changed primitive, or
   a refit that more than doubles the root box's area triggers a full rebuild instead.
   `gi_refit` (true) turns this off; `gi_rebuild()` forces a fresh build; `gi_stats()` returns
@@ -4394,7 +4397,8 @@ tops.
 | D4 spot aimed out of the room / at the floor | adds 0.000 / 0.121 of the unlit sum | up <= 5 % of down PASS |
 | D4b rect facing out / down | adds 0.003 / 1.604 | up <= 5 % of down PASS |
 | D5 16 lights, first 8 black | 1.782 x the unlit sum | > 1.2 PASS |
-| D6 refit cost, 23102 triangles, one moving sphere | 0.63 ms mean vs 15.8 ms full build | < 2 ms and < 0.25 x build PASS |
+| D6 refit cost, 23102 triangles, one moving sphere | 0.95 ms mean vs 20.7 ms full build | < 2 ms and < 0.25 x build PASS |
+| D7 the same in a 341504-triangle scene | 0.69 ms mean vs 217.5 ms full build | < 1 ms and < 0.05 x build PASS |
 
 Not done: skinned, instanced, morphing and blended meshes still stay out of the GI scene, and
 cloth is seen at its rest shape. A refit tree slowly loses quality as objects drift far from

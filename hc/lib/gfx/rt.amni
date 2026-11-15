@@ -12,6 +12,15 @@ var tris f32[>..] = [];
 var order int[>..] = [];
 var cen f32[>..] = [];
 var pos_of int[>..] = [];
+var parent int[>..] = [];
+var leaf_of int[>..] = [];
+var dirty int[>..] = [];
+var mark int[>..] = [];
+var stamp = 0;
+var tri_lo = -1;
+var tri_hi = -1;
+var node_lo = -1;
+var node_hi = -1;
 var built_area f32 = 0.0;
 var node_buf gfx::Buffer;
 var tri_buf gfx::Buffer;
@@ -116,6 +125,10 @@ fn build() {
 	}
 	pos_of.clear(); pos_of.resize(n, 0);
 	for oi in n { pos_of[order[oi]] = oi; }
+	let nn = nodes.len / NODE_FLOATS;
+	parent.clear(); parent.resize(nn, -1); leaf_of.clear(); leaf_of.resize(n, 0); mark.clear(); mark.resize(nn, 0); dirty.clear();
+	for k in nn { let a = nodes[k * NODE_FLOATS + 3] as int; let c = nodes[k * NODE_FLOATS + 7] as int; if c > 0 { for oi in a..a + c { leaf_of[oi] = k; } } else { parent[a] = k; parent[a + 1] = k; } }
+	tri_lo = -1; tri_hi = -1; node_lo = -1; node_hi = -1;
 	ready = true;
 	built_area = root_area();
 }
@@ -124,34 +137,42 @@ fn set_tri(t int, a float3, b float3, c float3) {
 	let o = t * 9;
 	tri_in[o] = a.x; tri_in[o + 1] = a.y; tri_in[o + 2] = a.z; tri_in[o + 3] = b.x; tri_in[o + 4] = b.y; tri_in[o + 5] = b.z; tri_in[o + 6] = c.x; tri_in[o + 7] = c.y; tri_in[o + 8] = c.z;
 	if ready && t < pos_of.len {
+		let lf = leaf_of[pos_of[t]];
+		if mark[lf] != stamp + 1 { mark[lf] = stamp + 1; dirty.push(lf); }
+		tri_lo = if tri_lo < 0 { pos_of[t] } else { min(tri_lo, pos_of[t]) }; tri_hi = max(tri_hi, pos_of[t] + 1);
 		let q = pos_of[t] * TRI_FLOATS;
 		tris[q] = a.x; tris[q + 1] = a.y; tris[q + 2] = a.z;
 		tris[q + 4] = b.x - a.x; tris[q + 5] = b.y - a.y; tris[q + 6] = b.z - a.z;
 		tris[q + 8] = c.x - a.x; tris[q + 9] = c.y - a.y; tris[q + 10] = c.z - a.z;
 	}
 }
+fn refit_node(k int) {
+	let b = k * NODE_FLOATS;
+	let a = nodes[b + 3] as int;
+	let c = nodes[b + 7] as int;
+	var lo f32[3] = [1e30, 1e30, 1e30];
+	var hi f32[3] = [-1e30, -1e30, -1e30];
+	if c > 0 {
+		for oi in a..a + c { let tr = order[oi]; for j in 3 { lo[j] = min(lo[j], tmin(tr, j)); hi[j] = max(hi[j], tmax(tr, j)); } }
+	} else {
+		for ch in a..a + 2 { let cb = ch * NODE_FLOATS; for j in 3 { lo[j] = min(lo[j], nodes[cb + j]); hi[j] = max(hi[j], nodes[cb + 4 + j]); } }
+	}
+	set_node(k, lo, hi, a, c);
+	node_lo = if node_lo < 0 { k } else { min(node_lo, k) }; node_hi = max(node_hi, k + 1);
+}
 fn refit() {
 	if !ready { return; }
-	var k = nodes.len / NODE_FLOATS - 1;
-	while k >= 0 {
-		let b = k * NODE_FLOATS;
-		let a = nodes[b + 3] as int;
-		let c = nodes[b + 7] as int;
-		var lo f32[3] = [1e30, 1e30, 1e30];
-		var hi f32[3] = [-1e30, -1e30, -1e30];
-		if c > 0 {
-			for oi in a..a + c { let tr = order[oi]; for j in 3 { lo[j] = min(lo[j], tmin(tr, j)); hi[j] = max(hi[j], tmax(tr, j)); } }
-		} else {
-			for ch in a..a + 2 { let cb = ch * NODE_FLOATS; for j in 3 { lo[j] = min(lo[j], nodes[cb + j]); hi[j] = max(hi[j], nodes[cb + 4 + j]); } }
-		}
-		set_node(k, lo, hi, a, c);
-		k -= 1;
-	}
+	let nn = nodes.len / NODE_FLOATS;
+	if dirty.len * 40 > nn { var k = nn - 1; while k >= 0 { refit_node(k); k -= 1; } }
+	else { for d in dirty { var k = d; refit_node(k); while parent[k] >= 0 { k = parent[k]; refit_node(k); } } }
+	dirty.clear();
+	stamp += 1;
 }
 fn update() {
 	if !ready || !has_bufs { return; }
-	gfx::update_buffer(node_buf, bytes_of(nodes)[..nodes.len * 4]);
-	gfx::update_buffer(tri_buf, bytes_of(tris)[..tris.len * 4]);
+	if node_hi > node_lo && node_lo >= 0 { let a = node_lo * NODE_FLOATS * 4; gfx::update_buffer(node_buf, a, bytes_of(nodes)[a..node_hi * NODE_FLOATS * 4]); }
+	if tri_hi > tri_lo && tri_lo >= 0 { let a = tri_lo * TRI_FLOATS * 4; gfx::update_buffer(tri_buf, a, bytes_of(tris)[a..tri_hi * TRI_FLOATS * 4]); }
+	tri_lo = -1; tri_hi = -1; node_lo = -1; node_hi = -1;
 }
 fn upload() {
 	if !ready { return; }

@@ -1,4 +1,4 @@
-=== 771ccb1035671bca
+=== -2b635fd9ebec7240
 import os;
 import gfx;
 import math;
@@ -317,7 +317,29 @@ fn d6() bool {
 	report(ok, "D6 refit cost", str(rt::count(), " triangles, mean refit ", fx(mean, 3), " ms, build ", fx(build_ms, 3), " ms"));
 	ok
 }
-=== -43678fa575c41195
+=== -12e409c947dd6775
+fn d7() bool {
+	let grey = shapes::material(float3 { 0.7, 0.7, 0.7 }, 0.0, 0.9);
+	let sh = s3d::add(shapes::sheet(400, float3 { -1.9, 2.3, -1.9 }, float3 { 3.8, 0.0, 0.0 }, float3 { 0.0, 0.0, 3.8 }, grey));
+	s3d::place(sh, gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	let first = block_item + 1;
+	s3d::gi_rebuild();
+	frame();
+	var sum = 0.0;
+	var build_ms = 0.0;
+	for f in 1..31 {
+		s3d::place(first, gfx::translate(float3 { -1.5, 1.5, (0.02 * f) as f32 }));
+		frame();
+		let r0, r1, rms, bms = s3d::gi_stats();
+		sum += rms;
+		build_ms = bms;
+	}
+	let mean = sum / 30.0;
+	let ok = mean < 1.0 && mean < 0.05 * build_ms;
+	report(ok, "D7 refit scales with what moved", str(rt::count(), " triangles, mean refit ", fx(mean, 3), " ms, build ", fx(build_ms, 3), " ms"));
+	ok
+}
+=== 7e54f940a6112a08
 fn main() {
 	if !setup() {
 		print("gi dynamic: skipped");
@@ -331,5 +353,6 @@ fn main() {
 	if !d4b() { all = false; }
 	if !d5() { all = false; }
 	if !d6() { all = false; }
+	if !d7() { all = false; }
 	if all { print("gi dynamic: ok"); } else { print("gi dynamic: FAILED"); }
 }
