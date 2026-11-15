@@ -3386,6 +3386,45 @@ sweater), arms on a cylinder bent at the elbow, per-triangle relaxation toward u
 gradients, and the neck band as its own strip (columns along the neckline's surface
 normal, perpendicular to its rows, tangent averaged over 2 cm of the loop).
 
+### Wet fabric bars (E14, registered before the first run)
+
+The default sweater (`garment::spec()` with `fine` 2) on `hc/test/gfx/fixtures/mh_tights.obj`,
+draped with `garment::drape(240)`; `soak::setup` on its body and rib triangles with
+`fall` 1; rain straight down, the rain map over the garment's box grown by 0.05 m with
+4 mm cells, the garment and the body shell added with `soak::occlude`, `expose` with a
+tolerance of 2 cells. CPU checks in `hc/test/gfx/soak_check`. Lengths in meters.
+
+* **S1 the rain map agrees with rays.** For 500 vertices picked evenly through the
+  list, a brute-force ray straight up from 1 mm above the vertex (along its normal)
+  against every garment and shell triangle: a vertex is reached when the ray hits
+  nothing and its normal points up. `open > 0` matches the ray on at least 97% of
+  them, and at least 10% of the up-facing ones are blocked. Control: tolerance 1e9
+  (no shelter) matches at most 90%.
+* **S2 drying keeps its half-life.** Everything soaked (`wet` 1), no rain or
+  wicking: after ln 2 / `dry` seconds (`dry` 0.01, steps of 1/30 s) the mean is
+  within 0.01 of 0.5. Control: steps with `dry` 0.02 for the same time give a mean
+  more than 0.1 away from 0.5.
+* **S3 wicking spreads without making water.** The welded vertices within 0.03 of
+  the front panel's middle start soaked, the rest dry, no rain or drying, `wick` 2,
+  10 s in steps of 1/30 s: total water changes by at most 1%; the area above 0.05
+  grows at least 2x. With `fall` 1 the water's mean height drops at least 3 times
+  as far as with `fall` 0 (control: `fall` 0 is the reference itself).
+* **S4 shelter.** After 60 s of rain (`rate` 0.2, `wick` 0.05, `dry` 0.002, steps
+  of 1/30 s): at least 90% of the vertices the S1 ray reaches are above 0.5, and
+  at most 20% of the vertices whose normal points down (y below -0.5) are.
+  Control: `wick` 5 puts more than 20% of the down-facing vertices above 0.5.
+* **S5 cost.** `setup`, `rain_map`, both `occlude` calls and `expose` together at
+  most 0.5 s; one `step(1/30)` with `wick` 0.05 at most 7 ms on one core.
+* **S6 it looks wet (GPU).** Knit material (`shading` 3) with `shade_a.w` 1 reading
+  wetness from vertex color alpha, on a sun-lit plane seen from straight above at
+  1280 x 720, luminance read from `s3d::hdr_target()` (`hc/test/gfx/soak_look`):
+  mean of the middle 400 x 400 with alpha 1 over alpha 0 between 0.45 and 0.8, and
+  the mean of its brightest 1% within 0.8x to 1.5x of dry (wet cloth darkens but
+  keeps its highlights). Control: `shade_a.w` 0 with alpha 1 gives a ratio within
+  0.01 of 1 (the flag, not the alpha, makes it wet).
+* **S7 nothing else moved.** `cloth: ok`, `garment: ok`, the knit and weave bars
+  pass unchanged.
+
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 
 Real-time clouds (`s3d::clouds.on`): a pass marches the cloud slab for every sky
