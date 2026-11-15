@@ -356,6 +356,116 @@ fn material(r f32, g f32, b f32, tex int) gltf::Material {
 	m.shade_c = float4 { -0.08, 0.12, 120.0, 30.0 };
 	m
 }
+var scalp_w f32[>..];
+fn scalp(data const byte[:], P const f32[:], r real) {
+	scalp_w.clear();
+	let npt = P.len / 3;
+	var np = 0;
+	var ns = 0;
+	if data.len >= 16 {
+		np = hair::u32_at(data, 8);
+		ns = hair::u32_at(data, 12);
+		if 16 + np * 48 > data.len {
+			ns = 0;
+		} else {
+			ns = min(ns, (data.len - 16 - np * 48) / 16);
+		}
+	}
+	var rx real[>..] = [];
+	var ry real[>..] = [];
+	var rz real[>..] = [];
+	for k in ns {
+		let idx = hair::u32_at(data, 16 + np * 48 + 16 * k);
+		if idx >= 0 && idx < np {
+			let base = 16 + 48 * idx;
+			rx.push(hair::f32_at(data, base) as real);
+			ry.push(hair::f32_at(data, base + 4) as real);
+			rz.push(hair::f32_at(data, base + 8) as real);
+		}
+	}
+	let nr = rx.len;
+	if nr == 0 {
+		for i in npt { scalp_w.push(0.0); }
+		return;
+	}
+	var lx = rx[0];
+	var ly = ry[0];
+	var lz = rz[0];
+	var hx = rx[0];
+	var hy = ry[0];
+	var hz = rz[0];
+	for i in nr {
+		lx = min(lx, rx[i]);
+		ly = min(ly, ry[i]);
+		lz = min(lz, rz[i]);
+		hx = max(hx, rx[i]);
+		hy = max(hy, ry[i]);
+		hz = max(hz, rz[i]);
+	}
+	let side = max(hx - lx, max(hy - ly, hz - lz));
+	let c = max(max(r, side / 64.0), 1e-30);
+	let gx = lx - r;
+	let gy = ly - r;
+	let gz = lz - r;
+	let ex = hx + r;
+	let ey = hy + r;
+	let ez = hz + r;
+	let nx = (floor((ex - gx) / c) as int) + 1;
+	let ny = (floor((ey - gy) / c) as int) + 1;
+	let nz = (floor((ez - gz) / c) as int) + 1;
+	let ncell = nx * ny * nz;
+	var cnt int[>..] = [];
+	cnt.resize(ncell + 1, 0);
+	var cellof int[>..] = [];
+	for i in nr {
+		let cx = clamp(floor((rx[i] - gx) / c) as int, 0, nx - 1);
+		let cy = clamp(floor((ry[i] - gy) / c) as int, 0, ny - 1);
+		let cz = clamp(floor((rz[i] - gz) / c) as int, 0, nz - 1);
+		let cell = (cz * ny + cy) * nx + cx;
+		cellof.push(cell);
+		cnt[cell + 1] += 1;
+	}
+	for q in ncell { cnt[q + 1] += cnt[q]; }
+	var fillp int[>..] = [];
+	fillp.resize(ncell, 0);
+	var order int[>..] = [];
+	order.resize(nr, 0);
+	for i in nr {
+		let cell = cellof[i];
+		order[cnt[cell] + fillp[cell]] = i;
+		fillp[cell] += 1;
+	}
+	let reach = ceil(r / c) as int;
+	for i in npt {
+		let px = P[i * 3] as real;
+		let py = P[i * 3 + 1] as real;
+		let pz = P[i * 3 + 2] as real;
+		if px < gx || px > ex || py < gy || py > ey || pz < gz || pz > ez {
+			scalp_w.push(0.0);
+			continue;
+		}
+		let cx = clamp(floor((px - gx) / c) as int, 0, nx - 1);
+		let cy = clamp(floor((py - gy) / c) as int, 0, ny - 1);
+		let cz = clamp(floor((pz - gz) / c) as int, 0, nz - 1);
+		var best = 1e30;
+		for z in max(cz - reach, 0)..min(cz + reach, nz - 1) + 1 {
+			for y in max(cy - reach, 0)..min(cy + reach, ny - 1) + 1 {
+				for x in max(cx - reach, 0)..min(cx + reach, nx - 1) + 1 {
+					let cell = (z * ny + y) * nx + x;
+					for o in cnt[cell]..cnt[cell + 1] {
+						let j = order[o];
+						let dx = rx[j] - px;
+						let dy = ry[j] - py;
+						let dz = rz[j] - pz;
+						best = min(best, dx * dx + dy * dy + dz * dz);
+					}
+				}
+			}
+		}
+		let d = sqrt(best);
+		scalp_w.push((1.0 - smooth(r / 2.0, r, d)) as f32);
+	}
+}
 var jitter real = 0.18;
 fn mesh(m gltf::Material) int {
 	let v0 = gltf::verts.len / gltf::VERTEX_FLOATS;

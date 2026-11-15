@@ -1,4 +1,4 @@
-=== -1947fe2635844610
+=== 4f690193ac259fea
 import os;
 import math;
 import gfx;
@@ -273,73 +273,136 @@ fn alpha(px const byte[:], size int, v0 real, v1 real) real {
 	if rows == 0 { return 0.0; }
 	sum / (255.0 * (size as real) * (rows as real))
 }
-=== 6a700e9af55490cf
-fn tag(b bool) const byte[:] {
-	if b { " ok" } else { " FAIL" }
+=== -73f14f4a771a5080
+fn rdu(at int) int {
+	(D[at] as int) | ((D[at + 1] as int) << 8) | ((D[at + 2] as int) << 16) | ((D[at + 3] as int) << 24)
+}
+fn tag(p bool) const byte[:] {
+	if p { " ok" } else { " FAIL" }
 }
 fn main() {
-	let s = locks::spec();
 	var all = true;
+	let s = locks::spec();
 	grow_style("long waves");
 	locks::build(D, s);
 	let d, m = l1();
 	var c1 = s;
 	c1.sub = 1;
 	locks::build(D, c1);
-	let d1, mc = l1();
-	let ok1 = d <= 1e-5 && m <= 0.5 && mc >= 0.99;
-	if !ok1 { all = false; }
-	print("L1 curves: off ", d, " turn ", m, " control ", mc, tag(ok1));
+	let d1, mc1 = l1();
+	let p1 = d <= 1e-5 && m <= 0.5 && mc1 >= 0.99;
+	if !p1 { all = false; }
+	print("L1 curves: off ", d, " turn ", m, " control ", mc1, tag(p1));
 	locks::build(D, s);
 	let a2, b2 = l2();
 	var c2 = s;
 	c2.flat = false;
 	locks::build(D, c2);
-	let ac, bc = l2();
-	let ok2 = a2 >= 0.85 && ac <= 0.7;
-	if ok2 {
-		print("L2 flat: ", a2, " control ", ac, " ok");
+	let ac2, bc2 = l2();
+	let p2 = a2 >= 0.85 && ac2 <= 0.7;
+	if p2 {
+		print("L2 flat: ", a2, " control ", ac2, " ok");
 	} else {
-		print("L2 flat: ", a2, " control ", ac, " FAIL (retired: unreachable, see L2b)");
+		print("L2 flat: ", a2, " control ", ac2, " FAIL (retired: unreachable, see L2b)");
 	}
-	let ok2b = b2 >= 0.97 && bc <= 0.8;
-	if !ok2b { all = false; }
-	print("L2b flat as can be: ", b2, " control ", bc, tag(ok2b));
+	let p2b = b2 >= 0.97 && bc2 <= 0.8;
+	if !p2b { all = false; }
+	print("L2b flat as can be: ", b2, " control ", bc2, tag(p2b));
 	locks::build(D, s);
-	let g, f, cv = l3(s.forks);
+	let g3, f3, v3 = l3(s.forks);
 	var c3 = s;
 	c3.spread = 0;
 	c3.ragged = 0;
 	locks::build(D, c3);
-	let gc, fc, cc = l3(s.forks);
-	let ok3 = g <= 1e-6 && f >= 1.3 && cv >= 0.05 && fc < 1.3 && cc < 0.01;
-	if !ok3 { all = false; }
-	print("L3 split ends: gap ", g, " fan ", f, " vary ", cv, " control ", fc, " ", cc, tag(ok3));
+	let gc3, fc3, cc3 = l3(s.forks);
+	let p3 = g3 <= 1e-6 && f3 >= 1.3 && v3 >= 0.05 && fc3 < 1.3 && cc3 < 0.01;
+	if !p3 { all = false; }
+	print("L3 split ends: gap ", g3, " fan ", f3, " vary ", v3, " control ", fc3, " ", cc3, tag(p3));
 	locks::build(D, s);
 	let m4 = l4(0.0);
 	let mc4 = l4(0.003);
-	let ok4 = m4 >= 0.0995 && mc4 < 0.0995;
-	if !ok4 { all = false; }
-	print("L4 outside: min ", m4, " control ", mc4, tag(ok4));
+	let p4 = m4 >= 0.0995 && mc4 < 0.0995;
+	if !p4 { all = false; }
+	print("L4 outside: min ", m4, " control ", mc4, tag(p4));
 	var slowest = 0.0;
-	var biggest = 0;
+	var maxv = 0;
 	for i in hairdo::count() {
 		grow_style(hairdo::name_of(i));
 		let t0 = clock();
 		locks::build(D, s);
-		let t = clock() - t0;
-		slowest = max(slowest, t);
-		biggest = max(biggest, locks::P.len / 3);
+		let dt = clock() - t0;
+		slowest = max(slowest, dt);
+		maxv = max(maxv, locks::P.len / 3);
 	}
-	let st0 = clock();
+	let ts0 = clock();
 	locks::strands(512, 7);
-	let st = clock() - st0;
+	let st = clock() - ts0;
 	let px = gltf::image_pixels(gltf::images.len - 1);
 	let a7 = alpha(px, 512, 0.0, 1.0);
-	let tip = alpha(px, 512, 0.95, 1.0);
-	let root = alpha(px, 512, 0.0, 0.5);
-	let ok7 = slowest <= 0.15 && biggest <= 120000 && st <= 0.2 && a7 >= 0.35 && a7 <= 0.75 && tip <= root * 0.5;
-	if !ok7 { all = false; }
-	print("L7 cost: build ", slowest, " s verts ", biggest, " strands ", st, " s alpha ", a7, " tips ", tip, " over ", root, tag(ok7));
+	let tip7 = alpha(px, 512, 0.95, 1.0);
+	let root7 = alpha(px, 512, 0.0, 0.5);
+	let p7 = slowest <= 0.15 && maxv <= 120000 && st <= 0.2 && a7 >= 0.35 && a7 <= 0.75 && tip7 <= root7 * 0.5;
+	if !p7 { all = false; }
+	print("L7 cost: build ", slowest, " s verts ", maxv, " strands ", st, " s alpha ", a7, " tips ", tip7, " over ", root7, tag(p7));
+	grow_style("long waves");
+	let np = rdu(8);
+	let ns = rdu(12);
+	var Q f32[>..] = [];
+	for k in ns {
+		let o = 16 + 48 * np + 16 * k;
+		let pt = gpoint(rdu(o));
+		let x real = pt.x;
+		let y real = pt.y;
+		let z real = pt.z;
+		let dx = 0.0 - x;
+		let dy = 1.6 - y;
+		let dz = 0.0 - z;
+		let l = sqrt(dx * dx + dy * dy + dz * dz);
+		var nx = x;
+		var ny = y;
+		var nz = z;
+		if l > 1e-12 {
+			nx += dx / l * 0.001;
+			ny += dy / l * 0.001;
+			nz += dz / l * 0.001;
+		}
+		Q.push(nx as f32);
+		Q.push(ny as f32);
+		Q.push(nz as f32);
+	}
+	locks::scalp(D, Q, 0.015);
+	var rootlow = 1e30;
+	for i in locks::scalp_w.len {
+		rootlow = min(rootlow, locks::scalp_w[i] as real);
+	}
+	let bp f32[3] = [0.0, 1.5, 0.0];
+	locks::scalp(D, bp, 0.015);
+	let bottom = locks::scalp_w[0] as real;
+	var F f32[>..] = [];
+	for i in 20000 {
+		let y = 1.0 - ((2 * i + 1) as real) / 20000.0;
+		let rad = sqrt(1.0 - y * y);
+		let ang = (i as real) * 2.39996323;
+		F.push((0.1 * rad * cos(ang)) as f32);
+		F.push((1.6 + 0.1 * y) as f32);
+		F.push((0.1 * rad * sin(ang)) as f32);
+	}
+	let t8 = clock();
+	locks::scalp(D, F, 0.015);
+	let dt8 = clock() - t8;
+	var hi = 0;
+	for i in locks::scalp_w.len {
+		if (locks::scalp_w[i] as real) > 0.5 { hi += 1; }
+	}
+	let share = if locks::scalp_w.len > 0 { (hi as real) / (locks::scalp_w.len as real) } else { 0.0 };
+	locks::scalp(D, F, 0.001);
+	var hc = 0;
+	for i in locks::scalp_w.len {
+		if (locks::scalp_w[i] as real) > 0.5 { hc += 1; }
+	}
+	let ctl = if locks::scalp_w.len > 0 { (hc as real) / (locks::scalp_w.len as real) } else { 0.0 };
+	let p8 = rootlow >= 0.95 && bottom == 0.0 && dt8 <= 0.07 && share >= 0.3 && share <= 0.8 && ctl < 0.15;
+	if !p8 { all = false; }
+	print("L8 scalp: roots ", rootlow, " bottom ", bottom, " time ", dt8, " share ", share, " control ", ctl, tag(p8));
 	if all { print("locks: ok"); } else { print("locks: FAILED"); }
 }

@@ -3573,6 +3573,7 @@ at the sun's site only (252, no spills, Y6 0.19 ms).
   over the ball (a Fibonacci sphere), r 0.015 takes at most 70 ms, and the share of
   points above 0.5 is between 0.3 and 0.8 (hair covers part of the head, not all
   or none). Control: r 0.001 gives a share below 0.15.
+  First run: roots 1.0, bottom 0, 7 ms, share 0.700, control 0.044: pass.
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 
