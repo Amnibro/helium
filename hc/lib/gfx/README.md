@@ -24,6 +24,7 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `meshopt` | decoder for glTF buffer views compressed with `EXT_meshopt_compression` or `KHR_meshopt_compression`: vertex streams (versions 0 and 1), triangle and index streams, and the octahedral, quaternion, exponential and color filters; `gltf` calls it while loading, so compressed files need no extra step |
 | `draco` | decoder for Draco 2.2 meshes (`KHR_draco_mesh_compression`): sequential and edgebreaker (standard and valence) connectivity, every prediction scheme and transform the 2.2 encoders write, quantized and integer attributes; `gltf` calls it while loading |
 | `codec_webp` | WebP decoder: lossy VP8 (with `ALPH` alpha) and lossless VP8L stills, simple and extended containers, output equal to libwebp's RGBA; `gltf` calls it for `.webp` images and `EXT_texture_webp` |
+| `video` | H.264 Constrained Baseline encoder and MP4 writer for exporting animations on the CPU: intra 16x16, P with whole-pixel motion search, skip; output decodes identically in ffmpeg |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
 | `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
@@ -4517,6 +4518,33 @@ Results (2026-11-15, PC CPU): W1 and W2 pass with all 472 files exact (160 lossy
 in 11.4 ms (lossy, 69 million pixels per second), 2.4 ms (lossless), 16.5 ms (lossy with alpha) and
 10.2 ms (lossless with alpha). The native libwebp 1.6.0 decoder (system build with SIMD, same PC) takes
 2.3, 0.5, 5.2 and 4.4 ms on the same files, so it is still 2 to 5 times faster. W5 passes.
+
+### Video export (H.264 in MP4)
+
+`video` turns rendered frames into an `.mp4` on the CPU: `start(w, h, fps, qp, gop)`, `add(rgba)` per frame
+(for example from `gfx::grab`), then `save(path)`. The stream is H.264 Constrained Baseline with CAVLC, so
+every phone, browser and player decodes it: intra 16x16 macroblocks, P macroblocks with whole-pixel motion
+search, and skipped macroblocks, one slice per frame, an IDR every `gop` frames, deblocking off. Sizes that
+are not a multiple of 16 are cropped in the SPS. No hardware encoder is used.
+
+`video_check` (built from `video_check.gold`, run by `gfxtest.sh`, CPU only, needs `ffmpeg` on the PATH)
+encodes 12 test clips (still, panning, zooming, noise, a scene cut and black-and-white extremes; 2x2 to
+176x144; qp 10 to 51; all-intra and long GOPs) and decodes each with ffmpeg's H.264 decoder. Bars,
+registered before the first run:
+
+- V1: ffmpeg decodes every clip with no error message to exactly the encoder's own reconstruction, byte
+  for byte, for every frame.
+- V2: at qp 10 the average luma PSNR is above 44 dB, at qp 26 above 36 dB on the still and panning
+  clips; every frame of the still clip after the first is under a tenth of the first frame's size.
+- V3: bad sizes, rates and GOPs, short frames and saving with no frames are refused.
+- V4: 30 panning frames at 1280x720 encode at more than 10 frames per second and decode exactly.
+
+Results (2026-11-15, PC CPU, ffmpeg n9.0.2): V1 passes for all 12 clips, every frame byte for byte; the
+same files also decode identically in OpenH264 2.6.0 (through GStreamer), and ffprobe reports Constrained
+Baseline. V2: qp 10 gives 53.9 and 51.9 dB, qp 26 gives 46.2 and 40.6 dB, and the still clip's later
+frames take at most 6 bytes against 156 for the first. V3 refuses 7 of 7. V4 encodes 1280x720 at 30.8
+frames per second (1,061 KB for 30 frames).
+
 ## Provenance
 
 * `sdf_font.amni` is Auron's own: glyphs defined as strokes in code, no font files.
