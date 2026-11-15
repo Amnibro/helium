@@ -29,4 +29,6 @@ Imports: os, math and gfx.cloth. A standalone program that checks the cloth solv
 
 `fn z10() bool`: a hanging pinned sheet of 65, and an f32 array `out` of `N * N * 16` zeros. 120 times: read the clock, step once with wz 5, call `cloth::write(c, P[..], 6, 0, 3, out[..])`, read the clock again and keep the difference in milliseconds. `med` is the median (sort ascending, element at index 60). Passes when med is at most 4. Prints "cloth Z10 one step of 4225 particles with the morph data ", med, " ms (bar 4, median of 120)", and the verdict.
 
-`main()` runs z1, z2, z3, z4, z5, z6 and z10 in that order, all of them even after a failure, prints "cloth: ok" when all passed and otherwise "cloth: FAILED" and then exits with status 1.
+`fn z12() bool`: a flat sheet of 33 without pins or colliders, floor off. With contacts on, give every vertex v a body contact through `cloth::skin` at its own x and z, height 0.5, direction (0, 1, 0), gap 0.01. Step 180 times with no wind; `low` is the smallest y of any particle after any step. The control is the same sheet without the contacts, and `clow` its smallest y after 180 steps. Passes when low is at least 0.515 minus 1e-6 and clow is below 0.4. Prints "cloth Z12 lowest particle over a body contact ", low, " m (bar 0.515), control without contacts ", clow, and the verdict.
+
+`main()` runs z1, z2, z3, z4, z5, z6, z10 and z12 in that order, all of them even after a failure, prints "cloth: ok" when all passed and otherwise "cloth: FAILED" and then exits with status 1.

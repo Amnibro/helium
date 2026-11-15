@@ -3111,6 +3111,11 @@ in the plane z = 0 with its top edge at y = 2 and every vertex of the top edge p
 * **Z10 cost.** A hanging sheet of 65 x 65 vertices (4,225 particles) in a wind of
   5 m/s: one step of 8 substeps, with the morph data written, takes at most 4 ms on
   one core (median of 120 steps).
+* **Z12 body contact.** A flat sheet of 33 x 33 without pins or colliders, every
+  vertex given a body contact at its own x and z, height 0.5, direction straight up,
+  gap 0.01: over 180 steps no particle goes below 0.515 m (the gap plus the 5 mm
+  thickness above the body), less 1e-6. Control: the same sheet without the contacts
+  falls below 0.4 m.
 * **Z11 nothing else moved.** With no cloth in the scene the goldens stay above 40 dB.
   gfxtest, wgsltest and webgputest pass, with a new `scene_cloth` in webgputest above
   30 dB against the native frame.

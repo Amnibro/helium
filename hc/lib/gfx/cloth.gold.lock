@@ -4,7 +4,7 @@ import math;
 import dictionary;
 === 3b949e3d2d0ade28
 struct Cloth { p0 int, np int, e0 int, ne int, b0 int, nb int, t0 int, nt int, v0 int, nv int, density real = 0.2, gravity real = 9.81, thickness real = 0.005, damping real = 1.0, air real = 1.2, drag real = 1.28, friction real = 0.5, stretch real = 0.0, bend real = 1.0, substeps int = 8, limit bool = true, stale bool = true, keep bool = false }
-=== 436c3f67890f4653
+=== -78f0163c22d9bd7d
 var cloths Cloth[>..];
 var pos real[>..];
 var old real[>..];
@@ -26,83 +26,117 @@ var bends int[>..];
 var bend_len real[>..];
 var tris int[>..];
 var vmap int[>..];
+var skin_on bool[>..];
+var skin_p real[>..];
+var skin_n real[>..];
+var skin_gap real[>..];
 var balls real[>..];
 var pills real[>..];
 var floor_on bool = false;
 var floor_y real = 0.0;
-=== -e8ea05f70c0a209
-fn key_bits(x f32, y f32, z f32) uint {
-	var t f32[3] = [0.0; 3];
-	t[0] = x + 0.0;
-	t[1] = y + 0.0;
-	t[2] = z + 0.0;
-	let b = bytes_of(t);
-	var h uint = 14695981039346656037;
-	for j in 12 { h = (h ^ (b[j] as uint)) * 1099511628211; }
-	h ^ (h >> 31)
-}
-fn add3(a real[>..]&, x real, y real, z real) {
-	a.push(x);
-	a.push(y);
-	a.push(z);
-}
-fn pdist(i int, j int) real {
-	let dx = pos[j * 3] - pos[i * 3];
-	let dy = pos[j * 3 + 1] - pos[i * 3 + 1];
-	let dz = pos[j * 3 + 2] - pos[i * 3 + 2];
+fn pdist(a int, b int) real {
+	let dx = pos[b * 3] - pos[a * 3];
+	let dy = pos[b * 3 + 1] - pos[a * 3 + 1];
+	let dz = pos[b * 3 + 2] - pos[a * 3 + 2];
 	sqrt(dx * dx + dy * dy + dz * dz)
 }
+=== -4e6bc832fef245ea
+fn hbits(x f32) u64 {
+	var f f32[1];
+	f[0] = x + 0.0;
+	let b = bytes_of(f);
+	(b[0] as u64) | ((b[1] as u64) << 8) | ((b[2] as u64) << 16) | ((b[3] as u64) << 24)
+}
+fn hslot(x f32, y f32, z f32, mask int) int {
+	var h u64 = 14695981039346656037;
+	h = (h ^ hbits(x)) * 1099511628211;
+	h = (h ^ hbits(y)) * 1099511628211;
+	h = (h ^ hbits(z)) * 1099511628211;
+	h = h ^ (h >> 32);
+	(h & (mask as u64)) as int
+}
 fn make(p const f32[:], stride int, at int, nv int, indices const u32[:]) int {
-	let pbase = pos.len / 3;
-	let ebase = edges.len / 2;
-	let bbase = bends.len / 2;
-	let tbase = tris.len / 3;
-	let vbase = vmap.len;
-	let cap = next_pow2(max(nv * 2, 16));
-	let mask = (cap - 1) as uint;
+	let p0 = pos.len / 3;
+	let v0 = vmap.len;
+	let e0 = edge_len.len;
+	let b0 = bend_len.len;
+	let t0 = tris.len / 3;
+	var cap = 16;
+	while cap < nv * 2 { cap *= 2; }
 	var table int[>..] = [];
 	table.resize(cap, -1);
 	for v in nv {
-		let o = v * stride + at;
-		let x = p[o] as real;
-		let y = p[o + 1] as real;
-		let z = p[o + 2] as real;
-		let h = key_bits(p[o], p[o + 1], p[o + 2]);
-		var s = (h & mask) as int;
-		let id = loop {
-			let q = table[s];
-			if q < 0 {
-				let nid = pos.len / 3;
-				add3(pos, x, y, z);
-				add3(old, x, y, z);
-				add3(last, x, y, z);
-				add3(rest, x, y, z);
-				add3(goal, x, y, z);
-				add3(from, x, y, z);
-				add3(vel, 0.0, 0.0, 0.0);
-				add3(push, 0.0, 0.0, 0.0);
-				add3(nrm, 0.0, 1.0, 0.0);
-				inv.push(0.0);
-				inv0.push(0.0);
-				held.push(false);
-				reach_to.push(-1);
-				reach.push(0.0);
-				table[s] = nid;
-				break nid;
+		let x = p[v * stride + at];
+		let y = p[v * stride + at + 1];
+		let z = p[v * stride + at + 2];
+		let xr = x as real;
+		let yr = y as real;
+		let zr = z as real;
+		var s = hslot(x, y, z, cap - 1);
+		var found = -1;
+		while table[s] >= 0 {
+			let q = table[s] * 3;
+			if pos[q] == xr && pos[q + 1] == yr && pos[q + 2] == zr {
+				found = table[s];
+				break;
 			}
-			if pos[q * 3] == x && pos[q * 3 + 1] == y && pos[q * 3 + 2] == z { break q; }
 			s = (s + 1) & (cap - 1);
-		};
-		vmap.push(id);
+		}
+		if found < 0 {
+			found = pos.len / 3;
+			table[s] = found;
+			pos.push(xr);
+			pos.push(yr);
+			pos.push(zr);
+			old.push(xr);
+			old.push(yr);
+			old.push(zr);
+			last.push(xr);
+			last.push(yr);
+			last.push(zr);
+			rest.push(xr);
+			rest.push(yr);
+			rest.push(zr);
+			goal.push(xr);
+			goal.push(yr);
+			goal.push(zr);
+			from.push(xr);
+			from.push(yr);
+			from.push(zr);
+			skin_p.push(xr);
+			skin_p.push(yr);
+			skin_p.push(zr);
+			for j in 3 {
+				vel.push(0.0);
+				push.push(0.0);
+			}
+			nrm.push(0.0);
+			nrm.push(1.0);
+			nrm.push(0.0);
+			skin_n.push(0.0);
+			skin_n.push(1.0);
+			skin_n.push(0.0);
+			inv.push(0.0);
+			inv0.push(0.0);
+			held.push(false);
+			skin_on.push(false);
+			skin_gap.push(0.0);
+			reach_to.push(-1);
+			reach.push(0.0);
+		}
+		vmap.push(found);
 	}
-	var ed = dictionary<int, int> {};
+	let np = pos.len / 3 - p0;
+	var mass real[>..] = [];
+	mass.resize(np, 0.0);
 	var ecnt int[>..] = [];
-	var o1 int[>..] = [];
-	var o2 int[>..] = [];
+	var eop1 int[>..] = [];
+	var eop2 int[>..] = [];
+	var d = dictionary<int, int> {};
 	for t in indices.len / 3 {
-		let a = vmap[vbase + indices[t * 3] as int];
-		let b = vmap[vbase + indices[t * 3 + 1] as int];
-		let c = vmap[vbase + indices[t * 3 + 2] as int];
+		let a = vmap[v0 + (indices[t * 3] as int)];
+		let b = vmap[v0 + (indices[t * 3 + 1] as int)];
+		let c = vmap[v0 + (indices[t * 3 + 2] as int)];
 		if a == b || b == c || a == c { continue; }
 		tris.push(a);
 		tris.push(b);
@@ -117,47 +151,46 @@ fn make(p const f32[:], stride int, at int, nv int, indices const u32[:]) int {
 		let ny = uz * wx - ux * wz;
 		let nz = ux * wy - uy * wx;
 		let area = 0.5 * sqrt(nx * nx + ny * ny + nz * nz);
-		let m = area / 3.0 * 0.2;
-		inv[a] += m;
-		inv[b] += m;
-		inv[c] += m;
-		let corners = [a, b, c];
-		for sd in 3 {
-			let u = corners[sd];
-			let w = corners[(sd + 1) % 3];
-			let o = corners[(sd + 2) % 3];
-			let lo = min(u, w);
-			let hi = max(u, w);
+		let share = area / 3.0 * 0.2;
+		mass[a - p0] += share;
+		mass[b - p0] += share;
+		mass[c - p0] += share;
+		for side in 3 {
+			let s1 = if side == 0 { a } else if side == 1 { b } else { c };
+			let s2 = if side == 0 { b } else if side == 1 { c } else { a };
+			let opp = if side == 0 { c } else if side == 1 { a } else { b };
+			let lo = min(s1, s2);
+			let hi = max(s1, s2);
 			let key = lo * 4294967296 + hi;
-			let e = ed.get(key);
-			if e {
-				if ecnt[e] == 1 { o2[e] = o; }
+			let f = d.get(key);
+			if f {
+				let e = f;
+				if ecnt[e] == 1 { eop2[e] = opp; }
 				ecnt[e] += 1;
 			} else {
-				let ne = edges.len / 2 - ebase;
+				d.insert(key, ecnt.len);
 				edges.push(lo);
 				edges.push(hi);
 				edge_len.push(pdist(lo, hi));
-				ed.insert(key, ne);
 				ecnt.push(1);
-				o1.push(o);
-				o2.push(-1);
+				eop1.push(opp);
+				eop2.push(-1);
 			}
 		}
 	}
-	for e in edges.len / 2 - ebase {
-		if ecnt[e] == 2 && o1[e] != o2[e] {
-			bends.push(o1[e]);
-			bends.push(o2[e]);
-			bend_len.push(pdist(o1[e], o2[e]));
+	for i in np {
+		let m = max(mass[i], 1e-9);
+		inv[p0 + i] = 1.0 / m;
+		inv0[p0 + i] = 1.0 / m;
+	}
+	for e in ecnt.len {
+		if ecnt[e] == 2 && eop1[e] != eop2[e] {
+			bends.push(eop1[e]);
+			bends.push(eop2[e]);
+			bend_len.push(pdist(eop1[e], eop2[e]));
 		}
 	}
-	for i in pbase..pos.len / 3 {
-		let m = max(inv[i], 1e-9);
-		inv[i] = 1.0 / m;
-		inv0[i] = 1.0 / m;
-	}
-	cloths.push(Cloth { p0: pbase, np: pos.len / 3 - pbase, e0: ebase, ne: edges.len / 2 - ebase, b0: bbase, nb: bends.len / 2 - bbase, t0: tbase, nt: tris.len / 3 - tbase, v0: vbase, nv: nv, .. });
+	cloths.push(Cloth { p0: p0, np: np, e0: e0, ne: edge_len.len - e0, b0: b0, nb: bend_len.len - b0, t0: t0, nt: tris.len / 3 - t0, v0: v0, nv: nv });
 	cloths.len - 1
 }
 === 7312f860df6f9523
@@ -179,6 +212,25 @@ fn unpin(c int, vertex int) {
 		inv[i] = inv0[i];
 		cloths[c].stale = true;
 	}
+}
+=== 302c4faf2ab84e6c
+fn skin(c int, vertex int, px real, py real, pz real, nx real, ny real, nz real, gap real) {
+	let i = vmap[cloths[c].v0 + vertex];
+	skin_on[i] = true;
+	skin_p[i * 3] = px;
+	skin_p[i * 3 + 1] = py;
+	skin_p[i * 3 + 2] = pz;
+	let l = sqrt(nx * nx + ny * ny + nz * nz);
+	if l >= 1e-12 {
+		skin_n[i * 3] = nx / l;
+		skin_n[i * 3 + 1] = ny / l;
+		skin_n[i * 3 + 2] = nz / l;
+	}
+	skin_gap[i] = gap;
+}
+fn unskin(c int) {
+	let cl = cloths[c];
+	for i in cl.p0..cl.p0 + cl.np { skin_on[i] = false; }
 }
 === 54700fce7166754e
 fn reset() {
@@ -328,29 +380,25 @@ fn contact(i int, cx real, cy real, cz real, r real, friction real) {
 		}
 	}
 }
-=== -106ee2c1ca83e79f
-fn solve(a int, b int, rest_len real, soft real, h real) {
-	let oa = a * 3;
-	let ob = b * 3;
-	let dx = pos[ob] - pos[oa];
-	let dy = pos[ob + 1] - pos[oa + 1];
-	let dz = pos[ob + 2] - pos[oa + 2];
+=== -3e23064f14730c73
+fn solve(a int, b int, len real, soft real, h real) {
+	let dx = pos[b * 3] - pos[a * 3];
+	let dy = pos[b * 3 + 1] - pos[a * 3 + 1];
+	let dz = pos[b * 3 + 2] - pos[a * 3 + 2];
 	let l = sqrt(dx * dx + dy * dy + dz * dz);
 	if l < 1e-12 { return; }
 	let w = inv[a] + inv[b];
 	if w == 0.0 { return; }
-	let m = (l - rest_len) / (l * (w + soft / (h * h)));
-	let ma = m * inv[a];
-	let mb = -m * inv[b];
-	pos[oa] += dx * ma;
-	pos[oa + 1] += dy * ma;
-	pos[oa + 2] += dz * ma;
-	pos[ob] += dx * mb;
-	pos[ob + 1] += dy * mb;
-	pos[ob + 2] += dz * mb;
+	let m = (l - len) / (l * (w + soft / (h * h)));
+	pos[a * 3] += dx * (m * inv[a]);
+	pos[a * 3 + 1] += dy * (m * inv[a]);
+	pos[a * 3 + 2] += dz * (m * inv[a]);
+	pos[b * 3] += dx * (-m * inv[b]);
+	pos[b * 3 + 1] += dy * (-m * inv[b]);
+	pos[b * 3 + 2] += dz * (-m * inv[b]);
 }
 fn step(c int, dt real, wx real, wy real, wz real) {
-	if !(dt > 0.0) || cloths[c].np == 0 { return; }
+	if dt <= 0.0 || cloths[c].np == 0 { return; }
 	if cloths[c].stale && cloths[c].limit { limits(c); }
 	let cl = cloths[c];
 	for i in cl.p0 * 3..(cl.p0 + cl.np) * 3 {
@@ -359,9 +407,12 @@ fn step(c int, dt real, wx real, wy real, wz real) {
 		push[i] = 0.0;
 	}
 	for t in cl.t0..cl.t0 + cl.nt {
-		let a = tris[t * 3] * 3;
-		let b = tris[t * 3 + 1] * 3;
-		let d = tris[t * 3 + 2] * 3;
+		let pa = tris[t * 3];
+		let pb = tris[t * 3 + 1];
+		let pc = tris[t * 3 + 2];
+		let a = pa * 3;
+		let b = pb * 3;
+		let d = pc * 3;
 		let ux = pos[b] - pos[a];
 		let uy = pos[b + 1] - pos[a + 1];
 		let uz = pos[b + 2] - pos[a + 2];
@@ -371,26 +422,28 @@ fn step(c int, dt real, wx real, wy real, wz real) {
 		var nx = uy * vz - uz * vy;
 		var ny = uz * vx - ux * vz;
 		var nz = ux * vy - uy * vx;
-		let len = sqrt(nx * nx + ny * ny + nz * nz);
-		if len < 1e-20 { continue; }
-		let area = 0.5 * len;
-		nx /= len;
-		ny /= len;
-		nz /= len;
+		let nl = sqrt(nx * nx + ny * ny + nz * nz);
+		if nl < 1e-20 { continue; }
+		let area = nl * 0.5;
+		nx /= nl;
+		ny /= nl;
+		nz /= nl;
 		let rx = wx - (vel[a] + vel[b] + vel[d]) / 3.0;
 		let ry = wy - (vel[a + 1] + vel[b + 1] + vel[d + 1]) / 3.0;
 		let rz = wz - (vel[a + 2] + vel[b + 2] + vel[d + 2]) / 3.0;
 		let s = rx * nx + ry * ny + rz * nz;
-		let fm = min(0.5 * cl.air * cl.drag * area * s * s, cl.density * area * abs(s) / dt);
-		let f = if s > 0.0 { fm } else if s < 0.0 { -fm } else { 0.0 };
-		let cs = [a, b, d];
-		for q in 3 {
-			let o = cs[q];
-			let w = f / 3.0 * inv[o / 3];
-			push[o] += w * nx;
-			push[o + 1] += w * ny;
-			push[o + 2] += w * nz;
-		}
+		var f = min(0.5 * cl.air * cl.drag * area * s * s, cl.density * area * abs(s) / dt);
+		if s < 0.0 { f = -f; }
+		let third = f / 3.0;
+		push[a] += nx * third * inv[pa];
+		push[a + 1] += ny * third * inv[pa];
+		push[a + 2] += nz * third * inv[pa];
+		push[b] += nx * third * inv[pb];
+		push[b + 1] += ny * third * inv[pb];
+		push[b + 2] += nz * third * inv[pb];
+		push[d] += nx * third * inv[pc];
+		push[d + 1] += ny * third * inv[pc];
+		push[d + 2] += nz * third * inv[pc];
 	}
 	let n = max(cl.substeps, 1);
 	let h = dt / (n as real);
@@ -399,19 +452,20 @@ fn step(c int, dt real, wx real, wy real, wz real) {
 			let o = i * 3;
 			for j in 3 { old[o + j] = pos[o + j]; }
 			if held[i] {
-				if k == n {
-					for j in 3 { pos[o + j] = goal[o + j]; }
-				} else {
-					let fr = (k as real) / (n as real);
-					for j in 3 { pos[o + j] = from[o + j] + (goal[o + j] - from[o + j]) * fr; }
+				for j in 3 {
+					if k == n {
+						pos[o + j] = goal[o + j];
+					} else {
+						pos[o + j] = from[o + j] + (goal[o + j] - from[o + j]) * (k as real) / (n as real);
+					}
+					vel[o + j] = 0.0;
 				}
-				for j in 3 { vel[o + j] = 0.0; }
 			} else {
 				for j in 3 { vel[o + j] += h * push[o + j]; }
 				vel[o + 1] -= h * cl.gravity;
-				let dm = max(1.0 - cl.damping * h, 0.0);
+				let f = max(1.0 - cl.damping * h, 0.0);
 				for j in 3 {
-					vel[o + j] *= dm;
+					vel[o + j] *= f;
 					pos[o + j] += h * vel[o + j];
 				}
 			}
@@ -426,57 +480,79 @@ fn step(c int, dt real, wx real, wy real, wz real) {
 			for i in cl.p0..cl.p0 + cl.np {
 				let r = reach_to[i];
 				if r < 0 { continue; }
-				let o = i * 3;
-				let q = r * 3;
-				let dx = pos[o] - pos[q];
-				let dy = pos[o + 1] - pos[q + 1];
-				let dz = pos[o + 2] - pos[q + 2];
-				let d = sqrt(dx * dx + dy * dy + dz * dz);
-				if d > reach[i] && d > 1e-12 {
-					let sc = reach[i] / d;
-					pos[o] = pos[q] + dx * sc;
-					pos[o + 1] = pos[q + 1] + dy * sc;
-					pos[o + 2] = pos[q + 2] + dz * sc;
+				let dx = pos[i * 3] - pos[r * 3];
+				let dy = pos[i * 3 + 1] - pos[r * 3 + 1];
+				let dz = pos[i * 3 + 2] - pos[r * 3 + 2];
+				let dd = sqrt(dx * dx + dy * dy + dz * dz);
+				if dd > reach[i] && dd > 1e-12 {
+					let f = reach[i] / dd;
+					pos[i * 3] = pos[r * 3] + dx * f;
+					pos[i * 3 + 1] = pos[r * 3 + 1] + dy * f;
+					pos[i * 3 + 2] = pos[r * 3 + 2] + dz * f;
 				}
 			}
 		}
 		for i in cl.p0..cl.p0 + cl.np {
 			if held[i] { continue; }
 			let o = i * 3;
-			for q in balls.len / 4 {
-				contact(i, balls[q * 4], balls[q * 4 + 1], balls[q * 4 + 2], balls[q * 4 + 3] + cl.thickness, cl.friction);
+			for sp in balls.len / 4 {
+				contact(i, balls[sp * 4], balls[sp * 4 + 1], balls[sp * 4 + 2], balls[sp * 4 + 3] + cl.thickness, cl.friction);
 			}
-			for q in pills.len / 7 {
-				let ax = pills[q * 7];
-				let ay = pills[q * 7 + 1];
-				let az = pills[q * 7 + 2];
-				let abx = pills[q * 7 + 3] - ax;
-				let aby = pills[q * 7 + 4] - ay;
-				let abz = pills[q * 7 + 5] - az;
-				let ab2 = abx * abx + aby * aby + abz * abz;
+			for cp in pills.len / 7 {
+				let ax = pills[cp * 7];
+				let ay = pills[cp * 7 + 1];
+				let az = pills[cp * 7 + 2];
+				let bx = pills[cp * 7 + 3] - ax;
+				let by = pills[cp * 7 + 4] - ay;
+				let bz = pills[cp * 7 + 5] - az;
+				let bb = bx * bx + by * by + bz * bz;
 				var t = 0.0;
-				if ab2 > 0.0 {
-					t = clamp(((pos[o] - ax) * abx + (pos[o + 1] - ay) * aby + (pos[o + 2] - az) * abz) / ab2, 0.0, 1.0);
+				if bb > 0.0 {
+					t = clamp(((pos[o] - ax) * bx + (pos[o + 1] - ay) * by + (pos[o + 2] - az) * bz) / bb, 0.0, 1.0);
 				}
-				contact(i, ax + abx * t, ay + aby * t, az + abz * t, pills[q * 7 + 6] + cl.thickness, cl.friction);
+				contact(i, ax + bx * t, ay + by * t, az + bz * t, pills[cp * 7 + 6] + cl.thickness, cl.friction);
+			}
+			if skin_on[i] {
+				let nx = skin_n[o];
+				let ny = skin_n[o + 1];
+				let nz = skin_n[o + 2];
+				let e = skin_gap[i] + cl.thickness - ((pos[o] - skin_p[o]) * nx + (pos[o + 1] - skin_p[o + 1]) * ny + (pos[o + 2] - skin_p[o + 2]) * nz);
+				if e > 0.0 {
+					pos[o] += nx * e;
+					pos[o + 1] += ny * e;
+					pos[o + 2] += nz * e;
+					let mx = pos[o] - old[o];
+					let my = pos[o + 1] - old[o + 1];
+					let mz = pos[o + 2] - old[o + 2];
+					let along = mx * nx + my * ny + mz * nz;
+					let sx = mx - along * nx;
+					let sy = my - along * ny;
+					let sz = mz - along * nz;
+					let sl = sqrt(sx * sx + sy * sy + sz * sz);
+					if sl > 1e-12 {
+						let f = min(sl, cl.friction * e);
+						pos[o] -= sx / sl * f;
+						pos[o + 1] -= sy / sl * f;
+						pos[o + 2] -= sz / sl * f;
+					}
+				}
 			}
 			if floor_on && pos[o + 1] < floor_y + cl.thickness {
 				let e = floor_y + cl.thickness - pos[o + 1];
 				pos[o + 1] = floor_y + cl.thickness;
 				let mx = pos[o] - old[o];
 				let mz = pos[o + 2] - old[o + 2];
-				let ml = sqrt(mx * mx + mz * mz);
-				if ml > 1e-12 {
-					let f = min(ml, cl.friction * e);
-					pos[o] -= mx / ml * f;
-					pos[o + 2] -= mz / ml * f;
+				let sl = sqrt(mx * mx + mz * mz);
+				if sl > 1e-12 {
+					let f = min(sl, cl.friction * e);
+					pos[o] -= mx / sl * f;
+					pos[o + 2] -= mz / sl * f;
 				}
 			}
 		}
 		for i in cl.p0..cl.p0 + cl.np {
 			if held[i] { continue; }
-			let o = i * 3;
-			for j in 3 { vel[o + j] = (pos[o + j] - old[o + j]) / h; }
+			for j in 3 { vel[i * 3 + j] = (pos[i * 3 + j] - old[i * 3 + j]) / h; }
 		}
 	}
 	normals(c);

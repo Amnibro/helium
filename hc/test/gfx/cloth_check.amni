@@ -289,15 +289,45 @@ fn z10() bool {
 	print("cloth Z10 one step of 4225 particles with the morph data ", med, " ms (bar 4, median of 120)", verdict(ok));
 	ok
 }
+fn lowest_y(c int) real {
+	let p0 = cloth::cloths[c].p0;
+	let np = cloth::cloths[c].np;
+	var m = 1e30;
+	for i in p0..p0 + np {
+		let y = cloth::pos[i * 3 + 1];
+		if y < m { m = y; }
+	}
+	m
+}
+fn z12() bool {
+	let c = fresh(33, 1, false);
+	for v in N * N {
+		cloth::skin(c, v, P[v * 6] as real, 0.5, P[v * 6 + 2] as real, 0.0, 1.0, 0.0, 0.01);
+	}
+	var low = 1e30;
+	for k in 180 {
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, 0.0);
+		let y = lowest_y(c);
+		if y < low { low = y; }
+	}
+	let c2 = fresh(33, 1, false);
+	run(c2, 180, 0.0);
+	let clow = lowest_y(c2);
+	let ok = low >= 0.515 - 0.000001 && clow < 0.4;
+	print("cloth Z12 lowest particle over a body contact ", low, " m (bar 0.515), control without contacts ", clow, verdict(ok));
+	ok
+}
 fn main() {
-	let a = z1();
-	let b = z2();
-	let c = z3();
-	let d = z4();
-	let e = z5();
-	let f = z6();
-	let g = z10();
-	if a && b && c && d && e && f && g {
+	var all = true;
+	if !z1() { all = false; }
+	if !z2() { all = false; }
+	if !z3() { all = false; }
+	if !z4() { all = false; }
+	if !z5() { all = false; }
+	if !z6() { all = false; }
+	if !z10() { all = false; }
+	if !z12() { all = false; }
+	if all {
 		print("cloth: ok");
 	} else {
 		print("cloth: FAILED");
