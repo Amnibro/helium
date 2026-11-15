@@ -57,6 +57,8 @@ HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/cloth_check.amni" > "$O/clo
 grep -q "^cloth: ok$" "$O/cloth_check.txt" || { say "gfxtest: FAILED: cloth solver checks"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/garment_check.amni" > "$O/garment_check.txt" 2>&1; cat "$O/garment_check.txt"; cat "$O/garment_check.txt" >> "$RES"
 grep -q "^garment: ok$" "$O/garment_check.txt" || { say "gfxtest: FAILED: garment bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/garment_follow_check.amni" > "$O/garment_follow_check.txt" 2>&1; cat "$O/garment_follow_check.txt"; cat "$O/garment_follow_check.txt" >> "$RES"
+grep -q "^follow: ok$" "$O/garment_follow_check.txt" || { say "gfxtest: FAILED: garment follow bars"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/meshopt_check.amni" "$R/hc/test/gfx/fixtures/meshopt_cases.bin" > "$O/meshopt_check.txt" 2>&1; cat "$O/meshopt_check.txt"; cat "$O/meshopt_check.txt" >> "$RES"
 grep -q "^meshopt: ok$" "$O/meshopt_check.txt" || { say "gfxtest: FAILED: meshopt decoder checks"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/draco_check.amni" "$R/hc/test/gfx/fixtures/draco_cases.bin" > "$O/draco_check.txt" 2>&1; cat "$O/draco_check.txt"; cat "$O/draco_check.txt" >> "$RES"
@@ -89,6 +91,8 @@ grep -q "^soak look: \(ok\|skipped\)$" "$O/soak_look.txt" || { say "gfxtest: FAI
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/locks_look.amni" -o "$T/ll" > "$T/ll_build.txt" 2>&1 || { echo "gfxtest: locks_look build failed"; grep -av "W[0-9]" "$T/ll_build.txt" | tail -n 5; exit 1; }
 "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$T/ll" > "$O/locks_look.txt" 2>&1; cat "$O/locks_look.txt"; cat "$O/locks_look.txt" >> "$RES"
 grep -q "^locks look: \(ok\|skipped\)$" "$O/locks_look.txt" || { say "gfxtest: FAILED: card lock look (L5, L6)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$H" run "$R/hc/test/gfx/local_shadow_check.amni" > "$O/local_shadow_check.txt" 2>&1; grep -av "^WARNING" "$O/local_shadow_check.txt"; cat "$O/local_shadow_check.txt" >> "$RES"
+grep -q "^local: ok$" "$O/local_shadow_check.txt" || { say "gfxtest: FAILED: local shadow atlas bars"; exit 1; }
 grep -a "^gpu:" "$T/all.txt"; g=$(grep -a "^gpu: \(ok\|skipped\|FAILED\)" "$T/all.txt")
 case "$g" in
 	"gpu: ok"*) say "gfxtest: ok";;

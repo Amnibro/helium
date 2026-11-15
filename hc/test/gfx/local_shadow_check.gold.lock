@@ -1,0 +1,240 @@
+=== -16051f6bac74e2e7
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.scene3d;
+var failed bool = false;
+fn check(name const byte[:], ok bool, detail const byte[:]) {
+	var s byte[>..] = [];
+	s.append(if ok { "PASS " } else { "FAIL " });
+	s.append(name);
+	if detail.len > 0 {
+		s.append(" (");
+		s.append(detail);
+		s.push(')');
+	}
+	print(s);
+	if !ok { failed = true; }
+}
+=== 4f6c87fc8add6bc0
+var tgt gfx::Texture;
+var pillars int[>..];
+fn set_shadows(on bool) {
+	for &l in s3d::lights { l.shadows = on; }
+}
+fn build_scene() {
+	let m = shapes::material(float3 { 0.6, 0.6, 0.6 }, 0.0, 0.9);
+	s3d::init(512, 512);
+	tgt = gfx::render_target(512, 512, gfx::RGBA8);
+	let fl = s3d::add(shapes::plane(4.0, m));
+	s3d::place(fl, gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	for i in 16 {
+		let x = -2.25 + 1.5 * ((i % 4) as f32);
+		let z = -2.25 + 1.5 * ((i / 4) as f32);
+		let p = s3d::add(shapes::cube(float3 { 0.08, 0.3, 0.08 }, m));
+		s3d::place(p, gfx::translate(float3 { x, 0.3, z }));
+		pillars.push(p);
+		let b = s3d::add(shapes::sphere(0.14, 48, 24, m));
+		s3d::place(b, gfx::translate(float3 { x, 0.75, z }));
+		s3d::lights.push(s3d::Light { pos: float3 { x + 0.3, 1.25, z + 0.2 }, range: 2.0, rgb: float3 { 0.5, 0.5, 0.5 }, kind: 0, radius: 0.02, shadows: true, soft: 0.0, .. });
+	}
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sun.shadows = false;
+	s3d::sky.ambient = 0.0;
+	s3d::sky.draw = false;
+	s3d::look.bloom = 0.0;
+	s3d::look.ssao = false;
+	s3d::look.curve = 1;
+	s3d::debug_view = 5;
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 7.0, 4.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.05, far: 50.0 };
+}
+fn shot() real[>..] {
+	for f in 3 {
+		s3d::render(tgt);
+		gfx::flush();
+	}
+	let g = gfx::grab(tgt);
+	var out real[>..] = [];
+	for i in g.w * g.h {
+		let j = 4 * i;
+		out.push(0.2126 * (g.px[j] as real) + 0.7152 * (g.px[j + 1] as real) + 0.0722 * (g.px[j + 2] as real));
+	}
+	out
+}
+=== 5fe0b66baa6824f2
+fn l1() {
+	set_shadows(true);
+	let a = shot();
+	var n = 0;
+	for i in 16 {
+		if s3d::frame_u.light_shd[i].x >= 0.0 { n += 1; }
+	}
+	var d byte[>..] = [];
+	format(d, n, " of 16, faces ", s3d::local_used);
+	check("L1 room", n == 16, d);
+}
+=== -b91927ce791157f
+fn l2() {
+	set_shadows(true);
+	s3d::rt_shadows = false;
+	let a = shot();
+	set_shadows(false);
+	s3d::rt_shadows = true;
+	let r = shot();
+	s3d::rt_shadows = false;
+	let c = shot();
+	var sum_c = 0.0;
+	var diff_ar = 0.0;
+	var diff_cr = 0.0;
+	var n = 0;
+	var same = 0;
+	for i in c.len {
+		if c[i] > 2.0 {
+			sum_c += c[i];
+			diff_ar += abs(a[i] - r[i]);
+			diff_cr += abs(c[i] - r[i]);
+			n += 1;
+			if (a[i] < 0.5 * c[i]) == (r[i] < 0.5 * c[i]) { same += 1; }
+		}
+	}
+	let denom = max(sum_c, 1e-9);
+	let err = diff_ar / denom;
+	let ctl = diff_cr / denom;
+	let agree = (same as real) / max(n as real, 1.0);
+	let ratio = ctl / max(err, 1e-9);
+	var d byte[>..] = [];
+	format(d, "error ");
+	format_flt(d, err, 4);
+	format(d, " agreement ");
+	format_flt(d, agree, 4);
+	check("L2 matches ray tracing", err <= 0.05 && agree >= 0.97, d);
+	var d2 byte[>..] = [];
+	format(d2, "control error ");
+	format_flt(d2, ctl, 4);
+	format(d2, " ratio ");
+	format_flt(d2, ratio, 1);
+	check("L2c control sees shadows", ctl > 0.01 && ctl >= 10.0 * err, d2);
+	set_shadows(true);
+	s3d::rt_shadows = false;
+}
+=== 30d2dd3ab1498157
+fn l3() {
+	s3d::render(tgt);
+	gfx::flush();
+	var sum = 0;
+	for f in 10 {
+		s3d::render(tgt);
+		gfx::flush();
+		let a, b = s3d::local_stats();
+		sum += a;
+	}
+	var d byte[>..] = [];
+	format(d, "redrawn ", sum);
+	check("L3 cache", sum == 0, d);
+	s3d::local_cache = false;
+	s3d::render(tgt);
+	gfx::flush();
+	let drawn, due = s3d::local_stats();
+	var d2 byte[>..] = [];
+	format(d2, "drawn ", drawn, " used ", s3d::local_used);
+	check("L3c no cache redraws", drawn > 0 && drawn == s3d::local_used, d2);
+	s3d::local_cache = true;
+}
+=== -147beb07fd88b604
+fn l4() {
+	s3d::place(pillars[0], gfx::translate(float3 { -1.95, 0.3, -2.25 }));
+	s3d::render(tgt);
+	gfx::flush();
+	let drawn, due = s3d::local_stats();
+	var d byte[>..] = [];
+	format(d, "faces drawn ", drawn);
+	check("L4 moving caster", drawn >= 1 && drawn <= 12, d);
+	let a = shot();
+	s3d::local_cache = false;
+	let b = shot();
+	s3d::local_cache = true;
+	var worst = 0.0;
+	for i in a.len {
+		worst = max(worst, abs(a[i] - b[i]));
+	}
+	var d2 byte[>..] = [];
+	format(d2, "max diff ");
+	format_flt(d2, worst, 4);
+	check("L4b cached equals fresh", worst <= 1.0, d2);
+}
+=== 23e680679e995009
+fn mean_face_size() real {
+	var sum = 0;
+	var n = 0;
+	for i in s3d::local_used {
+		let s = s3d::local_ts[3 * i + 2];
+		if s > 0 {
+			sum += s;
+			n += 1;
+		}
+	}
+	(sum as real) / max(n as real, 1.0)
+}
+fn l5() {
+	s3d::local_min = 32;
+	s3d::render(tgt);
+	gfx::flush();
+	let near = mean_face_size();
+	s3d::view.eye = float3 { 0.0, 28.0, 16.0 };
+	s3d::render(tgt);
+	gfx::flush();
+	let far = mean_face_size();
+	s3d::view.eye = float3 { 0.0, 7.0, 4.0 };
+	s3d::local_min = 128;
+	var d byte[>..] = [];
+	format(d, "near ");
+	format_flt(d, near, 2);
+	format(d, " far ");
+	format_flt(d, far, 2);
+	check("L5 sizes follow the screen", far <= 0.5 * near, d);
+}
+=== -68b9975a85e25603
+fn time_frames(n int) real {
+	let t0 = clock_ns();
+	for i in n {
+		s3d::render(tgt);
+		gfx::flush();
+	}
+	let t1 = clock_ns();
+	((t1 - t0) as real) / (n as real) / 1000000.0
+}
+fn l6() {
+	for i in 10 {
+		s3d::render(tgt);
+		gfx::flush();
+	}
+	let cached = time_frames(30);
+	s3d::local_cache = false;
+	let fresh = time_frames(30);
+	s3d::local_cache = true;
+	var d byte[>..] = [];
+	format(d, "cached ");
+	format_flt(d, cached, 2);
+	format(d, " ms, uncached ");
+	format_flt(d, fresh, 2);
+	format(d, " ms");
+	check("L6 cost", cached < 0.7 * fresh, d);
+}
+=== -88fe4e582ad9e4a
+fn main() {
+	if !gfx::open_headless(512, 512) {
+		print("local: no device: ", gfx::error());
+		return;
+	}
+	build_scene();
+	l1();
+	l2();
+	l3();
+	l4();
+	l5();
+	l6();
+	if failed { print("local: FAILED"); } else { print("local: ok"); }
+}

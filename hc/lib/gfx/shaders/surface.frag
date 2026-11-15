@@ -38,7 +38,7 @@ layout(std430, set = 2, binding = 23) readonly buffer VsmTab { int vsm_tab[]; };
 
 const int CASCADES = 3;
 const int MAX_LIGHTS = 16;
-const int LOCAL_LAYERS = 12;
+const int LOCAL_FACES = 96;
 const int MAX_PROBES = 8;
 
 layout(set = 3, binding = 0) uniform Frame {
@@ -60,7 +60,6 @@ layout(set = 3, binding = 0) uniform Frame {
 	vec4 gi_dims;
 	vec4 light_dir[MAX_LIGHTS];
 	vec4 light_shd[MAX_LIGHTS];
-	mat4 local_mat[LOCAL_LAYERS];
 	vec4 refl;
 	mat4 view_m;
 	vec4 env;
@@ -415,18 +414,20 @@ float local_visibility(vec4 sh, vec3 lp, vec3 ldir, vec3 p, vec3 n) {
 	vec3 d = p - lp;
 	vec3 a = abs(d);
 	int f = sh.y > 1.5 ? (a.x >= a.y && a.x >= a.z ? (d.x > 0.0 ? 0 : 1) : (a.y >= a.z ? (d.y > 0.0 ? 2 : 3) : (d.z > 0.0 ? 4 : 5))) : 0;
-	int layer = int(sh.x) + f;
+	int fi = int(sh.x) + 5 * f;
 	float dist = sh.y > 1.5 ? max(a.x, max(a.y, a.z)) : max(dot(d, ldir), 1e-3);
 	float off = 1.5 * sh.z * dist;
-	vec4 s = local_mat[layer] * vec4(p + n * off - d / max(length(d), 1e-4) * off, 1.0);
+	vec4 s = mat4(lrec[fi], lrec[fi + 1], lrec[fi + 2], lrec[fi + 3]) * vec4(p + n * off - d / max(length(d), 1e-4) * off, 1.0);
 	if (s.w <= 0.0) return 1.0;
 	vec3 ndc = s.xyz / s.w;
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+	vec4 rc = lrec[fi + 4];
 	float texel = 1.0 / float(textureSize(tex_local_shadow, 0).x);
+	vec2 lo = rc.xy + 0.5 * texel, hi = rc.xy + rc.zz - 0.5 * texel, au = rc.xy + uv * rc.z;
 	float rot = gi.w > 0.5 ? 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) : 0.0;
 	float lit = 0.0;
-	for (int k = 0; k < 12; k++) lit += texture(tex_local_shadow, vec4(uv + vogel(k, 12, rot) * (sh.w * texel), float(layer), ndc.z));
+	for (int k = 0; k < 12; k++) lit += texture(tex_local_shadow, vec4(clamp(au + vogel(k, 12, rot) * (sh.w * texel), lo, hi), 0.0, ndc.z));
 	return lit / 12.0;
 }
 float mr_grain(vec3 p) { vec3 r = fract(floor(p * 7.0) * 0.1031); r += dot(r, r.zyx + 31.32); return fract((r.x + r.y) * r.z); }

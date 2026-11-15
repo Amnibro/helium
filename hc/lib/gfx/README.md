@@ -228,8 +228,11 @@ pixels differ in a 768x1024 Holo render); both goldens pass unchanged.
 | `sun.contact` | 0 | screen-space contact-shadow ray length in metres (0.03-0.07 for faces and clothing). |
 | `contact_steps`, `contact_thick` | 12, 0.02 | ray steps (quadratically spaced) and the depth a hit may be behind (metres). |
 | `Light.kind` 1, `dir`, `cone`, `edge` | point, -, 0.5, 0.2 | spot light: outer half-angle in radians and the fraction of it that fades (`add_spot`). |
-| `Light.shadows`, `soft` | false, 1.5 | a shadowed spot takes one layer of the local shadow atlas and a point six; `soft` is the filter radius in texels. |
-| `local_shadow_size` | 1024 | atlas layer size (12 layers, made on first use). |
+| `Light.shadows`, `soft` | false, 1.5 | a shadowed spot takes one tile of the local shadow atlas and a point six; `soft` is the filter radius in texels. All 16 lights can be shadowed (96 tiles). |
+| `local_shadow_size` | 1024 | largest tile, in texels. |
+| `local_atlas` | 4096 | side of the shared local shadow atlas (one depth texture, made on first use; 64 MB at 4096). Use 2048 on phones. |
+| `local_auto`, `local_res`, `local_min` | true, 1.0, 128 | sizes each light's tiles by how large its range looks on screen (`local_res` texels per pixel of that radius), from `local_min` up to `local_shadow_size`. Off: every tile is `local_shadow_size`. When the tiles do not fit, the largest are halved until they do. |
+| `local_cache` | true | a tile is drawn again only when its light, its place in the atlas, or a shadow caster within its view changes (animated, swaying and morphed casters count as changed every frame). `s3d::local_stats()` gives the tiles drawn by the last frame. |
 
 Receiver-plane depth from the geometric normal keeps wide kernels on sloped receivers
 free of acne without a large constant bias (the cause of peter-panning at the chin,
@@ -314,6 +317,55 @@ Measured by the `vsm` check in `gfx_smoke` (1280 x 720, RX 9060 XT, RADV):
 | half-lit edge pixels seen from 0.25 m above the floor, against 2048 cascades over 60 m | 2,227 against 11,303 |
 | soft sun, `angle` 0.07: half-lit pixels against the cascade filter | 4,277 against 4,271 |
 
+
+### Local shadow atlas
+
+Shadows from spot and point lights share one depth atlas instead of 12 fixed layers, which
+held at most two shadowed point lights. Each light's tiles are packed by size, largest
+first, in Z order (power-of-two squares sorted that way always line up, so nothing is
+wasted), and each tile is sized by how large the light's range looks on screen, with some
+slack so it does not flip size every frame. Like the sun's virtual pages, a tile is kept
+from frame to frame and drawn again only when something it sees changes, so a still room
+with 16 shadowed lights draws no shadow tiles at all. The lookups clamp their filter to the
+tile so neighbors never bleed in. Each face's matrix and tile rectangle ride at the end of the
+light record buffer (`light_shd.x` is the record index of the light's first face), because
+96 faces would push the frame uniforms past SDL's 4 KiB uniform window.
+
+`local_shadow_check` (from `local_shadow_check.gold`, GPU) lights 16 pillars topped with
+balls on a floor with 16 shadowed point lights (above the balls, range 2 m, filter 0, direct
+light only) at 512 x 512. Bars, registered before the first run:
+
+- L1: all 16 lights get a shadow.
+- L2: the frame matches ray-traced shadows (`rt_shadows`, one exact ray per light through the
+  BVH) within a summed error of 5% of the unshadowed light, and at least 97% of the lit
+  pixels agree on shadowed or not. Control: the unshadowed frame must be more than 1% off
+  and at least ten times further off than the atlas frame.
+- L3: 10 frames of a still scene draw no tiles. Control: with `local_cache` off a frame draws
+  every face.
+- L4: moving one pillar redraws between 1 and 12 faces (only the lights in its reach), and
+  the cached frame equals a frame drawn fresh within 1 level.
+- L5: with the camera four times farther away the mean tile is at most half the size.
+- L6: a still frame with the cache costs under 0.7 times one without it.
+
+The scene and two bars changed after the first run, and here is why. With the lights at 0.55 m and a
+1.2 m range, the shadows covered so little of the frame that the unshadowed control was only 0.4%
+off. The lights moved above the balls, but overlapping lights still keep it near 1.5%, so the
+control is now relative (the atlas must be ten times closer to ray tracing than no shadows at
+all). L5 lowers `local_min` to 32 for its far camera, because the default floor of 128 hid
+the shrink. The first run also caught a real fault: 96 faces in the frame uniforms made them 9,952
+bytes, and SDL binds only 4 KiB, so every light read as black. Now fixed (see above).
+
+Results (RX 9060 XT, RADV):
+
+| Bar | Result |
+|---|---|
+| L1 | pass, 16 of 16 lights, 96 faces |
+| L2 | pass, error 0.0005, agreement 0.9984 |
+| L2 control | pass, unshadowed 0.0153 off, 33.8 times the atlas |
+| L3 | pass, 0 faces redrawn; without the cache 96 of 96 |
+| L4 | pass, 5 faces redrawn, cached equals fresh (0 levels) |
+| L5 | pass, mean tile 240 near, 64 far |
+| L6 | pass, 1.12 ms cached, 1.99 ms uncached |
 ### Post effects (E8)
 
 All off by default; with them off the frame is unchanged (both goldens pass as before).
@@ -1397,6 +1449,57 @@ garment::drape(240);
 * Results: `pos`, `nrm`, `uv`, `tan`, and the triangle lists `body` (main fabric) and
   `rib` (bands), ready for two materials; `part` (0 front, 1 left arm, 2 right arm, 4 back,
   5 neck band), `anchor`, `anchor_n`, `held`, `goal` describe each vertex.
+
+#### Following an animated body
+
+After `drape`, `garment::bind(P, I)` glues every garment vertex to the shell point nearest its anchor (the
+shell point the drape grew it from, so it matches the drape's own contact) and keeps its offset in that
+point's surface frame. The frame's normal blends the corner normals; its tangent is the triangle's rest
+tangent turned by the triangle's best fitting in-plane turn (a least-squares fit over its three edges), so
+neighbors on bending skin swing their offsets together. Each
+frame, `garment::pose(c, Q)` takes the shell at its new pose (same vertex order, for example skinned with
+the body), moves `targets` there, pins held vertices to them, moves the body contacts, carries every
+particle along by `carry` of the body's movement, and ties each particle to its target with a slack of
+`tie` meters (`cloth::tie`). Then step the cloth as usual (`cloth::step`, or `s3d::step_cloth` to draw
+it). On a phone's low setting draw `targets` instead and skip the step: the garment then simply rides the
+body.
+
+`garment_follow_check` (from `garment_follow_check.gold`, CPU only) drapes the sweater (`fine` 1) on
+`mh_tights.obj` and plays a 2 s, 60-frame clip on the shell: left arm raised 69 degrees with the elbow
+bending, right arm swinging, the torso twisting, a 3 cm bob, and 1 m of forward travel. Bars, registered
+before the first run:
+
+- F1: binding takes under a second and at the rest pose every target is the draped vertex (within 0.1 mm).
+- F2: no particle strays more than 35 mm from where the body carries it; the mean stray is under 12 mm.
+- F3: at most 2% of the vertices are ever more than 2 mm deeper in the body than the drape left them.
+- F4: no non-finite positions, mean particle speed under 3 m/s, and at most one cloth edge in a thousand
+  stretched past 1.35 times the shell's own stretch that frame (edges under 2 mm, seam welds, not counted).
+- F5: after the 1 m walk the garment's center is within 30 mm of where it sat on the body at rest.
+- F6: pose plus cloth step cost under 10 ms per frame on one PC core.
+
+F3 and F4 were changed after the first run, and here is why. The drape itself leaves 464 vertices inside
+the shell (mostly the held bands) and edges up to 3.1 times their cut length, so absolute bars measured the
+drape, not the following; F3 now counts only sinking deeper than the drape left a vertex. F4 first bounded
+the single worst edge. On 2 to 5 mm edges a few millimeters of free sway reads as 2 to 5 times, and the
+handful of edges past the bar (at most 19 of 21,004, on the thigh where the clip's simple heat-smoothed
+torso twist shears the shell) follow their own targets: the body asks 5.22 times of them and the fabric
+gives 5.36. So F4 now bounds the share.
+
+The first run also showed real faults, all fixed: the test clip's arm weights tore the shell at the
+armpit (now heat-smoothed), glue points restricted to a body part landed at the far edge of the part (up to
+58 mm sideways levers that flung seam neighbors 115 mm apart), and one arbitrary edge per triangle as the
+tangent turned neighbors' offsets up to a right angle against each other.
+
+Results (Ryzen PC, 7919 vertices, 7266 particles):
+
+| Bar | Result |
+|---|---|
+| F1 | pass, bind 38 ms |
+| F2 | pass, max 31.1 mm, mean 10.2 mm |
+| F3 | pass, 0.00% inside |
+| F4 | pass, 0.090% of edges over (fabric 5.36, targets 5.22, shell 1.93), speed 0.17 m/s |
+| F5 | pass, drift 7.9 mm |
+| F6 | pass, 5.1 ms per frame |
 
 ### Wet fabric (E14)
 
