@@ -479,6 +479,9 @@ float sun_visibility(vec3 p, vec3 n) {
 	vec3 ndc = vec3(s.xy / s.w, min(s.z / s.w, 0.99999));
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+#ifdef SURF_LITE
+	return texture(tex_shadow, vec4(uv, float(c), ndc.z - 0.0008));
+#endif
 	if (view_dir.w > 0.0) return sun_pcss(uv, ndc.z, c, row0, n);
 	float lit = 0.0;
 	// to_sun.w - 1 = penumbra radius in world units: rotated Poisson taps, the noise left to TAA
@@ -692,6 +695,7 @@ void main() {
 	if (is_water) model = 0;
 	bool is_puff = model == 5;
 	if (is_puff) model = 0;
+#ifndef SURF_LITE
 	if (misc.z > 0.5 && x_to[12].z >= 0.0 && x_ior.z > 0.0 && abs(in_tan.w) > 0.5) {
 		vec3 nw = normalize(in_nrm);
 		vec3 vw = normalize(eye.xyz - in_world);
@@ -719,6 +723,7 @@ void main() {
 		float gb = pd - (dep - ds);
 		pom_off = off - du * clamp(ga / min(ga - gb, -1e-5), 0.0, 1.0);
 	}
+#endif
 	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
 	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
 	bool sp = sp_s.x + sp_s.y + sp_s.z + sp_s.w > 0.0;
@@ -866,6 +871,7 @@ void main() {
 		mr = sm;
 	}
 	vec4 dk = vec4(1.0, 0.0, 1.0, 0.0);
+#ifndef SURF_LITE
 	if (decal.y > 0.5 && alpha.x < 1.5) {
 		vec3 wx = dFdx(in_world);
 		vec3 wy = dFdy(in_world);
@@ -901,6 +907,7 @@ void main() {
 			dk = d4.w >= 0.0 ? vec4(dk.xy, dk.z * (1.0 - ca), mix(dk.w, d4.w, ca)) : dk;
 		}
 	}
+#endif
 	vec3 nm = n;
 	vec4 dt = smpa(tex_ext_l, vec3(xuv(uv_sets.x, xm_det, xo_det.xy), top_lay.w));
 	float dmask = model == 1 ? mr.b : 1.0;
@@ -935,6 +942,31 @@ void main() {
 		rough = mix(rough, 0.55, sn);
 		metal *= 1.0 - sn;
 	}
+#ifdef SURF_LITE
+	vec3 albedo = tint.rgb * (1.0 - metal);
+	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
+	vec3 v = normalize(eye.xyz - in_world);
+	vec2 eb = ms_lut(max(dot(n, v), 1e-4), rough);
+	vec3 ef = f0 * (eb.x - eb.y) + eb.y;
+	vec3 kd = max(1.0 - ef, vec3(0.0));
+	vec3 l = normalize(to_sun.xyz);
+	vec3 rgb = light_term(n, v, l, sun_rgb.rgb * sun_under(in_world), albedo, f0, rough, vec3(1.0), kd) * sun_visibility(in_world, q.gn) * cst;
+	int count = int(screen.z);
+	for (int i = 0; i < 2; i++) {
+		if (i >= count) break;
+		vec3 lv = light_pos[i].xyz - in_world;
+		float dist = length(lv);
+		vec3 ld = lv / max(dist, 1e-4);
+		rgb += light_term(n, v, ld, light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * spot_cone(light_rgb[i].w, light_dir[i].w, light_dir[i].xyz, ld), albedo, f0, rough, vec3(1.0), kd);
+	}
+	rgb *= uv_sets2.w;
+	vec3 d = normalize(mix(reflect(-v, n), n, rough * rough));
+	vec3 se = env.x > 0.5 ? textureLod(tex_env, vec4(env_dir(d), 0.0), rough * env.z).rgb * env.y : mix(sky_color(d, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)), env_irr(n), rough * rough) * screen.w;
+	rgb += (albedo * kd * env_irr(n) + ef * se) * occ;
+	rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
+	if (is_puff) { float ed = clamp(dot(normalize(in_nrm), v), 0.0, 1.0); oa *= ed * ed * ed; }
+	out_rgba = vec4(rgb, oa);
+#else
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
@@ -1097,4 +1129,5 @@ void main() {
 	else if (dbg == 8) out_rgba = vec4(vec3(max(dot(n, v), 0.0)), 1.0);
 	else if (dbg == 9) out_rgba = vec4(vec3(spec_occ(reflect(-v, n), n_v, rough, gn, dao, aos, occm)), 1.0);
 	else if (dbg == 10) out_rgba = vec4(sr.w, sr.z, 0.0, 1.0);
+#endif
 }
