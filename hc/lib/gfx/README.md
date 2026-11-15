@@ -1435,7 +1435,9 @@ seed)` makes the cut-out texture (hairs of random width and length, thinning tip
 `material` is a double-sided alpha-mask fiber material (`shading` 7): wrapped
 diffuse, a white highlight shifted toward the root and a colored one toward the tip,
 both running across the strands along the vertex tangent, and light through the hair
-from behind. The results stay readable in `locks::P`, `N`, `T`, `UV`, `I` and the
+from behind, all from the sun; other lights shade hair with the standard model (the
+surface shader sits at 252 of 256 registers, and a fiber term at every light made it
+spill). The results stay readable in `locks::P`, `N`, `T`, `UV`, `I` and the
 row tables.
 
 ### Volumetric clouds (E6)
@@ -3548,7 +3550,10 @@ indices that are local (hair B never drew); the top view showed the part (inner 
 now tuck under the root, inner and fork rows are half as dense). **L2 is retired**:
 a lock hanging straight below the head points along the measure's own direction, so
 no card normal can reach 0.85; L2b (added after the first run) shows the normal is
-within 0.4% of the best possible, which L2's control misses.
+within 0.4% of the best possible, which L2's control misses. **The first gate failed
+puddle U5 and sss Y6** (0.37 and 0.39 ms against 0.3): the fiber term, inlined at all
+six light sites, pushed the surface shader to 256 registers and 2 spills; it now runs
+at the sun's site only (252, no spills, Y6 0.19 ms).
 
 * **L2b locks lie as flat as they can** (added after the first run). Over L2's rows,
   with o the head direction and t the row's unit tangent, op = o minus t (t . o):
