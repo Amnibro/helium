@@ -1377,19 +1377,22 @@ garment::drape(240);
   the torso or an arm by their distance to the joint lines.
 * Ease: the fabric sits `ease` off the body (0.7 of it on the sleeves), falling to
   `rib_ease` over `blouse` m into the hem band (`band`), cuffs (`cuff`) and neck.
-  The neck band (`collar` high) grows from the neckline loop and folds in at the
-  top; the hem and cuff edges turn in.
+  The neck band (`collar` wide) grows from the neckline loop as its own strip lying
+  along the body toward the opening, lifted 1.5 mm and folded back at its edge; the
+  hem and cuff edges turn in.
 * Slack: the drape pulls the hem band up by `slack` and the cuffs back by
   `sleeve_slack`, so the body and sleeves blouse over the bands like a real sweater.
   Unheld fabric keeps `gap` off the body through per-particle body contacts
   (`cloth::skin`).
-* Texture coordinates are in meters: u runs around the torso (seam at the back) and
-  around each arm (seam underneath; the arm is a cylinder bent at the elbow), v runs
-  along them, so knit columns run down the body and along the sleeves. `tan` holds
+* Texture coordinates are in meters. The torso is a front and a back panel, each
+  knitted upward and over the shoulder to a seam (side and shoulder seams, like a
+  sewn sweater); each arm wraps a cylinder bent at the elbow (seam underneath); then
+  a relaxation evens the stitch size per triangle. The neck band's columns run
+  across the neckline. Knit columns run down the body and along the sleeves. `tan` holds
   glTF tangents for the knit and weave relief.
 * Results: `pos`, `nrm`, `uv`, `tan`, and the triangle lists `body` (main fabric) and
-  `rib` (bands), ready for two materials; `part`, `anchor`, `anchor_n`, `held`, `goal`
-  describe each vertex.
+  `rib` (bands), ready for two materials; `part` (0 front, 1 left arm, 2 right arm, 4 back,
+  5 neck band), `anchor`, `anchor_n`, `held`, `goal` describe each vertex.
 
 ### Volumetric clouds (E6)
 
@@ -3371,6 +3374,17 @@ The default sweater (`garment::spec()` with `fine` 2) on `hc/test/gfx/fixtures/m
   joint's height plus `hem`.
 * **G5 cost.** `make` plus `drape(240)` take at most 5 s on one core.
 * **G7 nothing else moved.** `cloth: ok` and the knit and weave bars pass unchanged.
+
+Results (2026-11-15, Ryzen, one core): G1 max use 2 with 4 loops; G2 stretch median
+1.15 with 4.5% above 2 (control median 2.01); G3 4.5 mm; G4 hem 0.0407 against
+0.0427; G5 3.6 s. **The G2 edge-ratio measure as registered fails**: the shell passes
+it (0.04%), but its own control (u halved) flags only 0.05%, so it cannot tell a good
+map from a bad one. `garment_check` still prints that line with its FAIL and leaves it
+out of the verdict; the stretch measure is the G2 gate. What got stretch down from
+1.48: front and back panels knitted up and over the shoulder to a seam (like a sewn
+sweater), arms on a cylinder bent at the elbow, per-triangle relaxation toward unit
+gradients, and the neck band as its own strip (columns along the neckline's surface
+normal, perpendicular to its rows, tangent averaged over 2 cm of the loop).
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 

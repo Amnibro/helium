@@ -55,6 +55,8 @@ HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/meshlet_check.amni" > "$O/m
 grep -q "^meshlet: ok$" "$O/meshlet_check.txt" || { say "gfxtest: FAILED: meshlet builder checks"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/cloth_check.amni" > "$O/cloth_check.txt" 2>&1; cat "$O/cloth_check.txt"; cat "$O/cloth_check.txt" >> "$RES"
 grep -q "^cloth: ok$" "$O/cloth_check.txt" || { say "gfxtest: FAILED: cloth solver checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/garment_check.amni" > "$O/garment_check.txt" 2>&1; cat "$O/garment_check.txt"; cat "$O/garment_check.txt" >> "$RES"
+grep -q "^garment: ok$" "$O/garment_check.txt" || { say "gfxtest: FAILED: garment bars"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/gi/cornell_pt.amni" mask > "$T/gi_mask.txt" 2> "$T/gi_mask.err" || { say "gfxtest: FAILED: cornell_pt mask"; tail -n 5 "$T/gi_mask.err"; exit 1; }
 [ "$(wc -l < "$T/gi_mask.txt")" = 16384 ] || { say "gfxtest: FAILED: cornell_pt mask is not 128 x 128"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gfx_smoke.amni" -o "$T/gs" > "$T/build.txt" 2>&1 || { echo "gfxtest: build failed"; grep -av "W[0-9]" "$T/build.txt" | tail -n 5; exit 1; }
