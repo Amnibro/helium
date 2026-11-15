@@ -1323,6 +1323,37 @@ the slopes across the threads widen the highlight, so cloth does not shimmer at 
 distance and keeps the color and highlight it has up close. The weave costs no
 measurable frame time.
 
+### Knit (E13)
+
+The same cloth material knits instead of weaving when `shade_c.z` is negative:
+
+```
+var wool = shapes::material(linalg::v3(0.62, 0.6, 0.57), 0.0, 0.9);
+wool.shading = 3;
+wool.shade_a = float4 { 0.3, 0.5, 0.2, 0.0 };
+wool.shade_c = float4 { 0.8, 60.0, -6.0, 8.0 };
+```
+
+* `shade_c.z`: the stitch. -1 stockinette (rows of V-shaped stitches), -2 1x1 rib,
+  -3 2x2 rib (the purl columns sit lower), -4 garter (purl bumps everywhere), -5 seed
+  (knit and purl in a checkerboard), -6 rope cable: a 6-stitch cable of two 3-stitch
+  strands between 2-stitch purl columns, repeating every 10 stitches; the strand that
+  starts on the left crosses over the other one once in each repeat of rows.
+* `shade_c.y`: stitches a UV unit (60 when it is 0). A row is 0.72 of a stitch tall.
+* `shade_c.w`: rows from one cable crossing to the next (8 when it is below 2).
+* `shade_c.x`: strength, as for the weave; negative keeps the stitches at every
+  distance.
+
+Each stitch is shaded from a height pattern measured in stitch widths: knit stitches
+are two tilted lobes of yarn, purl stitches a row of rounded bumps, cable strands
+stand 0.45 of a stitch proud and lift or sink where they cross. The slopes tilt the
+normal and the hollows darken; the mean diffuse light stays. The stitches fade out
+where one covers fewer than 4 pixels (gone at 2) and widen the highlight instead; the
+cable strands and rib columns fade later, by their own width, so a cable sweater
+keeps its ropes across a room. `gfx.knit` (`knit::height(kind, x, y, rows)`) gives the
+same pattern on the CPU, so a garment mesh can be pushed out along its normals for a
+real silhouette.
+
 ### Volumetric clouds (E6)
 
 ```
@@ -3197,7 +3228,7 @@ no pixel differs by more than 2 / 255. `GFX_ONLY=hair` runs only these checks.
 The weave is a pattern computed in the shader for cloth materials (`shading = 3`), in
 the material's UV space: square cells, `shade_c.y` of them a UV unit (700 when it is
 0), each showing the thread that lies on top there. A warp thread (running along v)
-passes over `shade_c.z` cells in a row and under one: 1, or anything below 1, is a
+passes over `shade_c.z` cells in a row and under one: 1, or anything from 0 to 1, is a
 plain weave, 2 and 3 are twills with diagonal ribs. A weft thread (running along u)
 shows in the cells in between. Each thread is rounded across its width and dips at
 both ends of its pass. The threads tilt the normal for diffuse light and highlights
@@ -3240,6 +3271,39 @@ red channel of the frame before tone mapping (`s3d::hdr_target()`).
 * **W7 nothing else moved.** With strength 0 (the preset), the goldens stay above
   40 dB and Z8 and Z9 pass. gfxtest, wgsltest and webgputest pass, with `scene_cloth`
   drawn as a 3/1 twill: strength 0.7, 28 threads a UV unit, weft lightness 0.5.
+
+### Knit bars (E13, registered before the first GPU run)
+
+Sheet K: sheet W (same light, camera, frame size and distances) with a knit material:
+base color 0.2 gray, roughness 0.8, wrap 0.25, fuzz 0, specular scale 0, 60 stitches a
+UV unit and 8 rows a cable crossing unless a bar says otherwise. Near (0.05 m) a
+stitch covers 91 pixels; far (1.2 m) 3.8 pixels. Values are the red channel of the
+frame before tone mapping.
+
+* **K1 stitches show up close.** Near, stockinette, middle 400 x 400 pixels in 8 x 8
+  blocks: the root mean square difference from each block's best-fit plane over the
+  mean is at least 0.03 with strength 0.7. Control: at most 0.005 with strength 0.
+* **K2 the mean light stays.** Near, stockinette, middle 400 x 400: the sum with
+  strength 0.7 is within 3% of the sum with strength 0. Control: a light 7% dimmer
+  must fail.
+* **K3 no noise far away.** Far with 200 stitches a UV unit (a stitch covers 1.1
+  pixels), stockinette, middle 100 x 100: the standard deviation over the mean with
+  strength 0.7 is at most 0.002 above the value with strength 0. Control: strength
+  -0.7 (no fade) is at least 0.01 above the value with strength 0.7.
+* **K4 rib columns.** Near, middle 400 rows: average each pixel column of the frame
+  over those rows, box-blur the column means over 91 pixels (one stitch, so the shape
+  inside a stitch averages out but a 2x2 rib's 4-stitch period does not), then take
+  the standard deviation over the mean of the middle 400 of them. 2x2 rib with
+  strength 0.7 gives at least 0.02. Control: stockinette gives at most half the rib's
+  value.
+* **K5 cables outlive the stitches.** Far with 200 stitches a UV unit (a stitch covers
+  1.1 pixels, a cable strand 3.4), cable, middle 200 x 200 in 16 x 16 blocks: the
+  deviation from each block's plane over the mean is at least 0.02 with strength 0.7.
+  Control: 2x2 rib with the same settings gives at most a third of the cable's value.
+* **K6 cost.** Sheet K near, filling the frame, cable at strength 0.7 against strength
+  0: at most 0.5 ms more a frame.
+* **K7 nothing else moved.** W1-W7 pass unchanged (a positive `shade_c.z` is still a
+  weave), and so do gfxtest, wgsltest and webgputest.
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 
