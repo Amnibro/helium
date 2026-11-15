@@ -1352,9 +1352,44 @@ and tucks back under at both ends. The slopes tilt the
 normal and the hollows darken; the mean diffuse light stays. The stitches fade out
 where one covers fewer than 4 pixels (gone at 2) and widen the highlight instead; the
 cable strands and rib columns fade later, by their own width, so a cable sweater
-keeps its ropes across a room. `gfx.knit` (`knit::height(kind, x, y, rows)`) gives the
-same pattern on the CPU, so a garment mesh can be pushed out along its normals for a
-real silhouette.
+keeps its ropes across a room.
+
+### Garments (E13)
+
+`gfx.garment` cuts a sweater out of a body's fitting shell (a skin-tight mesh around
+the body, such as MakeHuman's `helper-tights` group), loosens it off the body, adds
+rib bands and drapes it with `gfx.cloth`. `gfx.obj` reads the OBJ with its groups.
+
+```
+obj::load("base.obj");
+var shell int[>..] = []; obj::tris_of("helper-tights", shell);
+var joints f32[>..] = [];
+for g in ["joint-pelvis", "joint-spine-2", "joint-spine-1", "joint-neck", "joint-l-shoulder", "joint-l-elbow", "joint-l-hand", "joint-r-shoulder", "joint-r-elbow", "joint-r-hand"] { let x, y, z = obj::centroid(g); joints.push(x as f32); joints.push(y as f32); joints.push(z as f32); }
+var s = garment::spec(); s.fine = 2;
+garment::make(obj::V, shell, joints, s);
+garment::drape(240);
+```
+
+* The cut clips the shell's triangles exactly along three cuts: the neck opening (a
+  vertical cylinder around the neck, `neck` 0.075 m wide, wider at the front by
+  `scoop`, stopping `drop` below the neck joint), the hem (`hem` m from the pelvis
+  joint) and the cuffs (`sleeve` of the arm from the shoulder). Shell vertices go to
+  the torso or an arm by their distance to the joint lines.
+* Ease: the fabric sits `ease` off the body (0.7 of it on the sleeves), falling to
+  `rib_ease` over `blouse` m into the hem band (`band`), cuffs (`cuff`) and neck.
+  The neck band (`collar` high) grows from the neckline loop and folds in at the
+  top; the hem and cuff edges turn in.
+* Slack: the drape pulls the hem band up by `slack` and the cuffs back by
+  `sleeve_slack`, so the body and sleeves blouse over the bands like a real sweater.
+  Unheld fabric keeps `gap` off the body through per-particle body contacts
+  (`cloth::skin`).
+* Texture coordinates are in meters: u runs around the torso (seam at the back) and
+  around each arm (seam underneath; the arm is a cylinder bent at the elbow), v runs
+  along them, so knit columns run down the body and along the sleeves. `tan` holds
+  glTF tangents for the knit and weave relief.
+* Results: `pos`, `nrm`, `uv`, `tan`, and the triangle lists `body` (main fabric) and
+  `rib` (bands), ready for two materials; `part`, `anchor`, `anchor_n`, `held`, `goal`
+  describe each vertex.
 
 ### Volumetric clouds (E6)
 
@@ -3311,6 +3346,25 @@ frame before tone mapping.
   0: at most 0.5 ms more a frame.
 * **K7 nothing else moved.** W1-W7 pass unchanged (a positive `shade_c.z` is still a
   weave), and so do gfxtest, wgsltest and webgputest.
+
+### Garment bars (E13, registered before the first run)
+
+The default sweater (`garment::spec()` with `fine` 2) on `hc/test/gfx/fixtures/mh_tights.obj`
+(the MakeHuman 1.1 base mesh's `helper-tights` and joint groups, CC0), draped with
+`garment::drape(240)`, on the CPU (`hc/test/gfx/garment_check`). Lengths in meters.
+
+* **G1 clean edges.** After welding vertices at equal positions, no edge is used by
+  more than two triangles and the open edges form exactly 4 closed loops: the hem,
+  the neck band's folded edge and the two cuffs.
+* **G2 even texture.** At most 0.5% of triangles have a largest texture-coordinate
+  edge outside 0.3 to 2.5 times their largest edge in space. Control: the same
+  measure with every u halved must fail.
+* **G3 off the body.** Every vertex the drape does not hold sits at least `gap`
+  (0.002) outside its anchor's tangent plane on the shell.
+* **G4 the hem lands.** The lowest garment point is within 0.01 of the pelvis
+  joint's height plus `hem`.
+* **G5 cost.** `make` plus `drape(240)` take at most 5 s on one core.
+* **G7 nothing else moved.** `cloth: ok` and the knit and weave bars pass unchanged.
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 

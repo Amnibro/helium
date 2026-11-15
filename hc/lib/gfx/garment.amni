@@ -1,0 +1,937 @@
+import math;
+import gfx.cloth;
+import dictionary;
+namespace garment;
+struct Spec { unit real = 0.1, ease real = 0.025, rib_ease real = 0.004, hem real = -0.03, sleeve real = 1.0, band real = 0.06, cuff real = 0.07, collar real = 0.02, neck real = 0.075, drop real = 0.07, scoop real = 0.035, blouse real = 0.05, slack real = 0.04, sleeve_slack real = 0.05, gap real = 0.002, fine real = 1.0 }
+fn spec() Spec { Spec { .. } }
+var pos f32[>..];
+var nrm f32[>..];
+var tan f32[>..];
+var uv f32[>..];
+var body u32[>..];
+var rib u32[>..];
+var part int[>..];
+var anchor f32[>..];
+var anchor_n f32[>..];
+var held bool[>..];
+var goal f32[>..];
+var S Spec = spec();
+var jt real[>..];
+var sn real[>..];
+var sp int[>..];
+var st real[>..];
+var wp real[>..];
+var wa real[>..];
+var wn real[>..];
+var wq int[>..];
+var wt real[>..];
+var wh bool[>..];
+var wg real[>..];
+var wi int[>..];
+var wr bool[>..];
+var wb int[>..];
+fn len3(x real, y real, z real) real { sqrt(x * x + y * y + z * z) }
+fn joint(k int) real, real, real { return jt[3 * k], jt[3 * k + 1], jt[3 * k + 2]; }
+fn arm_len(side int) real {
+	let a = if side == 1 { 4 } else { 7 };
+	let x0, y0, z0 = joint(a);
+	let x1, y1, z1 = joint(a + 1);
+	let x2, y2, z2 = joint(a + 2);
+	(len3(x1 - x0, y1 - y0, z1 - z0) + len3(x2 - x1, y2 - y1, z2 - z1)) * S.unit
+}
+fn on_part(q int, x real, y real, z real) real, real, real, real, real, real, real {
+	var first = 0;
+	var nseg = 3;
+	if q == 1 { first = 4; nseg = 2; }
+	if q == 2 { first = 7; nseg = 2; }
+	let arm = q == 1 || q == 2;
+	var bd = 1e300;
+	var rx = x;
+	var ry = y;
+	var rz = z;
+	var ddx = 0.0;
+	var ddy = 1.0;
+	var ddz = 0.0;
+	var pl = 0.0;
+	var acc = 0.0;
+	for s in nseg {
+		let ax, ay, az = joint(first + s);
+		let bx, bY, bz = joint(first + s + 1);
+		let ex = bx - ax;
+		let ey = bY - ay;
+		let ez = bz - az;
+		let l = len3(ex, ey, ez);
+		if l < 1e-9 { continue; }
+		var t = ((x - ax) * ex + (y - ay) * ey + (z - az) * ez) / (l * l);
+		if t < 0.0 { t = 0.0; }
+		if !(arm && s == nseg - 1) && t > 1.0 { t = 1.0; }
+		let nx = ax + ex * t;
+		let ny = ay + ey * t;
+		let nz = az + ez * t;
+		let d2 = (x - nx) * (x - nx) + (y - ny) * (y - ny) + (z - nz) * (z - nz);
+		if d2 < bd {
+			bd = d2;
+			rx = nx;
+			ry = ny;
+			rz = nz;
+			ddx = ex / l;
+			ddy = ey / l;
+			ddz = ez / l;
+			pl = if arm { (acc + t * l) * S.unit } else { ny * S.unit };
+		}
+		acc += l;
+	}
+	return rx, ry, rz, ddx, ddy, ddz, pl;
+}
+fn classify(P const f32[:], I const int[:]) {
+	let nv = P.len / 3;
+	sn.clear();
+	sn.resize(nv * 3, 0.0);
+	sp.clear();
+	sp.resize(nv, 0);
+	st.clear();
+	st.resize(nv, 0.0);
+	for t in I.len / 3 {
+		let a = I[3 * t];
+		let b = I[3 * t + 1];
+		let c = I[3 * t + 2];
+		let ax real = P[3 * a];
+		let ay real = P[3 * a + 1];
+		let az real = P[3 * a + 2];
+		let ux = P[3 * b] - ax;
+		let uy = P[3 * b + 1] - ay;
+		let uz = P[3 * b + 2] - az;
+		let vx = P[3 * c] - ax;
+		let vy = P[3 * c + 1] - ay;
+		let vz = P[3 * c + 2] - az;
+		let cx = uy * vz - uz * vy;
+		let cy = uz * vx - ux * vz;
+		let cz = ux * vy - uy * vx;
+		for w in [a, b, c] {
+			sn[3 * w] += cx;
+			sn[3 * w + 1] += cy;
+			sn[3 * w + 2] += cz;
+		}
+	}
+	for v in nv {
+		let l = len3(sn[3 * v], sn[3 * v + 1], sn[3 * v + 2]);
+		if l < 1e-20 {
+			sn[3 * v] = 0.0;
+			sn[3 * v + 1] = 1.0;
+			sn[3 * v + 2] = 0.0;
+		} else {
+			sn[3 * v] /= l;
+			sn[3 * v + 1] /= l;
+			sn[3 * v + 2] /= l;
+		}
+	}
+	for v in nv {
+		let x real = P[3 * v];
+		let y real = P[3 * v + 1];
+		let z real = P[3 * v + 2];
+		var best = 1e300;
+		var bq = 0;
+		var bp = 0.0;
+		for q in 3 {
+			let nx, ny, nz, dx, dy, dz, pl = on_part(q, x, y, z);
+			let r = if q == 0 { 0.12 } else { 0.045 };
+			let d = len3(x - nx, y - ny, z - nz) - r / S.unit;
+			if d < best {
+				best = d;
+				bq = q;
+				bp = pl;
+			}
+		}
+		sp[v] = bq;
+		st[v] = bp;
+	}
+}
+fn neck_m(x real, y real, z real) real {
+	let jx, jy, jz = joint(3);
+	let dx = x - jx;
+	let dz = z - jz;
+	let d = sqrt(dx * dx + dz * dz);
+	let front = if d < 1e-9 { 0.0 } else { dz / d };
+	let f = max(front, 0.0);
+	let a = d * S.unit - (S.neck + S.scoop * f * f);
+	let b = ((jy - S.drop / S.unit) - y) * S.unit;
+	max(a, b)
+}
+fn hem_y() real {
+	let px, py, pz = joint(0);
+	py + (S.hem - S.slack) / S.unit
+}
+fn sleeve_end(side int) real { S.sleeve * arm_len(side) + S.sleeve_slack }
+var shell f32[>..];
+fn keep(v int) real, int {
+	let x real = shell[3 * v];
+	let y real = shell[3 * v + 1];
+	let z real = shell[3 * v + 2];
+	let a = neck_m(x, y, z);
+	let q = sp[v];
+	var b = 0.0;
+	var c = 3;
+	if q == 0 {
+		b = (y - hem_y()) * S.unit;
+		c = 2;
+	} else {
+		b = sleeve_end(q) - st[v];
+	}
+	if a <= b { return a, 1; }
+	return b, c;
+}
+fn edge_key(a int, b int) int { min(a, b) * 4294967296 + max(a, b) }
+fn cut(P const f32[:], I const int[:]) {
+	shell.clear();
+	shell.append(P);
+	let nv = P.len / 3;
+	var wmap int[>..] = [];
+	wmap.resize(nv, -1);
+	var kv real[>..] = [];
+	kv.resize(nv, 0.0);
+	var kc int[>..] = [];
+	kc.resize(nv, 0);
+	for v in nv {
+		let k, c = keep(v);
+		kv[v] = k;
+		kc[v] = c;
+		if k >= 0.0 {
+			wmap[v] = wq.len;
+			for j in 3 {
+				let x real = P[3 * v + j];
+				wp.push(x);
+				wa.push(x);
+				wg.push(x);
+				wn.push(sn[3 * v + j]);
+			}
+			wq.push(sp[v]);
+			wt.push(st[v]);
+			wh.push(false);
+		}
+	}
+	var d = dictionary<int, int> {};
+	fn cutv(a int, b int) int {
+		let key = edge_key(a, b);
+		let m = d.get(key);
+		if m { return m; }
+		let ka = kv[a] >= 0.0;
+		let k = if ka { a } else { b };
+		let o = if ka { b } else { a };
+		let t = kv[k] / (kv[k] - kv[o]);
+		let id = wq.len;
+		var an real[3] = [0.0; 3];
+		for j in 3 {
+			let pk real = P[3 * k + j];
+			let po real = P[3 * o + j];
+			let x = pk + (po - pk) * t;
+			wp.push(x);
+			wa.push(x);
+			wg.push(x);
+			an[j] = sn[3 * k + j] + (sn[3 * o + j] - sn[3 * k + j]) * t;
+		}
+		let l = len3(an[0], an[1], an[2]);
+		for j in 3 { wn.push(if l > 1e-20 { an[j] / l } else { an[j] }); }
+		wq.push(if kc[o] == 1 { 3 } else { sp[k] });
+		wt.push(st[k] + (st[o] - st[k]) * t);
+		wh.push(false);
+		d.insert(key, id);
+		id
+	}
+	for t in I.len / 3 {
+		let cs int[3] = [I[3 * t], I[3 * t + 1], I[3 * t + 2]];
+		if kv[cs[0]] < 0.0 && kv[cs[1]] < 0.0 && kv[cs[2]] < 0.0 { continue; }
+		var poly int[4] = [0; 4];
+		var pn = 0;
+		for i in 3 {
+			let a = cs[i];
+			let b = cs[(i + 1) % 3];
+			let ka = kv[a] >= 0.0;
+			let kb = kv[b] >= 0.0;
+			if ka {
+				poly[pn] = wmap[a];
+				pn += 1;
+			}
+			if ka != kb {
+				poly[pn] = cutv(a, b);
+				pn += 1;
+			}
+		}
+		if pn >= 3 {
+			wi.push(poly[0]);
+			wi.push(poly[1]);
+			wi.push(poly[2]);
+			wr.push(false);
+			if pn == 4 {
+				wi.push(poly[0]);
+				wi.push(poly[2]);
+				wi.push(poly[3]);
+				wr.push(false);
+			}
+		}
+	}
+	var cnt = dictionary<int, int> {};
+	for t in wi.len / 3 {
+		for i in 3 {
+			let a = wi[3 * t + i];
+			let b = wi[3 * t + (i + 1) % 3];
+			cnt.update(edge_key(a, b), 0) { it += 1; };
+		}
+	}
+	for t in wi.len / 3 {
+		for i in 3 {
+			let a = wi[3 * t + i];
+			let b = wi[3 * t + (i + 1) % 3];
+			let c = cnt.get(edge_key(a, b));
+			if c {
+				if c == 1 {
+					wb.push(a);
+					wb.push(b);
+				}
+			}
+		}
+	}
+}
+fn chest_y() real {
+	let cx, cy, cz = joint(2);
+	cy
+}
+fn edge_m(v int) real {
+	let q = wq[v];
+	if q == 1 || q == 2 { return sleeve_end(q) - wt[v]; }
+	if q == 3 { return 0.0; }
+	let x = wp[3 * v];
+	let y = wp[3 * v + 1];
+	let z = wp[3 * v + 2];
+	min((y - hem_y()) * S.unit, neck_m(x, y, z))
+}
+fn in_band(v int) bool {
+	let q = wq[v];
+	if q == 1 || q == 2 { return edge_m(v) <= S.cuff; }
+	if q == 0 { return wp[3 * v + 1] < chest_y() && edge_m(v) <= S.band; }
+	false
+}
+fn sstep(e0 real, e1 real, x real) real {
+	let t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
+	t * t * (3.0 - 2.0 * t)
+}
+fn loosen() {
+	let n = wp.len / 3;
+	for v in n {
+		let q = wq[v];
+		var e = S.rib_ease;
+		if q != 3 {
+			let f = if q == 0 { S.ease } else { 0.7 * S.ease };
+			var bh = 0.0;
+			if q == 1 || q == 2 { bh = S.cuff; } else if wp[3 * v + 1] < chest_y() { bh = S.band; }
+			e = S.rib_ease + (f - S.rib_ease) * sstep(bh, bh + S.blouse, edge_m(v));
+		}
+		for k in 3 { wp[3 * v + k] += wn[3 * v + k] * e / S.unit; }
+	}
+	for v in n {
+		for k in 3 { wg[3 * v + k] = wp[3 * v + k]; }
+		wh[v] = false;
+	}
+	for v in n {
+		let q = wq[v];
+		if q == 3 {
+			wh[v] = true;
+		} else if in_band(v) {
+			wh[v] = true;
+			if q == 0 {
+				wg[3 * v + 1] += S.slack / S.unit;
+			} else {
+				let nx, ny, nz, dx, dy, dz, pl = on_part(q, wp[3 * v], wp[3 * v + 1], wp[3 * v + 2]);
+				wg[3 * v] -= dx * S.sleeve_slack / S.unit;
+				wg[3 * v + 1] -= dy * S.sleeve_slack / S.unit;
+				wg[3 * v + 2] -= dz * S.sleeve_slack / S.unit;
+			}
+		}
+	}
+	for t in wi.len / 3 {
+		wr[t] = in_band(wi[3 * t]) && in_band(wi[3 * t + 1]) && in_band(wi[3 * t + 2]);
+	}
+}
+fn add_like(src int, x real, y real, z real, q int, t real, h bool, gx real, gy real, gz real) int {
+	let id = wq.len;
+	wp.push(x);
+	wp.push(y);
+	wp.push(z);
+	for k in 3 {
+		wa.push(wa[3 * src + k]);
+		wn.push(wn[3 * src + k]);
+	}
+	wg.push(gx);
+	wg.push(gy);
+	wg.push(gz);
+	wq.push(q);
+	wt.push(t);
+	wh.push(h);
+	id
+}
+fn neck_band() {
+	if S.collar <= 0.0 { return; }
+	let ne = wb.len / 2;
+	var nxt = dictionary<int, int> {};
+	var seen bool[>..] = [];
+	seen.resize(ne, false);
+	for e in ne {
+		if wq[wb[2 * e]] == 3 && wq[wb[2 * e + 1]] == 3 { nxt.insert(wb[2 * e], e); }
+	}
+	var best int[>..] = [];
+	var cur int[>..] = [];
+	for e0 in ne {
+		if seen[e0] { continue; }
+		if !(wq[wb[2 * e0]] == 3 && wq[wb[2 * e0 + 1]] == 3) { continue; }
+		let start = wb[2 * e0];
+		cur.clear();
+		var closed = false;
+		var e = e0;
+		loop {
+			if seen[e] { break; }
+			seen[e] = true;
+			cur.push(wb[2 * e]);
+			let v2 = wb[2 * e + 1];
+			if v2 == start {
+				closed = true;
+				break;
+			}
+			let nx = nxt.get(v2);
+			if nx { e = nx; } else { break; }
+		}
+		if closed && cur.len > best.len { best = copy(cur); }
+	}
+	let m = best.len;
+	if m < 3 { return; }
+	let jx, jy, jz = joint(3);
+	var rings int[>..] = [];
+	for i in m { rings.push(best[i]); }
+	for k in 1..6 {
+		for i in m {
+			let b = best[i];
+			var x real = 0.0;
+			var y real = 0.0;
+			var z real = 0.0;
+			if k <= 4 {
+				let s = 1.0 - 0.15 * k / 4.0;
+				x = jx + (wp[3 * b] - jx) * s;
+				z = jz + (wp[3 * b + 2] - jz) * s;
+				y = wp[3 * b + 1] + S.collar * k / 4.0 / S.unit;
+			} else {
+				let p = rings[4 * m + i];
+				let dx = jx - wp[3 * p];
+				let dz = jz - wp[3 * p + 2];
+				let l = sqrt(dx * dx + dz * dz);
+				x = wp[3 * p];
+				z = wp[3 * p + 2];
+				if l > 1e-9 {
+					x += dx / l * 0.006 / S.unit;
+					z += dz / l * 0.006 / S.unit;
+				}
+				y = wp[3 * p + 1] - 0.008 / S.unit;
+			}
+			let id = add_like(b, x, y, z, 3, 0.0, true, x, y, z);
+			rings.push(id);
+		}
+	}
+	for k in 5 {
+		for i in m {
+			let j = (i + 1) % m;
+			let a = rings[k * m + i];
+			let b = rings[k * m + j];
+			let a2 = rings[(k + 1) * m + i];
+			let b2 = rings[(k + 1) * m + j];
+			wi.push(b);
+			wi.push(a);
+			wi.push(a2);
+			wr.push(true);
+			wi.push(b);
+			wi.push(a2);
+			wi.push(b2);
+			wr.push(true);
+		}
+	}
+}
+fn lip_ok(v int) bool {
+	let q = wq[v];
+	wh[v] && (q == 1 || q == 2 || (q == 0 && wp[3 * v + 1] < chest_y()))
+}
+fn lips() {
+	let ne = wb.len / 2;
+	var d = dictionary<int, int> {};
+	fn lip(v int) int {
+		let m = d.get(v);
+		if m { return m; }
+		let q = wq[v];
+		var ox = 0.0;
+		var oy = 0.0;
+		var oz = 0.0;
+		for k in 3 {
+			let o = -wn[3 * v + k] * 0.006 / S.unit;
+			if k == 0 { ox = o; }
+			if k == 1 { oy = o; }
+			if k == 2 { oz = o; }
+		}
+		if q == 0 {
+			oy += 0.008 / S.unit;
+		} else {
+			let nx, ny, nz, dx, dy, dz, pl = on_part(q, wp[3 * v], wp[3 * v + 1], wp[3 * v + 2]);
+			ox -= dx * 0.008 / S.unit;
+			oy -= dy * 0.008 / S.unit;
+			oz -= dz * 0.008 / S.unit;
+		}
+		let id = add_like(v, wp[3 * v] + ox, wp[3 * v + 1] + oy, wp[3 * v + 2] + oz, q, wt[v], true, wg[3 * v] + ox, wg[3 * v + 1] + oy, wg[3 * v + 2] + oz);
+		d.insert(v, id);
+		id
+	}
+	for e in ne {
+		let a = wb[2 * e];
+		let b = wb[2 * e + 1];
+		if lip_ok(a) && lip_ok(b) {
+			let la = lip(a);
+			let lb = lip(b);
+			wi.push(b);
+			wi.push(a);
+			wi.push(la);
+			wr.push(true);
+			wi.push(b);
+			wi.push(la);
+			wi.push(lb);
+			wr.push(true);
+		}
+	}
+}
+fn norm3(x real, y real, z real) real, real, real {
+	let l = len3(x, y, z);
+	if l < 1e-30 { return x, y, z; }
+	return x / l, y / l, z / l;
+}
+fn axis_uv(q int, x real, y real, z real) real, real {
+	if q == 0 || q == 3 {
+		let nx, ny, nz, dx, dy, dz, pl = on_part(0, x, y, z);
+		return atan2(x - nx, z - nz) * 0.15, y * S.unit;
+	}
+	let a = if q == 1 { 4 } else { 7 };
+	let ax, ay, az = joint(a);
+	let ex, ey, ez = joint(a + 1);
+	let wx, wy, wz = joint(a + 2);
+	let cx, cy, cz = joint(2);
+	let d1x, d1y, d1z = norm3(ex - ax, ey - ay, ez - az);
+	let d2x, d2y, d2z = norm3(wx - ex, wy - ey, wz - ez);
+	let ox = ax - cx;
+	let oz = az - cz;
+	let k1 = ox * d1x + oz * d1z;
+	let l1x, l1y, l1z = norm3(ox - d1x * k1, -d1y * k1, oz - d1z * k1);
+	let k2 = l1x * d2x + l1y * d2y + l1z * d2z;
+	let l2x, l2y, l2z = norm3(l1x - d2x * k2, l1y - d2y * k2, l1z - d2z * k2);
+	let f1x = d1y * l1z - d1z * l1y;
+	let f1y = d1z * l1x - d1x * l1z;
+	let f1z = d1x * l1y - d1y * l1x;
+	let f2x = d2y * l2z - d2z * l2y;
+	let f2y = d2z * l2x - d2x * l2z;
+	let f2z = d2x * l2y - d2y * l2x;
+	let s1 = (x - ax) * d1x + (y - ay) * d1y + (z - az) * d1z;
+	let r1x = x - (ax + d1x * s1);
+	let r1y = y - (ay + d1y * s1);
+	let r1z = z - (az + d1z * s1);
+	let a1 = atan2(r1x * f1x + r1y * f1y + r1z * f1z, r1x * l1x + r1y * l1y + r1z * l1z);
+	let dist1 = len3(ex - ax, ey - ay, ez - az);
+	let t2 = (x - ex) * d2x + (y - ey) * d2y + (z - ez) * d2z;
+	let s2 = dist1 + t2;
+	let r2x = x - (ex + d2x * t2);
+	let r2y = y - (ey + d2y * t2);
+	let r2z = z - (ez + d2z * t2);
+	let a2 = atan2(r2x * f2x + r2y * f2y + r2z * f2z, r2x * l2x + r2y * l2y + r2z * l2z);
+	let nx, ny, nz = norm3(d1x + d2x, d1y + d2y, d1z + d2z);
+	let sd = ((x - ex) * nx + (y - ey) * ny + (z - ez) * nz) * S.unit;
+	let w = sstep(-0.06, 0.06, sd);
+	var dd = a2 - a1;
+	dd -= TAU * round(dd / TAU);
+	let ang = a1 + w * dd;
+	return ang * 0.045, (s1 + w * (s2 - s1)) * S.unit;
+}
+fn accum(tris const u32[:], p const f32[:], owner const int[:], sum real[:]) {
+	for t in tris.len / 3 {
+		let a = tris[3 * t] as int;
+		let b = tris[3 * t + 1] as int;
+		let c = tris[3 * t + 2] as int;
+		let ax real = p[3 * a];
+		let ay real = p[3 * a + 1];
+		let az real = p[3 * a + 2];
+		let ux = p[3 * b] - ax;
+		let uy = p[3 * b + 1] - ay;
+		let uz = p[3 * b + 2] - az;
+		let vx = p[3 * c] - ax;
+		let vy = p[3 * c + 1] - ay;
+		let vz = p[3 * c + 2] - az;
+		let cx = uy * vz - uz * vy;
+		let cy = uz * vx - ux * vz;
+		let cz = ux * vy - uy * vx;
+		for w in [a, b, c] {
+			let o = owner[w];
+			sum[3 * o] += cx;
+			sum[3 * o + 1] += cy;
+			sum[3 * o + 2] += cz;
+		}
+	}
+}
+fn unit_sums(sum real[:]) {
+	for i in sum.len / 3 {
+		let l = len3(sum[3 * i], sum[3 * i + 1], sum[3 * i + 2]);
+		if l < 1e-20 {
+			sum[3 * i] = 0.0;
+			sum[3 * i + 1] = 1.0;
+			sum[3 * i + 2] = 0.0;
+		} else {
+			sum[3 * i] /= l;
+			sum[3 * i + 1] /= l;
+			sum[3 * i + 2] /= l;
+		}
+	}
+}
+fn emit() {
+	pos.clear();
+	nrm.clear();
+	uv.clear();
+	body.clear();
+	rib.clear();
+	part.clear();
+	anchor.clear();
+	anchor_n.clear();
+	held.clear();
+	goal.clear();
+	let nw = wp.len / 3;
+	var vmap int[>..] = [];
+	vmap.resize(nw * 8, -1);
+	var rw int[>..] = [];
+	for t in wi.len / 3 {
+		let cs int[3] = [wi[3 * t], wi[3 * t + 1], wi[3 * t + 2]];
+		var cnt int[4] = [0; 4];
+		for c in cs { cnt[wq[c]] += 1; }
+		var tp = 0;
+		if cnt[3] > 0 {
+			tp = 3;
+		} else {
+			if cnt[1] > cnt[tp] { tp = 1; }
+			if cnt[2] > cnt[tp] { tp = 2; }
+		}
+		var us real[3] = [0.0; 3];
+		var vs real[3] = [0.0; 3];
+		for i in 3 {
+			let c = cs[i];
+			let u, w = axis_uv(tp, wp[3 * c], wp[3 * c + 1], wp[3 * c + 2]);
+			us[i] = u;
+			vs[i] = w;
+		}
+		let r = if tp == 1 || tp == 2 { 0.045 } else { 0.15 };
+		let mx = max(us[0], max(us[1], us[2]));
+		let mn = min(us[0], min(us[1], us[2]));
+		var wrapped = 0;
+		if mx - mn > PI * r {
+			wrapped = 1;
+			for i in 3 { if us[i] < 0.0 { us[i] += TAU * r; } }
+		}
+		var rv int[3] = [0; 3];
+		for i in 3 {
+			let c = cs[i];
+			let key = c * 8 + tp * 2 + wrapped;
+			if vmap[key] < 0 {
+				vmap[key] = part.len;
+				for k in 3 {
+					pos.push(wp[3 * c + k] as f32);
+					anchor.push(wa[3 * c + k] as f32);
+					anchor_n.push(wn[3 * c + k] as f32);
+					goal.push(wg[3 * c + k] as f32);
+				}
+				uv.push(us[i] as f32);
+				uv.push(vs[i] as f32);
+				part.push(tp);
+				held.push(wh[c]);
+				rw.push(c);
+			}
+			rv[i] = vmap[key];
+		}
+		if wr[t] {
+			for i in 3 { rib.push(rv[i] as u32); }
+		} else {
+			for i in 3 { body.push(rv[i] as u32); }
+		}
+	}
+	nrm.resize(pos.len, 0.0);
+	var wsum real[>..] = [];
+	wsum.resize(nw * 3, 0.0);
+	accum(body, pos, rw, wsum);
+	accum(rib, pos, rw, wsum);
+	unit_sums(wsum);
+	for v in part.len {
+		let o = rw[v];
+		for k in 3 { nrm[3 * v + k] = wsum[3 * o + k] as f32; }
+	}
+}
+fn split_once() {
+	var d = dictionary<int, int> {};
+	var tb u32[>..] = [];
+	var tr u32[>..] = [];
+	fn mid(a int, b int) int {
+		let key = edge_key(a, b);
+		let m = d.get(key);
+		if m { return m; }
+		let id = part.len;
+		for k in 3 {
+			pos.push((pos[3 * a + k] + pos[3 * b + k]) * 0.5);
+			nrm.push((nrm[3 * a + k] + nrm[3 * b + k]) * 0.5);
+			anchor.push((anchor[3 * a + k] + anchor[3 * b + k]) * 0.5);
+			anchor_n.push((anchor_n[3 * a + k] + anchor_n[3 * b + k]) * 0.5);
+			goal.push((goal[3 * a + k] + goal[3 * b + k]) * 0.5);
+		}
+		for k in 2 { uv.push((uv[2 * a + k] + uv[2 * b + k]) * 0.5); }
+		part.push(part[a]);
+		held.push(held[a] && held[b]);
+		d.insert(key, id);
+		id
+	}
+	fn tri_pass(src const u32[:], out u32[>..]&) {
+		for t in src.len / 3 {
+			let a = src[3 * t] as int;
+			let b = src[3 * t + 1] as int;
+			let c = src[3 * t + 2] as int;
+			let ab = mid(a, b);
+			let bc = mid(b, c);
+			let ca = mid(c, a);
+			out.push(a as u32);
+			out.push(ab as u32);
+			out.push(ca as u32);
+			out.push(ab as u32);
+			out.push(b as u32);
+			out.push(bc as u32);
+			out.push(ca as u32);
+			out.push(bc as u32);
+			out.push(c as u32);
+			out.push(ab as u32);
+			out.push(bc as u32);
+			out.push(ca as u32);
+		}
+	}
+	tri_pass(body, tb);
+	tri_pass(rib, tr);
+	body = copy(tb);
+	rib = copy(tr);
+}
+fn refine() {
+	let n = round(S.fine) as int;
+	for i in n { split_once(); }
+	for v in nrm.len / 3 {
+		let l = len3(nrm[3 * v], nrm[3 * v + 1], nrm[3 * v + 2]);
+		if l > 1e-20 {
+			for k in 3 { nrm[3 * v + k] = (nrm[3 * v + k] / l) as f32; }
+		}
+	}
+}
+fn tan_accum(tris const u32[:], p const f32[:], uvs const f32[:], ts real[:], vs real[:]) {
+	for t in tris.len / 3 {
+		let a = tris[3 * t] as int;
+		let b = tris[3 * t + 1] as int;
+		let c = tris[3 * t + 2] as int;
+		let p0x real = p[3 * a];
+		let p0y real = p[3 * a + 1];
+		let p0z real = p[3 * a + 2];
+		let e1x = p[3 * b] - p0x;
+		let e1y = p[3 * b + 1] - p0y;
+		let e1z = p[3 * b + 2] - p0z;
+		let e2x = p[3 * c] - p0x;
+		let e2y = p[3 * c + 1] - p0y;
+		let e2z = p[3 * c + 2] - p0z;
+		let u0 real = uvs[2 * a];
+		let v0 real = uvs[2 * a + 1];
+		let du1 = uvs[2 * b] - u0;
+		let dv1 = uvs[2 * b + 1] - v0;
+		let du2 = uvs[2 * c] - u0;
+		let dv2 = uvs[2 * c + 1] - v0;
+		let det = du1 * dv2 - du2 * dv1;
+		if abs(det) < 1e-20 { continue; }
+		let r = 1.0 / det;
+		let tx = (e1x * dv2 - e2x * dv1) * r;
+		let ty = (e1y * dv2 - e2y * dv1) * r;
+		let tz = (e1z * dv2 - e2z * dv1) * r;
+		let vx = (e2x * du1 - e1x * du2) * r;
+		let vy = (e2y * du1 - e1y * du2) * r;
+		let vz = (e2z * du1 - e1z * du2) * r;
+		for w in [a, b, c] {
+			ts[3 * w] += tx;
+			ts[3 * w + 1] += ty;
+			ts[3 * w + 2] += tz;
+			vs[3 * w] += vx;
+			vs[3 * w + 1] += vy;
+			vs[3 * w + 2] += vz;
+		}
+	}
+}
+fn tangents() {
+	let nv = pos.len / 3;
+	var ts real[>..] = [];
+	ts.resize(nv * 3, 0.0);
+	var vs real[>..] = [];
+	vs.resize(nv * 3, 0.0);
+	tan_accum(body, pos, uv, ts, vs);
+	tan_accum(rib, pos, uv, ts, vs);
+	tan.clear();
+	tan.resize(nv * 4, 0.0);
+	for v in nv {
+		let nx real = nrm[3 * v];
+		let ny real = nrm[3 * v + 1];
+		let nz real = nrm[3 * v + 2];
+		let d = ts[3 * v] * nx + ts[3 * v + 1] * ny + ts[3 * v + 2] * nz;
+		var tx = ts[3 * v] - nx * d;
+		var ty = ts[3 * v + 1] - ny * d;
+		var tz = ts[3 * v + 2] - nz * d;
+		let l = len3(tx, ty, tz);
+		if l < 1e-12 {
+			tx = nz;
+			ty = 0.0;
+			tz = -nx;
+			let l2 = len3(tx, ty, tz);
+			if l2 < 1e-12 {
+				tx = 1.0;
+				ty = 0.0;
+				tz = 0.0;
+			} else {
+				tx /= l2;
+				ty /= l2;
+				tz /= l2;
+			}
+		} else {
+			tx /= l;
+			ty /= l;
+			tz /= l;
+		}
+		let cx = ny * tz - nz * ty;
+		let cy = nz * tx - nx * tz;
+		let cz = nx * ty - ny * tx;
+		let w = if cx * vs[3 * v] + cy * vs[3 * v + 1] + cz * vs[3 * v + 2] > 0.0 { -1.0 } else { 1.0 };
+		tan[4 * v] = tx as f32;
+		tan[4 * v + 1] = ty as f32;
+		tan[4 * v + 2] = tz as f32;
+		tan[4 * v + 3] = w as f32;
+	}
+}
+fn clear_all() {
+	pos.clear();
+	nrm.clear();
+	tan.clear();
+	uv.clear();
+	body.clear();
+	rib.clear();
+	part.clear();
+	anchor.clear();
+	anchor_n.clear();
+	held.clear();
+	goal.clear();
+	jt.clear();
+	sn.clear();
+	sp.clear();
+	st.clear();
+	wp.clear();
+	wa.clear();
+	wn.clear();
+	wq.clear();
+	wt.clear();
+	wh.clear();
+	wg.clear();
+	wi.clear();
+	wr.clear();
+	wb.clear();
+	shell.clear();
+}
+fn make(P const f32[:], I const int[:], joints const f32[:], s Spec) bool {
+	clear_all();
+	S = s;
+	if joints.len < 30 || P.len == 0 || I.len % 3 != 0 { return false; }
+	for i in 30 {
+		let x real = joints[i];
+		jt.push(x);
+	}
+	classify(P, I);
+	cut(P, I);
+	if wi.len == 0 { return false; }
+	loosen();
+	neck_band();
+	lips();
+	emit();
+	refine();
+	tangents();
+	true
+}
+fn f32_bits(v f32) int {
+	var x f32[1] = [v];
+	let b = bytes_of(x);
+	(b[0] as int) | ((b[1] as int) << 8) | ((b[2] as int) << 16) | ((b[3] as int) << 24)
+}
+fn drape(steps int) int {
+	if pos.len == 0 { return -1; }
+	let nv = pos.len / 3;
+	var ids u32[>..] = [];
+	ids.append(body);
+	ids.append(rib);
+	let c = cloth::make(pos, 3, 0, nv, ids);
+	let cl .= cloth::cloths[c];
+	cl.gravity = 9.81 / S.unit;
+	cl.thickness = 0.003 / S.unit;
+	cl.density = 0.35 * S.unit * S.unit;
+	cl.bend = 0.05;
+	cl.friction = 0.6;
+	for v in nv {
+		cloth::skin(c, v, anchor[3 * v], anchor[3 * v + 1], anchor[3 * v + 2], anchor_n[3 * v], anchor_n[3 * v + 1], anchor_n[3 * v + 2], S.gap / S.unit);
+	}
+	for k in 1..steps + 1 {
+		let f = min(1.0, 2.0 * k / steps);
+		for v in nv {
+			if held[v] {
+				let px real = pos[3 * v];
+				let py real = pos[3 * v + 1];
+				let pz real = pos[3 * v + 2];
+				let gx real = goal[3 * v];
+				let gy real = goal[3 * v + 1];
+				let gz real = goal[3 * v + 2];
+				cloth::pin(c, v, px + (gx - px) * f, py + (gy - py) * f, pz + (gz - pz) * f);
+			}
+		}
+		cloth::step(c, 1.0 / 60.0, 0.0, 0.0, 0.0);
+	}
+	for v in nv {
+		let p = cloth::particle(c, v);
+		for k in 3 { pos[3 * v + k] = cloth::pos[p * 3 + k] as f32; }
+	}
+	var owner int[>..] = [];
+	owner.resize(nv, 0);
+	var d = dictionary<int, int> {};
+	for v in nv {
+		let x f32 = pos[3 * v];
+		let y f32 = pos[3 * v + 1];
+		let z f32 = pos[3 * v + 2];
+		var h = (f32_bits(x) * 73856093) ^ (f32_bits(y) * 19349663) ^ (f32_bits(z) * 83492791);
+		loop {
+			let m = d.get(h);
+			if m {
+				if pos[3 * m] == x && pos[3 * m + 1] == y && pos[3 * m + 2] == z {
+					owner[v] = m;
+					break;
+				}
+				h += 1;
+			} else {
+				d.insert(h, v);
+				owner[v] = v;
+				break;
+			}
+		}
+	}
+	var sum real[>..] = [];
+	sum.resize(nv * 3, 0.0);
+	accum(body, pos, owner, sum);
+	accum(rib, pos, owner, sum);
+	unit_sums(sum);
+	for v in nv {
+		let o = owner[v];
+		for k in 3 { nrm[3 * v + k] = sum[3 * o + k] as f32; }
+	}
+	tangents();
+	c
+}
