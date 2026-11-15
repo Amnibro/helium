@@ -181,7 +181,7 @@ float skin_lut(float c, float s) {
 vec3 skin_trans(float t, vec3 d) { return 0.25 * (exp(-t / d) + 3.0 * exp(-t / (3.0 * d))); }
 float skin_r2(float rough, float pv) { float r = sqrt(sqrt(max(rough * rough * rough * rough - pv, 0.0))) * shade_b.w; return pv > 0.0 ? clamp(sqrt(sqrt(r * r * r * r + pv)), 0.03, 1.0) : clamp(rough * shade_b.w, 0.03, 1.0); }
 float rim(vec3 n, vec3 v, float nl) { return pow(1.0 - max(dot(n, v), 0.0), 3.0) * clamp((nl + 0.5) / 1.5, 0.0, 1.0); }
-float knit_leg(vec2 q, vec2 a, vec2 b) { vec2 ab = b - a; float t = clamp(dot(q - a, ab) / dot(ab, ab), 0.0, 1.0); float d = min(length(q - a - ab * t) / 0.23, 1.0); return (1.0 - d * d) * (1.0 - d * d) * (0.6 + 1.6 * t * (1.0 - t)); }
+float knit_leg(vec2 q, vec2 a, vec2 b) { vec2 ab = b - a; float t = clamp(dot(q - a, ab) / dot(ab, ab), 0.0, 1.0); float d = min(length(q - a - ab * t) / 0.27, 1.0); return (1.0 - d * d) * (1.0 - d * d) * (0.55 + 1.8 * t * (1.0 - t)); }
 float knit_strand(float d) { d = min(abs(d), 1.0); return (1.0 - d * d) * (1.0 - d * d); }
 float knit_h(vec2 p, float kind, float rows, float wf, float wc) {
 	vec2 c = floor(p);
@@ -189,14 +189,15 @@ float knit_h(vec2 p, float kind, float rows, float wf, float wc) {
 	float bx = p.x - 10.0 * floor(p.x * 0.1) - 2.0;
 	float per = kind > -2.5 ? 2.0 : 4.0;
 	bool purl = kind < -3.5 && kind > -4.5 || kind > -2.5 && kind < -1.5 && c.x - 2.0 * floor(c.x * 0.5) > 0.5 || kind < -2.5 && kind > -3.5 && c.x - 4.0 * floor(c.x * 0.25) > 1.5 || kind < -4.5 && kind > -5.5 && c.x + c.y - 2.0 * floor((c.x + c.y) * 0.5) > 0.5 || kind < -5.5 && (bx < 0.0 || bx >= 6.0);
-	float pd = min(abs(q.y - 0.36 - 0.13 * cos(6.2832 * q.x)) / 0.25, 1.0);
-	float hf = purl ? 0.16 * (1.0 - pd * pd) * (1.0 - pd * pd) - 0.0593 : 0.2 * max(knit_leg(q, vec2(0.1, 0.68), vec2(0.47, 0.06)), knit_leg(q, vec2(0.9, 0.68), vec2(0.53, 0.06))) - 0.0846;
+	vec2 wq = vec2(2.0 * q.x - 1.0, q.y / 0.36 - 1.0);
+	wq = wq * wq * wq * wq;
+	float wn = (1.0 - wq.x * wq.x) * (1.0 - wq.y * wq.y);
+	float pd = min(abs(q.y - 0.36 - 0.12 * cos(6.2832 * q.x)) / 0.26, 1.0);
+	float hf = 0.17 * wn * (1.0 - pd * pd) * (1.0 - pd * pd) - 0.0576;
+	if (!purl && wf > 0.0) hf = 0.22 * wn * knit_leg(vec2(min(q.x, 1.0 - q.x), q.y), vec2(0.2, 0.62), vec2(0.47, 0.1)) - 0.0846;
 	float s = fract(p.y / rows);
-	float m = smoothstep(0.0, 0.45, s);
-	float sp = s / 0.45;
-	float cs = 1.0 / (1.5 * sqrt(1.0 + (s < 0.45 ? 1600.0 * sp * sp * (1.0 - sp) * (1.0 - sp) / (rows * rows * 0.5184) : 0.0)));
-	float lift = sin(3.14159265 * m);
-	float hc = kind < -5.5 ? max((0.45 + 0.12 * lift) * knit_strand((bx - 1.5 - 3.0 * m) * cs), (0.45 - 0.15 * lift) * knit_strand((bx - 4.5 + 3.0 * m) * cs)) - 0.161 : kind < -3.5 || kind > -1.5 ? 0.0 : 0.07 * cos(6.2832 * (p.x - per * 0.25) / per);
+	float cs = 1.0 / (1.5 * sqrt(1.0 + 9.0 / (rows * rows * 0.5184)));
+	float hc = kind < -5.5 ? max((0.3 + 0.22 * smoothstep(0.0, 0.25, s) * (1.0 - smoothstep(0.75, 1.0, s))) * knit_strand((bx - 1.5 - 3.0 * s) * cs), (0.3 - 0.1 * sin(3.14159265 * s)) * knit_strand((bx - 4.5 + 3.0 * s) * cs)) - 0.1096 : kind < -3.5 || kind > -1.5 ? 0.0 : 0.07 * cos(6.2832 * (p.x - per * 0.25) / per);
 	return hf * wf + hc * wc;
 }
 vec4 pore(vec2 p, float s) {
@@ -1102,7 +1103,7 @@ void main() {
 		q.ns = length(n);
 		n /= q.ns;
 		q.cav *= max(1.0 + 2.5 * abs(shade_c.x) * kh, 0.0);
-		q.pv = shade_c.x * shade_c.x * (0.53 * (1.0 - kf * kf) + (kind < -5.5 ? 0.075 : 0.024) * (1.0 - kc * kc));
+		q.pv = shade_c.x * shade_c.x * (0.53 * (1.0 - kf * kf) + (kind < -5.5 ? 0.044 : 0.024) * (1.0 - kc * kc));
 	}
 	if (model == 3 && shade_c.x != 0.0 && shade_c.z >= 0.0) {
 		vec2 wvp = xuv(uv_sets.x, xm_det, xo_det.xy) * (shade_c.y > 0.0 ? shade_c.y : 700.0);

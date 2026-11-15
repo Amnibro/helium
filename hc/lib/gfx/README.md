@@ -1337,8 +1337,9 @@ wool.shade_c = float4 { 0.8, 60.0, -6.0, 8.0 };
 * `shade_c.z`: the stitch. -1 stockinette (rows of V-shaped stitches), -2 1x1 rib,
   -3 2x2 rib (the purl columns sit lower), -4 garter (purl bumps everywhere), -5 seed
   (knit and purl in a checkerboard), -6 rope cable: a 6-stitch cable of two 3-stitch
-  strands between 2-stitch purl columns, repeating every 10 stitches; the strand that
-  starts on the left crosses over the other one once in each repeat of rows.
+  strands between 2-stitch purl columns, repeating every 10 stitches; in each repeat
+  of rows the strand that starts on the left runs diagonally over the other one, so
+  the cable reads as a twisted rope.
 * `shade_c.y`: stitches a UV unit (60 when it is 0). A row is 0.72 of a stitch tall.
 * `shade_c.w`: rows from one cable crossing to the next (8 when it is below 2).
 * `shade_c.x`: strength, as for the weave; negative keeps the stitches at every
@@ -1346,7 +1347,8 @@ wool.shade_c = float4 { 0.8, 60.0, -6.0, 8.0 };
 
 Each stitch is shaded from a height pattern measured in stitch widths: knit stitches
 are two tilted lobes of yarn, purl stitches a row of rounded bumps, cable strands
-stand 0.45 of a stitch proud and lift or sink where they cross. The slopes tilt the
+stand 0.3 of a stitch proud; the strand on top rises to 0.52 in the middle of its run
+and tucks back under at both ends. The slopes tilt the
 normal and the hollows darken; the mean diffuse light stays. The stitches fade out
 where one covers fewer than 4 pixels (gone at 2) and widen the highlight instead; the
 cable strands and rib columns fade later, by their own width, so a cable sweater
