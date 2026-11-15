@@ -1413,8 +1413,7 @@ reaches it in proportion to how squarely it faces the rain. `step` soaks
 readily downhill by `fall`) and dries exponentially (`dry`, half-life ln 2 / `dry`).
 Put `wet` in vertex color alpha and set `shade_a.w` 1 on a fabric material
 (`shading` 3): the fabric darkens (base color to the power 1 + 1.2 wet), gets
-smoother, loses fuzz and sheen, and gains a water-film highlight (f0 0.02, roughness
-0.15, weighted by wet squared). `s3d::touch_verts(first, count)` re-uploads changed
+smoother, loses fuzz and sheen, and sharpens its highlight toward roughness 0.15 (by wet squared). `s3d::touch_verts(first, count)` re-uploads changed
 vertices.
 
 ### Volumetric clouds (E6)
@@ -3457,7 +3456,10 @@ and S4 (0.849)**: the map kept only each 4 mm cell's highest point, so steep clo
 shaded itself and a 2-cell tolerance hid the neck band's fold 4 mm above the band.
 `expose` now tests binned triangles at the vertex's exact point with a 1 mm
 tolerance; the bars did not change. **S6 also failed first** (highlights 0.548:
-wet knit lost its glints); the water-film lobe fixed it.
+wet knit lost its glints); the knit's own specular now sharpens to roughness 0.15 as it
+soaks. The first gate failed three shared cost bars (puddle U5, caustics K8, sss Y6:
+the surface shader kept wetness live across the light loop); wetness is now re-read
+where it is used and those costs match the shader before E14.
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 
