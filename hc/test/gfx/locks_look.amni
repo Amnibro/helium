@@ -1,0 +1,245 @@
+import os;
+import math;
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.scene3d;
+import gfx.hair;
+import gfx.hairdo;
+import gfx.locks;
+fn half(lo byte, hi byte) real {
+	let h = (hi as int) * 256 + (lo as int);
+	let sg = if h / 32768 == 1 { -1.0 } else { 1.0 };
+	let e = (h / 1024) % 32;
+	let f = h % 1024;
+	if e == 0 {
+		sg * (f as real) * pow(2.0, -24.0)
+	} else if e == 31 {
+		sg * 65504.0
+	} else {
+		sg * (1024 + f) as real * pow(2.0, (e - 25) as real)
+	}
+}
+fn shot(eye float3, target float3, up float3, rt gfx::Texture) {
+	s3d::view.eye = eye;
+	s3d::view.target = target;
+	s3d::view.up = up;
+	s3d::view.fov_y = 0.42;
+	s3d::view.near = 0.01;
+	s3d::view.far = 50.0;
+	for i in 2 {
+		s3d::render(rt);
+		gfx::flush();
+	}
+}
+fn disc(eye float3, target float3) real {
+	let dx real = eye.x - target.x;
+	let dy real = eye.y - target.y;
+	let dz real = eye.z - target.z;
+	let d = sqrt(dx * dx + dy * dy + dz * dz);
+	let s = 0.1 / d;
+	let t = s / sqrt(1.0 - s * s);
+	t * 720.0 / (2.0 * tan(0.21))
+}
+fn covered(a const byte[:], b const byte[:], rad real) real {
+	let lim = 0.9 * rad;
+	var total = 0;
+	var hits = 0;
+	for y in 720 {
+		for x in 1280 {
+			let dx real = (x as real) + 0.5 - 640.0;
+			let dy real = (y as real) + 0.5 - 360.0;
+			if dx * dx + dy * dy <= lim * lim {
+				total += 1;
+				let i = (y * 1280 + x) * 4;
+				var m = 0;
+				for c in 3 {
+					let d = abs((a[i + c] as int) - (b[i + c] as int));
+					if d > m { m = d; }
+				}
+				if m > 8 { hits += 1; }
+			}
+		}
+	}
+	if total == 0 { return 0.0; }
+	(hits as real) / (total as real)
+}
+fn spread_ratio(px const byte[:], rad real) real {
+	let lim = 0.95 * rad;
+	var ls real[>..] = [];
+	for y in 720 {
+		for x in 1280 {
+			let dx real = (x as real) + 0.5 - 640.0;
+			let dy real = (y as real) + 0.5 - 360.0;
+			if dx * dx + dy * dy <= lim * lim {
+				let o = (y * 1280 + x) * 8;
+				let r = half(px[o], px[o + 1]);
+				let g = half(px[o + 2], px[o + 3]);
+				let b = half(px[o + 4], px[o + 5]);
+				ls.push(0.2126 * r + 0.7152 * g + 0.0722 * b);
+			}
+		}
+	}
+	let n = ls.len;
+	if n == 0 { return 0.0; }
+	var s real[>..] = copy(ls);
+	sort(s) { a, b => a < b };
+	let p = s[(0.95 * (n as real)) as int];
+	var sw = 0.0;
+	var swx = 0.0;
+	var swx2 = 0.0;
+	var swy = 0.0;
+	var swy2 = 0.0;
+	var k = 0;
+	for y in 720 {
+		for x in 1280 {
+			let dx real = (x as real) + 0.5 - 640.0;
+			let dy real = (y as real) + 0.5 - 360.0;
+			if dx * dx + dy * dy <= lim * lim {
+				let l = ls[k];
+				k += 1;
+				if l > p {
+					let w = l - p;
+					sw += w;
+					swx += w * dx;
+					swx2 += w * dx * dx;
+					swy += w * dy;
+					swy2 += w * dy * dy;
+				}
+			}
+		}
+	}
+	if sw <= 0.0 { return 0.0; }
+	let mx = swx / sw;
+	let my = swy / sw;
+	let vx = max(swx2 / sw - mx * mx, 0.0);
+	let vy = max(swy2 / sw - my * my, 0.0);
+	let sdx = sqrt(vx);
+	let sdy = sqrt(vy);
+	if sdy < 1e-9 { return 0.0; }
+	sdx / sdy
+}
+fn main() {
+	if !gfx::open_headless(1280, 720) {
+		print("locks look: skipped");
+		return;
+	}
+	fn unit(x real, y real, z real) float3 {
+		let l = sqrt(x * x + y * y + z * z);
+		float3 { (x / l) as f32, (y / l) as f32, (z / l) as f32 }
+	}
+	s3d::init(1280, 720);
+	s3d::temporal = 0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::look.bloom = 0.0;
+	s3d::atmosphere(unit(0.2, 0.9, -0.4), 3.5, 1.0, 0.3);
+	let rt = gfx::render_target(1280, 720, gfx::RGBA8);
+	fn pl(item int, x f32, y f32, z f32) {
+		s3d::place(item, gfx::translate(float3 { x, y, z }));
+	}
+	hairdo::ball(float3 { 0.0, 1.6, 0.0 }, 0.1);
+	let head = s3d::add(shapes::sphere(0.1, 64, 32, shapes::material(float3 { 0.8, 0.6, 0.5 }, 0.0, 0.6)));
+	pl(head, 0.0, 1.6, 0.0);
+	let sh = hairdo::tone("auburn");
+	let tex = locks::strands(512, 7);
+	var D byte[>..] = [];
+	hairdo::grow(hairdo::style("long waves"), 7, D);
+	locks::build(D, locks::spec());
+	let a = s3d::add(locks::mesh(locks::material(sh.r, sh.g, sh.b, tex)));
+	pl(a, 0.0, 0.0, 0.0);
+	var sp = locks::spec();
+	sp.inner = false;
+	sp.forks = 1;
+	sp.width = 0.35;
+	locks::build(D, sp);
+	let b = s3d::add(locks::mesh(locks::material(sh.r, sh.g, sh.b, tex)));
+	pl(b, 0.0, 100.0, 0.0);
+	let tgt = float3 { 0.0, 1.6, 0.0 };
+	var cov real[2] = [0.0, 0.0];
+	var ctl real[2] = [0.0, 0.0];
+	for v in 2 {
+		let eye = if v == 0 { float3 { 0.0, 1.6, -0.7 } } else { float3 { 0.0, 2.3, 0.0001 } };
+		let up = if v == 0 { float3 { 0.0, 1.0, 0.0 } } else { float3 { 0.0, 0.0, 1.0 } };
+		let rad = disc(eye, tgt);
+		pl(a, 0.0, 100.0, 0.0);
+		shot(eye, tgt, up, rt);
+		let bald = copy(gfx::read_pixels(rt));
+		pl(a, 0.0, 0.0, 0.0);
+		shot(eye, tgt, up, rt);
+		let with = copy(gfx::read_pixels(rt));
+		cov[v] = covered(bald[..], with[..], rad);
+		pl(a, 0.0, 100.0, 0.0);
+		pl(b, 0.0, 0.0, 0.0);
+		shot(eye, tgt, up, rt);
+		let ctrl = copy(gfx::read_pixels(rt));
+		ctl[v] = covered(bald[..], ctrl[..], rad);
+		pl(b, 0.0, 100.0, 0.0);
+		pl(a, 0.0, 0.0, 0.0);
+	}
+	let l5 = cov[0] >= 0.9 && cov[1] >= 0.9 && (ctl[0] < 0.85 || ctl[1] < 0.85);
+	print("L5 coverage: back ", cov[0], " top ", cov[1], " control ", ctl[0], " ", ctl[1], if l5 { " ok" } else { " FAIL" });
+	pl(a, 0.0, 100.0, 0.0);
+	fn fix(n0 int, n1 int) {
+		for i in n0..n1 {
+			let o = i * gltf::VERTEX_FLOATS;
+			let nx real = gltf::verts[o + gltf::AT_NRM] as real;
+			let ny real = gltf::verts[o + gltf::AT_NRM + 1] as real;
+			let nz real = gltf::verts[o + gltf::AT_NRM + 2] as real;
+			var tx real = -nx * ny;
+			var ty real = 1.0 - ny * ny;
+			var tz real = -nz * ny;
+			let len = sqrt(tx * tx + ty * ty + tz * tz);
+			if len < 1e-4 {
+				tx = 1.0;
+				ty = 0.0;
+				tz = 0.0;
+			} else {
+				tx = tx / len;
+				ty = ty / len;
+				tz = tz / len;
+			}
+			gltf::verts[o + gltf::AT_TAN] = tx as f32;
+			gltf::verts[o + gltf::AT_TAN + 1] = ty as f32;
+			gltf::verts[o + gltf::AT_TAN + 2] = tz as f32;
+			gltf::verts[o + gltf::AT_TAN + 3] = 1.0;
+		}
+	}
+	var fm = locks::material(sh.r, sh.g, sh.b, -1);
+	fm.alpha_mode = gltf::ALPHA_OPAQUE;
+	fm.base_tex.texture = -1;
+	let n0 = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let fs = shapes::sphere(0.1, 128, 64, fm);
+	let n1 = gltf::verts.len / gltf::VERTEX_FLOATS;
+	fix(n0, n1);
+	let fiber = s3d::add(fs);
+	let m0 = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ss = shapes::sphere(0.1, 128, 64, shapes::material(float3 { sh.r, sh.g, sh.b }, 0.0, 0.35));
+	let m1 = gltf::verts.len / gltf::VERTEX_FLOATS;
+	fix(m0, m1);
+	let standard = s3d::add(ss);
+	pl(fiber, 5.0, 1.6, 0.0);
+	pl(standard, 5.0, 101.6, 0.0);
+	s3d::atmosphere(unit(0.3, 0.5, 0.8), 3.5, 1.0, 0.3);
+	let eye6 = float3 { 5.0, 1.6, 0.6 };
+	let tgt6 = float3 { 5.0, 1.6, 0.0 };
+	let up6 = float3 { 0.0, 1.0, 0.0 };
+	let rad6 = disc(eye6, tgt6);
+	shot(eye6, tgt6, up6, rt);
+	let px1 = copy(gfx::read_pixels(s3d::hdr_target()));
+	let r = spread_ratio(px1[..], rad6);
+	pl(fiber, 5.0, 101.6, 0.0);
+	pl(standard, 5.0, 1.6, 0.0);
+	shot(eye6, tgt6, up6, rt);
+	let px2 = copy(gfx::read_pixels(s3d::hdr_target()));
+	let rc = spread_ratio(px2[..], rad6);
+	let l6 = r >= 2.0 && rc >= 0.5 && rc <= 1.5;
+	print("L6 highlights: ratio ", r, " control ", rc, if l6 { " ok" } else { " FAIL" });
+	if l5 && l6 {
+		print("locks look: ok");
+	} else {
+		print("locks look: FAILED");
+	}
+}

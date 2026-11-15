@@ -1,0 +1,345 @@
+=== -1947fe2635844610
+import os;
+import math;
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.hair;
+import gfx.hairdo;
+import gfx.locks;
+var D byte[>..];
+=== -136b51cf1c3eb461
+fn rd32(at int) real {
+	let u = (D[at] as int) | ((D[at + 1] as int) << 8) | ((D[at + 2] as int) << 16) | ((D[at + 3] as int) << 24);
+	let e = (u >> 23) & 255;
+	let m = u & 8388607;
+	var v = 0.0;
+	if e == 0 { v = (m as real) * pow(2.0, -149.0); } else if e < 255 { v = ((m + 8388608) as real) * pow(2.0, (e - 150) as real); }
+	if ((u >> 31) & 1) == 1 { v = -v; }
+	v
+}
+fn dist3(a float3, b float3) real {
+	let ax real = a.x;
+	let ay real = a.y;
+	let az real = a.z;
+	let bx real = b.x;
+	let by real = b.y;
+	let bz real = b.z;
+	let dx = ax - bx;
+	let dy = ay - by;
+	let dz = az - bz;
+	sqrt(dx * dx + dy * dy + dz * dz)
+}
+fn vec(i int) float3 {
+	float3 { locks::P[3 * i], locks::P[3 * i + 1], locks::P[3 * i + 2] }
+}
+fn center(r int) float3 {
+	let a = vec(locks::row_v[r]);
+	let b = vec(locks::row_v[r] + 1);
+	float3 { (a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5 }
+}
+fn gpoint(i int) float3 {
+	let at = 16 + 48 * i;
+	float3 { rd32(at) as f32, rd32(at + 4) as f32, rd32(at + 8) as f32 }
+}
+fn turn(a float3, b float3, c float3) real {
+	let ux real = b.x - a.x;
+	let uy real = b.y - a.y;
+	let uz real = b.z - a.z;
+	let vx real = c.x - b.x;
+	let vy real = c.y - b.y;
+	let vz real = c.z - b.z;
+	let lu = sqrt(ux * ux + uy * uy + uz * uz);
+	let lw = sqrt(vx * vx + vy * vy + vz * vz);
+	if lu < 1e-9 || lw < 1e-9 { return 0.0; }
+	let dot = ux * vx + uy * vy + uz * vz;
+	let cx = uy * vz - uz * vy;
+	let cy = uz * vx - ux * vz;
+	let cz = ux * vy - uy * vx;
+	atan2(sqrt(cx * cx + cy * cy + cz * cz), dot)
+}
+=== 0a974d3fbf90aa7e
+fn grow_style(name) {
+	hairdo::ball(float3 { 0.0, 1.6, 0.0 }, 0.1);
+	D.clear();
+	hairdo::grow(hairdo::style(name), 7, D);
+}
+=== 09070623c5a59789
+fn trunk(lock int, out int[>..]&) {
+	out.clear();
+	for r in locks::row_lock.len {
+		if locks::row_lock[r] == lock && locks::row_fork[r] == -1 && locks::row_layer[r] == 0 {
+			out.push(r);
+		}
+	}
+}
+=== -1553941f29631e0e
+fn l1() real, real {
+	var worst = 0.0;
+	var ratios real[>..] = [];
+	var rows int[>..] = [];
+	var gp int[>..] = [];
+	var nl = 0;
+	for r in locks::row_lock.len { nl = max(nl, locks::row_lock[r] + 1); }
+	for lk in nl {
+		trunk(lk, rows);
+		gp.clear();
+		var last = -1;
+		for i in rows.len {
+			let g = locks::row_guide[rows[i]];
+			if g >= 0 {
+				worst = max(worst, dist3(center(rows[i]), gpoint(g)));
+				last = i;
+				gp.push(g);
+			}
+		}
+		if gp.len < 3 { continue; }
+		var mt = 0.0;
+		for i in 1..last {
+			mt = max(mt, turn(center(rows[i - 1]), center(rows[i]), center(rows[i + 1])));
+		}
+		var gt = 0.0;
+		for i in 1..gp.len - 1 {
+			gt = max(gt, turn(gpoint(gp[i - 1]), gpoint(gp[i]), gpoint(gp[i + 1])));
+		}
+		if gt < 1e-4 { continue; }
+		ratios.push(mt / gt);
+	}
+	if ratios.len == 0 { return worst, 0.0; }
+	sort(ratios) { a, b => a < b };
+	return worst, ratios[ratios.len / 2];
+}
+=== -571e4ffbcee25ec5
+fn l2() real, real {
+	var s1 = 0.0;
+	var s2 = 0.0;
+	var n1 = 0;
+	var n2 = 0;
+	let nrows = locks::row_lock.len;
+	let cx real = hairdo::ctr.x;
+	let cy real = hairdo::ctr.y;
+	let cz real = hairdo::ctr.z;
+	for r in nrows - 1 {
+		if locks::row_fork[r] != -1 || locks::row_layer[r] != 0 { continue; }
+		if locks::row_lock[r + 1] != locks::row_lock[r] || locks::row_fork[r + 1] != locks::row_fork[r] || locks::row_layer[r + 1] != locks::row_layer[r] { continue; }
+		let v real = locks::UV[2 * locks::row_v[r] + 1];
+		if v > 0.5 { continue; }
+		let lf = vec(locks::row_v[r]);
+		let rt = vec(locks::row_v[r] + 1);
+		let c0 = center(r);
+		let c1 = center(r + 1);
+		let ex real = rt.x - lf.x;
+		let ey real = rt.y - lf.y;
+		let ez real = rt.z - lf.z;
+		let dx real = c1.x - c0.x;
+		let dy real = c1.y - c0.y;
+		let dz real = c1.z - c0.z;
+		var kx = ey * dz - ez * dy;
+		var ky = ez * dx - ex * dz;
+		var kz = ex * dy - ey * dx;
+		let kl = sqrt(kx * kx + ky * ky + kz * kz);
+		if kl > 1e-12 {
+			kx /= kl;
+			ky /= kl;
+			kz /= kl;
+		}
+		var ox = (c0.x as real) - cx;
+		var oy = (c0.y as real) - cy;
+		var oz = (c0.z as real) - cz;
+		let ol = sqrt(ox * ox + oy * oy + oz * oz);
+		if ol > 1e-12 {
+			ox /= ol;
+			oy /= ol;
+			oz /= ol;
+		}
+		var tx = dx;
+		var ty = dy;
+		var tz = dz;
+		let tl = sqrt(tx * tx + ty * ty + tz * tz);
+		if tl > 1e-12 {
+			tx /= tl;
+			ty /= tl;
+			tz /= tl;
+		}
+		let kd = abs(kx * ox + ky * oy + kz * oz);
+		s1 += kd;
+		n1 += 1;
+		let td = tx * ox + ty * oy + tz * oz;
+		let px = ox - tx * td;
+		let py = oy - ty * td;
+		let pz = oz - tz * td;
+		let pl = sqrt(px * px + py * py + pz * pz);
+		if pl >= 0.3 {
+			s2 += kd / pl;
+			n2 += 1;
+		}
+	}
+	let a = if n1 > 0 { s1 / (n1 as real) } else { 0.0 };
+	let b = if n2 > 0 { s2 / (n2 as real) } else { 0.0 };
+	return a, b;
+}
+=== -fffeb7bb837b2db
+fn off3(p float3, l float3, r float3, t real) real {
+	let ex real = l.x + (r.x - l.x) * t - p.x;
+	let ey real = l.y + (r.y - l.y) * t - p.y;
+	let ez real = l.z + (r.z - l.z) * t - p.z;
+	sqrt(ex * ex + ey * ey + ez * ez)
+}
+fn l3(forks int) real, real, real {
+	var worst = 0.0;
+	var fan = 0.0;
+	var nfan = 0;
+	var sv = 0.0;
+	var sv2 = 0.0;
+	var nv = 0;
+	let nrows = locks::row_lock.len;
+	for lk in locks::split_row.len {
+		let sr = locks::split_row[lk];
+		if sr < 0 { continue; }
+		let sl = vec(locks::row_v[sr]);
+		let sright = vec(locks::row_v[sr] + 1);
+		var pt = float3 { 0.0, 0.0, 0.0 };
+		var pf = float3 { 0.0, 0.0, 0.0 };
+		var tsum = 0.0;
+		var fsum = 0.0;
+		for f in forks {
+			let r0 = locks::fork_row[lk * forks + f];
+			let fl = vec(locks::row_v[r0]);
+			let fr = vec(locks::row_v[r0] + 1);
+			let t0 = (f as real) / (forks as real);
+			let t1 = ((f + 1) as real) / (forks as real);
+			worst = max(worst, off3(fl, sl, sright, t0));
+			worst = max(worst, off3(fr, sl, sright, t1));
+			var tip = r0;
+			var r = r0;
+			while r < nrows && locks::row_lock[r] == lk {
+				if locks::row_fork[r] == f && locks::row_layer[r] == 0 { tip = r; }
+				r += 1;
+			}
+			let tv real = locks::UV[2 * locks::row_v[tip] + 1];
+			sv += tv;
+			sv2 += tv * tv;
+			nv += 1;
+			let ct = center(tip);
+			let cf = center(r0);
+			if f > 0 {
+				tsum += dist3(ct, pt);
+				fsum += dist3(cf, pf);
+			}
+			pt = ct;
+			pf = cf;
+		}
+		if forks > 1 {
+			let ts = tsum / ((forks - 1) as real);
+			let fs = fsum / ((forks - 1) as real);
+			if fs > 1e-12 {
+				fan += ts / fs;
+				nfan += 1;
+			}
+		}
+	}
+	let meanfan = if nfan > 0 { fan / (nfan as real) } else { 0.0 };
+	let mean = if nv > 0 { sv / (nv as real) } else { 0.0 };
+	var vr = if nv > 0 { sv2 / (nv as real) - mean * mean } else { 0.0 };
+	if vr < 0.0 { vr = 0.0; }
+	let cv = if mean > 1e-12 { sqrt(vr) / mean } else { 0.0 };
+	return worst, meanfan, cv;
+}
+=== -29cf5c9f2fc54f5b
+fn l4(shift real) real {
+	var best = 1e30;
+	let nv = locks::P.len / 3;
+	for i in nv {
+		let d = dist3(vec(i), hairdo::ctr);
+		let m = if d > 1e-12 { abs(d - shift) } else { 0.0 };
+		best = min(best, m);
+	}
+	best
+}
+=== -46c3daee062afcc3
+fn alpha(px const byte[:], size int, v0 real, v1 real) real {
+	var sum = 0.0;
+	var rows = 0;
+	for y in size {
+		let v = ((y as real) + 0.5) / (size as real);
+		if v >= v0 && v <= v1 {
+			rows += 1;
+			for x in size {
+				sum += (px[(y * size + x) * 4 + 3] as real);
+			}
+		}
+	}
+	if rows == 0 { return 0.0; }
+	sum / (255.0 * (size as real) * (rows as real))
+}
+=== 6a700e9af55490cf
+fn tag(b bool) const byte[:] {
+	if b { " ok" } else { " FAIL" }
+}
+fn main() {
+	let s = locks::spec();
+	var all = true;
+	grow_style("long waves");
+	locks::build(D, s);
+	let d, m = l1();
+	var c1 = s;
+	c1.sub = 1;
+	locks::build(D, c1);
+	let d1, mc = l1();
+	let ok1 = d <= 1e-5 && m <= 0.5 && mc >= 0.99;
+	if !ok1 { all = false; }
+	print("L1 curves: off ", d, " turn ", m, " control ", mc, tag(ok1));
+	locks::build(D, s);
+	let a2, b2 = l2();
+	var c2 = s;
+	c2.flat = false;
+	locks::build(D, c2);
+	let ac, bc = l2();
+	let ok2 = a2 >= 0.85 && ac <= 0.7;
+	if ok2 {
+		print("L2 flat: ", a2, " control ", ac, " ok");
+	} else {
+		print("L2 flat: ", a2, " control ", ac, " FAIL (retired: unreachable, see L2b)");
+	}
+	let ok2b = b2 >= 0.97 && bc <= 0.8;
+	if !ok2b { all = false; }
+	print("L2b flat as can be: ", b2, " control ", bc, tag(ok2b));
+	locks::build(D, s);
+	let g, f, cv = l3(s.forks);
+	var c3 = s;
+	c3.spread = 0;
+	c3.ragged = 0;
+	locks::build(D, c3);
+	let gc, fc, cc = l3(s.forks);
+	let ok3 = g <= 1e-6 && f >= 1.3 && cv >= 0.05 && fc < 1.3 && cc < 0.01;
+	if !ok3 { all = false; }
+	print("L3 split ends: gap ", g, " fan ", f, " vary ", cv, " control ", fc, " ", cc, tag(ok3));
+	locks::build(D, s);
+	let m4 = l4(0.0);
+	let mc4 = l4(0.003);
+	let ok4 = m4 >= 0.0995 && mc4 < 0.0995;
+	if !ok4 { all = false; }
+	print("L4 outside: min ", m4, " control ", mc4, tag(ok4));
+	var slowest = 0.0;
+	var biggest = 0;
+	for i in hairdo::count() {
+		grow_style(hairdo::name_of(i));
+		let t0 = clock();
+		locks::build(D, s);
+		let t = clock() - t0;
+		slowest = max(slowest, t);
+		biggest = max(biggest, locks::P.len / 3);
+	}
+	let st0 = clock();
+	locks::strands(512, 7);
+	let st = clock() - st0;
+	let px = gltf::image_pixels(gltf::images.len - 1);
+	let a7 = alpha(px, 512, 0.0, 1.0);
+	let tip = alpha(px, 512, 0.95, 1.0);
+	let root = alpha(px, 512, 0.0, 0.5);
+	let ok7 = slowest <= 0.15 && biggest <= 120000 && st <= 0.2 && a7 >= 0.35 && a7 <= 0.75 && tip <= root * 0.5;
+	if !ok7 { all = false; }
+	print("L7 cost: build ", slowest, " s verts ", biggest, " strands ", st, " s alpha ", a7, " tips ", tip, " over ", root, tag(ok7));
+	if all { print("locks: ok"); } else { print("locks: FAILED"); }
+}

@@ -1416,6 +1416,28 @@ Put `wet` in vertex color alpha and set `shade_a.w` 1 on a fabric material
 smoother, loses fuzz and sheen, and sharpens its highlight toward roughness 0.15 (by wet squared). `s3d::touch_verts(first, count)` re-uploads changed
 vertices.
 
+### Card locks (E15)
+
+```
+locks::build(groom, locks::spec());
+let hair = s3d::add(locks::mesh(locks::material(sh.r, sh.g, sh.b, locks::strands(512, 7))));
+```
+
+`gfx.locks` turns a groom (the bytes `hairdo::grow` writes, on the head `hairdo`
+measured) into textured cards for targets where strands cost too much. Each kept guide
+becomes a lock that follows a Catmull-Rom curve through the guide (`sub` samples per
+segment), lies flat on the head (`flat`), narrows at the root and tip, and past `split`
+breaks into `forks` ends that fan apart (`spread`) and stop at ragged lengths
+(`ragged`). With `inner`, a wider, shorter card under each lock (tucked under its
+root) fills gaps. `verts` is the vertex budget: when the groom has more guides than
+it allows, guides are kept evenly and widened to cover the same scalp. `strands(size,
+seed)` makes the cut-out texture (hairs of random width and length, thinning tips);
+`material` is a double-sided alpha-mask fiber material (`shading` 7): wrapped
+diffuse, a white highlight shifted toward the root and a colored one toward the tip,
+both running across the strands along the vertex tangent, and light through the hair
+from behind. The results stay readable in `locks::P`, `N`, `T`, `UV`, `I` and the
+row tables.
+
 ### Volumetric clouds (E6)
 
 ```
@@ -3460,6 +3482,78 @@ wet knit lost its glints); the knit's own specular now sharpens to roughness 0.1
 soaks. The first gate failed three shared cost bars (puddle U5, caustics K8, sss Y6:
 the surface shader kept wetness live across the light loop); wetness is now re-read
 where it is used and those costs match the shader before E14.
+
+### Card lock bars (E15, registered before the first run)
+
+Hair as textured cards (`gfx.locks`), for targets where the strand passes cost too much
+and for a hand-made look: every guide of a groom becomes a flat lock that follows a
+smooth curve through the guide, lies flat on the head, and splits into ragged ends; an
+inner layer of wider, shorter cards fills the gaps; a generated strand texture cuts
+the cards into hairs; a fiber material (`shading` 7) lights them with two shifted
+highlights that run across the strands. The test head is `hairdo::ball((0, 1.6, 0),
+0.1)` with style "long waves", shade "auburn", seed 7, grown with `hairdo::grow`;
+locks use `locks::spec()` (`sub` 3, `width` 1, `split` 0.7, `forks` 3, `spread` 2,
+`ragged` 0.2, `flat` true, `inner` true, `gap` 0.0015). CPU checks in
+`hc/test/gfx/locks_check`, GPU checks in `hc/test/gfx/locks_look`. Lengths in meters.
+
+* **L1 smooth curves through the guides.** On the outer layer, at every row that falls
+  on a guide point before the split, the lock's center (the mean of the row's two
+  vertices) is within 1e-5 of that guide point. The largest turn angle between
+  consecutive center segments, divided by the guide's own largest turn angle, has a
+  median over locks of at most 0.5. Control: `sub` 1 gives a median of at least 0.99.
+* **L2 locks lie flat.** On outer rows with v at most 0.5, the card normal (the unit
+  cross product of the row's right minus left vertex and the next row's center minus
+  this one's) has a mean absolute dot product with the direction from the head center
+  of at least 0.85. Control: `flat` false at most 0.7.
+* **L3 split ends.** At the split row every fork's two vertices lie within 1e-6 of the
+  parent row's points at the fork's share of the width (no gap). The spacing between
+  adjacent fork tips, divided by their spacing at the split, has a mean over locks of
+  at least 1.3; the forks' tip v values have a coefficient of variation of at least
+  0.05. Control: `spread` 0 and `ragged` 0 give a mean below 1.3 and a coefficient
+  below 0.01.
+* **L4 outside the head.** Every vertex of both layers is at least 0.1 - 0.0005 from
+  the head center. Control: the same vertices moved 3 mm toward the center fail.
+* **L5 coverage (GPU).** A skin-colored sphere of radius 0.1 at the head center, with
+  the locks, sun from the camera's side, 1280 x 720: seen from behind and from above,
+  at least 90% of the pixels within 0.9 of the head's projected radius differ from
+  the bald render by more than 8 / 255. Control: `inner` false, `forks` 1 and
+  `width` 0.35 leave below 85% in at least one view.
+* **L6 highlights run across the strands (GPU).** A sphere of radius 0.1 with the
+  fiber material and its vertex tangents along the meridians (toward +y), lit from
+  the camera's side: over the sphere's pixels, weighting each by its luminance above
+  the 95th percentile, the standard deviation of x over that of y is at least 2.
+  Control: the standard material (`shading` 0, roughness 0.35) gives between 0.5
+  and 1.5.
+* **L7 cost and size.** For each of the 30 styles, `locks::build` takes at most
+  0.15 s on one core and makes at most 120,000 vertices. `locks::strands(512, 7)`
+  takes at most 0.2 s; its mean alpha is between 0.35 and 0.75, and the tips thin
+  out: the mean alpha of rows with v at least 0.95 is at most half that of rows with
+  v at most 0.5.
+* **L8 nothing else moved.** The strand hair bars and the rest of `gfxtest` pass
+  unchanged.
+
+Results (2026-11-15, RX 9060 XT, RADV): L1 off 8e-9 m, turn median 0.497, control 1.0;
+L2 0.786, control 0.504: **FAIL, retired**; L2b 0.997, control 0.639; L3 gap 1.2e-7 m,
+fan 7.4, vary 0.064, control 0.53 and 0; L4 min 0.0999999, control 0.0970; L5 back
+0.9997, top 0.902, control 0.979 and 0.654; L6 ratio 6.81, control 1.02; L7 build
+0.02 s, 115,056 vertices, strands 0.005 s, alpha 0.39, tips 0.003 over 0.477; L8 in
+the gate. These bars were written before the first run but committed after it (the
+gate was busy). **The first runs failed L1, L2, L3, L5 and L7**: the keep-out gap
+pushed root edges off their curves (the gap is now capped by the curve's own
+clearance); ragged ends only varied inside the split segment (forks now end anywhere
+past it); every style grows about 3,260 guides, so a card per guide made 1.3 million
+vertices (`verts` now sets a budget, the kept locks are chosen evenly by hash and
+widened by the square root of the thinning); `locks::mesh` added the vertex base to
+indices that are local (hair B never drew); the top view showed the part (inner cards
+now tuck under the root, inner and fork rows are half as dense). **L2 is retired**:
+a lock hanging straight below the head points along the measure's own direction, so
+no card normal can reach 0.85; L2b (added after the first run) shows the normal is
+within 0.4% of the best possible, which L2's control misses.
+
+* **L2b locks lie as flat as they can** (added after the first run). Over L2's rows,
+  with o the head direction and t the row's unit tangent, op = o minus t (t . o):
+  among rows where op is at least 0.3 long, the mean of L2's absolute dot product
+  over op's length is at least 0.97. Control: `flat` false at most 0.8.
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 

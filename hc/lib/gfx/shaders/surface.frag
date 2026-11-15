@@ -254,6 +254,18 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		vec3 fz = sheen.rgb * e * shade_a.y * sw * rim(n, v, nl);
 		return ((dif + mix(shade_a.z, 1.0, 0.6 * fw) * light_term(n, v, l, e, vec3(0.0), f0, mix(rough, 0.15, fw * fw), ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) * sw + fz) * vis * q.cav;
 	}
+	if (model == 7) {
+		vec3 ht = in_tan.xyz - n * dot(n, in_tan.xyz);
+		ht = dot(ht, ht) > 1e-12 ? normalize(ht) : normalize(cross(n, vec3(0.0, 0.0, 1.0)) + vec3(1e-4, 0.0, 0.0));
+		float nl = dot(n, l);
+		vec3 dif = kd * albedo / PI_F * max((nl + shade_a.x) / (1.0 + shade_a.x), 0.0) * e;
+		vec3 h = normalize(l + v);
+		float c1 = dot(normalize(ht + n * shade_c.x), h);
+		float c2 = dot(normalize(ht + n * shade_c.y), h);
+		vec3 sp = (shade_a.y * (shade_c.z + 2.0) * pow(max(1.0 - c1 * c1, 0.0), 0.5 * shade_c.z) + shade_a.z * sqrt(max(albedo, vec3(0.0))) * (shade_c.w + 2.0) * pow(max(1.0 - c2 * c2, 0.0), 0.5 * shade_c.w)) * (e * smoothstep(-0.2, 0.2, nl) / (8.0 * PI_F));
+		vec3 bl = shade_a.w * albedo * e * pow(clamp(-dot(v, l), 0.0, 1.0), 4.0) * 0.5;
+		return (dif + sp + bl) * vis;
+	}
 	vec3 tr = model == 5 ? albedo * shade_a.rgb * e * clamp((shade_a.w - dot(n, l)) / ((1.0 + shade_a.w) * (1.0 + shade_a.w)), 0.0, 1.0) * 0.36 / (PI_F * pow(1.0 - 0.64 * pow(clamp(-dot(v, l), 0.0, 1.0), 2.0), 2.0)) : vec3(0.0);
 	return (light_term(n, v, l, e, albedo, f0, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, e) + tr) * vis;
 }
@@ -849,6 +861,7 @@ vec3 ambient_env(vec3 n, vec3 v, vec3 base_rgb, vec3 albedo, vec3 f0, float roug
 		spec = mix(spec, env_lobe(n, v, r2, gn, oc, sr, vec4(0.0)) * env_ef(f0, 1.0, ms_lut(n_v, r2), ms), shade_b.z);
 	}
 	if (model == 2) spec += shade_b.z * env_lobe(q.gn, v, shade_b.w, gn, oc, sr, vec4(0.0)) * env_ef(vec3(0.02), 1.0, ms_lut(max(dot(q.gn, v), 1e-4), shade_b.w), vec3(1.0));
+	if (model == 7) spec *= 0.35;
 	vec3 rgb = albedo * max(kd, vec3(0.0)) * irr * dao * (1.0 - x.trans) + spec;
 	if (model == 5) rgb += albedo * shade_a.rgb * (use_gi ? gi_irr : env_irr(-n)) * dao;
 	if (x.trans > 0.0) rgb += x.trans * transmitted(n, v, rough, base_rgb, ef, x);
