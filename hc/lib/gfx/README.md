@@ -4347,6 +4347,52 @@ Cost (wall clock, 1280 x 720 Cornell, 60 frames): GI + RT shadows + one probe up
 6.2 ms vs 0.43 ms with both off. Not optimized yet: the update loops over every ray for every
 texel, all 4096 probes update every frame, and every pixel casts 8 probe-visibility rays.
 
+### Dynamic GI: moving objects, faster settling, 16 lights
+
+Probe GI used to build its ray-tracing scene once, so an object that moved or was hidden
+left its old shape in the probes for good (a ghost), and only the first 8 point lights
+reached the probes, with no spot cone or rect facing. Now:
+
+* Each static mesh in the GI scene is tracked by item, node and primitive. When its
+  transform changes, its triangles are rewritten in place and the BVH is refit from the
+  leaves up (the tree keeps its shape; only the boxes grow or shrink). A mesh that is no
+  longer drawn has its triangles collapsed to a point. A new mesh, a changed primitive, or
+  a refit that more than doubles the root box's area triggers a full rebuild instead.
+  `gi_refit` (true) turns this off; `gi_rebuild()` forces a fresh build; `gi_stats()` returns
+  rebuilds, refits, the last refit's ms and the last build's ms.
+* `gi_adaptive` (true): for 17 updates after any refit the hysteresis is capped at 0.85, and
+  any probe texel whose new value differs from the old by more than 35 % (relative) uses
+  0.6, so a change settles in a few frames while still scenes keep the full 0.97 average.
+* The probes take all 16 lights. Spots use the same cone as the lit pass, and rect lights
+  shine only to the side they face (scaled by the cosine to the panel's normal), so a
+  light aimed out of a room no longer lights it.
+
+Gate: `gi_dynamic_check` (Gold, `hc/test/gfx/gi_dynamic_check.gold`, under the GPU lock in
+gfxtest.sh): a 4 x 2.5 x 4 open-topped room with a red block, 8^3 probes, 128 rays, one
+update a frame, 256 x 256. Bars were written before the first run; three were changed after
+it, for these reasons. D1 first moved the block on the scene's first frame, which is a build,
+not a refit, so it now renders once first. D2 compared against a reference with fewer frames
+of history; the probes rotate their rays by frame count, so two equally correct results with
+different histories differ by 0.03 (shown as `noise`), and the bar now uses a reference with
+the same history. D4b's rect light sat at mid-height, where facing up it correctly lights the
+walls above it, so it could not tell one-sided from two-sided; it now sits just under the wall
+tops.
+
+| check | result | bar |
+|---|---|---|
+| D1 refit vs brute force (20000 rays, 3 moves) | 100.00 % agree, 3 refits, 0 rebuilds | >= 99.9 % PASS |
+| D2 block hidden: error 60 frames later | 0.0053 (whole change 0.0697, window noise 0.0304) | <= 0.03 PASS |
+| D2c control: refit off keeps the ghost | 0.0830 | > 0.03 and >= 2 x D2: PASS |
+| D3 frames to settle after the change | 3 adaptive vs 25 plain | adaptive <= half PASS |
+| D4 spot aimed out of the room / at the floor | adds 0.000 / 0.121 of the unlit sum | up <= 5 % of down PASS |
+| D4b rect facing out / down | adds 0.003 / 1.604 | up <= 5 % of down PASS |
+| D5 16 lights, first 8 black | 1.782 x the unlit sum | > 1.2 PASS |
+| D6 refit cost, 23102 triangles, one moving sphere | 0.63 ms mean vs 15.8 ms full build | < 2 ms and < 0.25 x build PASS |
+
+Not done: skinned, instanced, morphing and blended meshes still stay out of the GI scene, and
+cloth is seen at its rest shape. A refit tree slowly loses quality as objects drift far from
+where they were built; the root-area rule catches only the large cases.
+
 ### GTAO results (GI part 3b; RX 9060 XT, RADV; `results/2026-11-02_rx9060xt_radv_420344b_gtao.txt`, clean worktree, full gfxtest ok)
 
 `ao_mode = 1` switches the AO pass from the hemisphere SSAO (`ao_mode = 0`, still the

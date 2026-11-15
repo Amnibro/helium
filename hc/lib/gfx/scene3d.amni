@@ -45,7 +45,7 @@ let CASCADES = 3;
 let MAX_LIGHTS = 16;
 let MAX_FOG_VOLUMES = 8;
 let MAX_PROBES = 8;
-let GI_LIGHTS = 8;
+let GI_LIGHTS = 16;
 let GLOW_LEVELS = 5;
 let MSAA = 4;
 let LOCAL_FACES = 96;
@@ -75,7 +75,7 @@ struct FrameU {
 	light_dir float4[16], light_shd float4[16], refl float4, view_m gfx::mat4, env float4, env_rot float4, vp gfx::mat4, cluster float4, cluster2 float4,
 	probe_n float4, probe_pos float4[8], probe_lo float4[8], probe_hi float4[8], ssgi float4, decal float4, caust float4, caust_w float4, caust_box float4, caust_abs float4, rtr float4, vsm_rot gfx::mat4, vsm_zrow float4, vsm float4, vsm_x float4, rain float4
 }
-struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[8], light_rgb float4[8], env float4, env_rot float4 }
+struct GiU { origin float4, step float4, dims float4, rot0 float4, rot1 float4, rot2 float4, params float4, to_sun float4, sun_rgb float4, zenith float4, horizon float4, ground float4, light_pos float4[16], light_rgb float4[16], light_dir float4[16], env float4, env_rot float4, fast float4 }
 struct SurfaceU { base float4, emissive float4, params float4, alpha float4, uv_sets float4, uv_sets2 float4, tri float4, top_tint float4, xm_base float4, xm_mr float4, xm_nrm float4, xm_occ float4, xm_emi float4, xo0 float4, xo1 float4, xo2 float4, sheen float4, misc float4, shade_a float4, shade_b float4, shade_c float4, xm_det float4, xo_det float4, top_lay float4 }
 struct ExtU { ior float4, spec float4, coat float4, trans float4, atten float4, aniso float4, irid float4, tm float4[13], to float4[13] }
 struct CutU { base float4, alpha float4, uv_sets float4, xm float4, xo float4 }
@@ -178,6 +178,21 @@ var gi_updates_per_frame = 1;
 var gi_interval = 1;
 var shadow_reach f32 = 0.0;
 var gi_built = false;
+var gi_refit = true;
+var gi_adaptive = true;
+var gi_rebuilds = 0;
+var gi_refits = 0;
+var gi_refit_ms = 0.0;
+var gi_build_ms = 0.0;
+var gi_moved = 0;
+var gi_stamp = 0;
+var gi_src = dictionary<int, int> {};
+var gi_src_first int[>..] = [];
+var gi_src_cnt int[>..] = [];
+var gi_src_prim int[>..] = [];
+var gi_src_seen int[>..] = [];
+var gi_src_live bool[>..] = [];
+var gi_src_model gfx::mat4[>..] = [];
 var gi_np = 0;
 var gi_nr = 0;
 var gi_updates = 0;
@@ -2292,14 +2307,63 @@ fn image_avg(image int) float3 {
 	img_avg[image] = float4 { a.x, a.y, a.z, 1.0 };
 	a
 }
-fn gi_scene() {
-	rt::clear();
+fn gi_takes(b Batch) bool { b.mode != gltf::ALPHA_BLEND && b.joint_base < 0 && b.inst < 0 && gltf::prims[b.prim].targets == 0 && !material_of(b.prim).no_gi }
+fn gi_key(b Batch) int { b.item * 1048576 + b.node }
+fn gi_pos(prim int, model gfx::mat4, at int) float3 {
+	let pr = gltf::prims[prim];
+	let vi = (pr.vfirst + gltf::indices[pr.ifirst + at] as int) * gltf::VERTEX_FLOATS + gltf::AT_POS;
+	linalg::point(model, linalg::v3(gltf::verts[vi], gltf::verts[vi + 1], gltf::verts[vi + 2]))
+}
+fn gi_same(a gfx::mat4, b gfx::mat4) bool { a.c0.x == b.c0.x && a.c0.y == b.c0.y && a.c0.z == b.c0.z && a.c1.x == b.c1.x && a.c1.y == b.c1.y && a.c1.z == b.c1.z && a.c2.x == b.c2.x && a.c2.y == b.c2.y && a.c2.z == b.c2.z && a.c3.x == b.c3.x && a.c3.y == b.c3.y && a.c3.z == b.c3.z }
+fn gi_rebuild() { gi_built = false; }
+fn gi_stats() int, int, real, real { return gi_rebuilds, gi_refits, gi_refit_ms, gi_build_ms; }
+fn gi_read(out f32[>..]&) bool { if !gi_have { return false; } gfx::read_buffer(gi_irr, out, gi_np * 64 * 4) }
+fn gi_track() {
+	if !gi_built || !gi_refit || !rt::ready { return; }
+	let t0 = clock_ns();
+	gi_stamp += 1;
+	var dirty = false;
 	for b in batch {
-		if b.mode == gltf::ALPHA_BLEND || b.joint_base >= 0 || b.inst >= 0 { continue; }
+		if !gi_takes(b) { continue; }
+		let h = gi_src.get(gi_key(b));
+		guard h else { gi_built = false; return; }
+		let s int = h;
+		if gi_src_prim[s] != b.prim { gi_built = false; return; }
+		gi_src_seen[s] = gi_stamp;
+		if gi_src_live[s] && gi_same(gi_src_model[s], b.model) { continue; }
+		for k in gi_src_cnt[s] { rt::set_tri(gi_src_first[s] + k, gi_pos(b.prim, b.model, 3 * k), gi_pos(b.prim, b.model, 3 * k + 1), gi_pos(b.prim, b.model, 3 * k + 2)); }
+		gi_src_model[s] = b.model;
+		gi_src_live[s] = true;
+		dirty = true;
+	}
+	for s in gi_src_seen.len {
+		if gi_src_seen[s] == gi_stamp || !gi_src_live[s] { continue; }
+		for k in gi_src_cnt[s] {
+			let o = (gi_src_first[s] + k) * 9;
+			let a = linalg::v3(rt::tri_in[o], rt::tri_in[o + 1], rt::tri_in[o + 2]);
+			rt::set_tri(gi_src_first[s] + k, a, a, a);
+		}
+		gi_src_live[s] = false;
+		dirty = true;
+	}
+	if !dirty { return; }
+	rt::refit();
+	if rt::root_area() > 2.0 * rt::built_area { gi_built = false; return; }
+	rt::update();
+	gi_refits += 1;
+	gi_moved = 17;
+	gi_refit_ms = ((clock_ns() - t0) as real) / 1000000.0;
+}
+fn gi_scene() {
+	let t0 = clock_ns();
+	rt::clear();
+	gi_src.clear(); gi_src_first.clear(); gi_src_cnt.clear(); gi_src_prim.clear(); gi_src_seen.clear(); gi_src_live.clear(); gi_src_model.clear();
+	for b in batch {
+		if !gi_takes(b) { continue; }
 		let pr = gltf::prims[b.prim];
-		if pr.targets > 0 { continue; }
 		let m = material_of(b.prim);
-		if m.no_gi { continue; }
+		gi_src.insert(gi_key(b), gi_src_first.len);
+		gi_src_first.push(rt::count()); gi_src_cnt.push(pr.icount / 3); gi_src_prim.push(b.prim); gi_src_seen.push(0); gi_src_live.push(true); gi_src_model.push(b.model);
 		let tex = if m.base_tex.texture >= 0 && gltf::textures[m.base_tex.texture].image >= 0 { image_avg(gltf::textures[m.base_tex.texture].image) } else { float3 { 1.0, 1.0, 1.0 } };
 		let mt = if m.mr_tex.texture >= 0 { 0.0 } else { m.metallic };
 		let rg = if m.mr_tex.texture >= 0 { 1.0 } else { m.roughness };
@@ -2312,8 +2376,7 @@ fn gi_scene() {
 			var vc = float3 { 0.0, 0.0, 0.0 };
 			for c in 3 {
 				let vb = (pr.vfirst + gltf::indices[pr.ifirst + t + c] as int) * gltf::VERTEX_FLOATS;
-				let vi = vb + gltf::AT_POS;
-				q[c] = linalg::point(b.model, linalg::v3(gltf::verts[vi], gltf::verts[vi + 1], gltf::verts[vi + 2]));
+				q[c] = gi_pos(b.prim, b.model, t + c);
 				vc = vc + linalg::v3(gltf::verts[vb + gltf::AT_COL], gltf::verts[vb + gltf::AT_COL + 1], gltf::verts[vb + gltf::AT_COL + 2]) * (1.0 / 3.0);
 			}
 			rt::add(q[0], q[1], q[2], linalg::v3(rgb.x * vc.x, rgb.y * vc.y, rgb.z * vc.z), mt, rg, glow);
@@ -2322,6 +2385,8 @@ fn gi_scene() {
 	}
 	rt::build();
 	rt::upload();
+	gi_rebuilds += 1;
+	gi_build_ms = ((clock_ns() - t0) as real) / 1000000.0;
 	if rt::ready {
 		let lo = if gi_box { gi_box_lo } else { linalg::v3(rt::nodes[0], rt::nodes[1], rt::nodes[2]) };
 		let hi = if gi_box { gi_box_hi } else { linalg::v3(rt::nodes[4], rt::nodes[5], rt::nodes[6]) };
@@ -2356,6 +2421,7 @@ fn gi_rot(k int) GiU {
 }
 fn gi_pass() {
 	if !(gi_on || rt_shadows || rt_reflect) { return; }
+	gi_track();
 	if !gi_built { gi_scene(); }
 	if !gi_on || !gi_have || !rt::ready { return; }
 	if gi_updates > 8 && gi_interval > 1 && frames % gi_interval != 0 { return; }
@@ -2366,7 +2432,10 @@ fn gi_pass() {
 		g.origin = frame_u.gi_origin; g.step = x4(gi_step, gi_bias); g.dims = f4(gi_dims[0] as f32, gi_dims[1] as f32, gi_dims[2] as f32, nr as f32);
 		g.env = frame_u.env; g.env_rot = frame_u.env_rot;
 		g.to_sun = frame_u.to_sun; g.sun_rgb = frame_u.sun_rgb; g.zenith = frame_u.zenith; g.horizon = frame_u.horizon; g.ground = frame_u.ground;
-		for k in GI_LIGHTS { g.light_pos[k] = frame_u.light_pos[k]; g.light_rgb[k] = frame_u.light_rgb[k]; }
+		for k in GI_LIGHTS {
+			g.light_pos[k] = frame_u.light_pos[k]; g.light_rgb[k] = frame_u.light_rgb[k]; g.light_dir[k] = frame_u.light_dir[k];
+			if k < lights.len && lights[k].width > 0.0 && lights[k].height > 0.0 { g.light_dir[k].w = -3.0; }
+		}
 		g.params = f4(sky.ambient, if gi_updates > 0 { 1.0 } else { 0.0 }, maxd, frame_u.screen.z);
 		guard gfx::begin_compute([gi_rays_buf]) else { return; }
 		gfx::bind(pipe_gi_trace);
@@ -2379,6 +2448,8 @@ fn gi_pass() {
 		gfx::dispatch((np * nr + 63) / 64, 1, 1);
 		gfx::end_compute();
 		g.params = f4(0.0, if gi_updates > 0 { gi_hysteresis } else { 0.0 }, maxd, 0.0);
+		g.fast = if gi_adaptive { f4(if gi_moved > 0 { 0.85 } else { 1.0 }, 0.35, 0.6, 0.0) } else { f4(1.0, 0.0, 1.0, 0.0) };
+		if gi_moved > 0 { gi_moved -= 1; }
 		guard gfx::begin_compute([gi_irr, gi_dist]) else { return; }
 		gfx::bind(pipe_gi_update);
 		gfx::bind_storage_buffer(gfx::COMPUTE, 0, gi_rays_buf);

@@ -11,6 +11,8 @@ var nodes f32[>..] = [];
 var tris f32[>..] = [];
 var order int[>..] = [];
 var cen f32[>..] = [];
+var pos_of int[>..] = [];
+var built_area f32 = 0.0;
 var node_buf gfx::Buffer;
 var tri_buf gfx::Buffer;
 var has_bufs = false;
@@ -112,7 +114,44 @@ fn build() {
 		tris.append([tri_in[b], tri_in[b + 1], tri_in[b + 2], mat_in[t * 4], tri_in[b + 3] - tri_in[b], tri_in[b + 4] - tri_in[b + 1], tri_in[b + 5] - tri_in[b + 2], mat_in[t * 4 + 1]]);
 		tris.append([tri_in[b + 6] - tri_in[b], tri_in[b + 7] - tri_in[b + 1], tri_in[b + 8] - tri_in[b + 2], mat_in[t * 4 + 2], alb_in[t * 3], alb_in[t * 3 + 1], alb_in[t * 3 + 2], mat_in[t * 4 + 3]]);
 	}
+	pos_of.clear(); pos_of.resize(n, 0);
+	for oi in n { pos_of[order[oi]] = oi; }
 	ready = true;
+	built_area = root_area();
+}
+fn root_area() f32 { if nodes.len < NODE_FLOATS { return 0.0; } area([nodes[0], nodes[1], nodes[2]], [nodes[4], nodes[5], nodes[6]]) }
+fn set_tri(t int, a float3, b float3, c float3) {
+	let o = t * 9;
+	tri_in[o] = a.x; tri_in[o + 1] = a.y; tri_in[o + 2] = a.z; tri_in[o + 3] = b.x; tri_in[o + 4] = b.y; tri_in[o + 5] = b.z; tri_in[o + 6] = c.x; tri_in[o + 7] = c.y; tri_in[o + 8] = c.z;
+	if ready && t < pos_of.len {
+		let q = pos_of[t] * TRI_FLOATS;
+		tris[q] = a.x; tris[q + 1] = a.y; tris[q + 2] = a.z;
+		tris[q + 4] = b.x - a.x; tris[q + 5] = b.y - a.y; tris[q + 6] = b.z - a.z;
+		tris[q + 8] = c.x - a.x; tris[q + 9] = c.y - a.y; tris[q + 10] = c.z - a.z;
+	}
+}
+fn refit() {
+	if !ready { return; }
+	var k = nodes.len / NODE_FLOATS - 1;
+	while k >= 0 {
+		let b = k * NODE_FLOATS;
+		let a = nodes[b + 3] as int;
+		let c = nodes[b + 7] as int;
+		var lo f32[3] = [1e30, 1e30, 1e30];
+		var hi f32[3] = [-1e30, -1e30, -1e30];
+		if c > 0 {
+			for oi in a..a + c { let tr = order[oi]; for j in 3 { lo[j] = min(lo[j], tmin(tr, j)); hi[j] = max(hi[j], tmax(tr, j)); } }
+		} else {
+			for ch in a..a + 2 { let cb = ch * NODE_FLOATS; for j in 3 { lo[j] = min(lo[j], nodes[cb + j]); hi[j] = max(hi[j], nodes[cb + 4 + j]); } }
+		}
+		set_node(k, lo, hi, a, c);
+		k -= 1;
+	}
+}
+fn update() {
+	if !ready || !has_bufs { return; }
+	gfx::update_buffer(node_buf, bytes_of(nodes)[..nodes.len * 4]);
+	gfx::update_buffer(tri_buf, bytes_of(tris)[..tris.len * 4]);
 }
 fn upload() {
 	if !ready { return; }
