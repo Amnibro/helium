@@ -116,6 +116,7 @@ extern "libSDL3.so.0" {
 	s_key(sc i32, m u16, ev bool) u32 = "SDL_GetKeyFromScancode";
 	s_clip() uint = "SDL_GetClipboardText";
 	s_setclip(t uint) bool = "SDL_SetClipboardText";
+	s_pref(org uint, app uint) uint = "SDL_GetPrefPath";
 	s_free(p uint) = "SDL_free";
 	s_acq(d uint) uint = "SDL_AcquireGPUCommandBuffer";
 	s_submit(c uint) bool = "SDL_SubmitGPUCommandBuffer";
@@ -500,7 +501,7 @@ frame_raw() bool:
 			if !FOC: continue
 			WHEEL += f32at(EVB[..], 28); k := ev(5); EVS[k].x = f32at(EVB[..], 24); EVS[k].y = f32at(EVB[..], 28); continue
 		if t >= 1792 && t <= 1795:
-			fid := (u64at(EVB[..], 24) ^ (u64at(EVB[..], 16) << 20)) as int; fx := f32at(EVB[..], 32) * SW as f32; fy := f32at(EVB[..], 36) * SH as f32; fk ~= -1
+			fid := ((u64at(EVB[..], 24) ^ (u64at(EVB[..], 16) << 20)) as int) & 0x7fffffff; fx := f32at(EVB[..], 32) * SW as f32; fy := f32at(EVB[..], 36) * SH as f32; fk ~= -1
 			for f, i FINGERS { if f.id == fid { fk = i } }
 			if t == 1792 && fk < 0: FINGERS.push(Finger{fid, fx, fy}); fk = FINGERS.len - 1
 			if fk >= 0: FINGERS[fk].x = fx; FINGERS[fk].y = fy
@@ -611,6 +612,9 @@ set_clipboard(text const byte[:]) bool:
 	n ~= 0; while n < text.len && text[n] != 0: n += 1
 	if WIN == 0: CLIP.clear(); CLIP.append(text[..n]); return true
 	s_setclip(cz(text, text.len + 1)) || sdl_fail("set_clipboard")
+pref_path(org const byte[:], app const byte[:]) byte[>..]:
+	b byte[>..] ~= []; b.append(org); b.push(0); k := b.len; b.append(app); b.push(0)
+	p := s_pref(ffi::ptr(b[..]), ffi::ptr(b[k..])); r := if p != 0 { ffi::cstr(p) } else { [] }; if p != 0 { s_free(p) } r
 transfer(size int, up bool) uint:
 	ci ~= CInfo3{if up { 0 } else { 1 }, size as u32, 0}; tb := s_mktb(DEV, pp(ci))
 	if tb == 0: sdl_fail("creating a transfer buffer")

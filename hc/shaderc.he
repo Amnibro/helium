@@ -703,6 +703,7 @@ var TS2DS = 0
 var TSCUBES = 0
 var TSCUBEA = 0
 var NEEDCA = false
+var NEEDFD = false
 var TS2DAS = 0
 var TYNAMES = dictionary<int, int>{..}
 var ARRTY = dictionary<u64, int>{..}
@@ -1927,8 +1928,9 @@ inittypes():
 	for p, i ["vec", "ivec", "uvec", "bvec"]: for j 3 { n byte[>..] ~= []; n.append(p); n.push(('2' + j) as byte); regty(n[..], [TVEC[j], TIVEC[j], TUVEC[j], TBVEC[j]][i]) }
 	regty("sampler2D", TSAMP); regty("usampler2D", TUSAMP); regty("samplerCube", TSCUBE); regty("sampler3D", TS3D); regty("sampler2DArray", TS2DA); regty("sampler2DShadow", TS2DS); regty("samplerCubeShadow", TSCUBES); regty("sampler2DArrayShadow", TS2DAS); regty("samplerCubeArray", TSCUBEA)
 	regty("mat2", TMAT[0]); regty("mat3", TMAT[1]); regty("mat4", TMAT[2]); regty("image2D", nty(Ty{T_IMG, -1, -1}))
-builtin(n const byte[:], t int, b int):
-	pt := ptrid(t, SC_INPUT); vr := nid(); emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_INPUT); emit3(SDECOS, SOP_DECORATE, vr, DEC_BUILTIN, b); nameid(vr, n); addsym(sid(n), SY_VAR, t, vr, SC_INPUT, 0); SIFACE.push(vr as! u32)
+builtin(n const byte[:], t int, b int): builtin(n, t, b, SC_INPUT)
+builtin(n const byte[:], t int, b int, st int):
+	pt := ptrid(t, st); vr := nid(); emit3(SGLOB, SOP_VARIABLE, pt, vr, st); emit3(SDECOS, SOP_DECORATE, vr, DEC_BUILTIN, b); nameid(vr, n); addsym(sid(n), SY_VAR, t, vr, st, 0); SIFACE.push(vr as! u32)
 pervertex():
 	v4 := tyid(TVEC[2]); s := nid(); emit2(SGLOB, SOP_TYPESTRUCT, s, v4); emit2(SDECOS, SOP_DECORATE, s, DEC_BLOCK); emit4(SDECOS, SOP_MEMBERDECORATE, s, 0, DEC_BUILTIN, BI_POSITION)
 	nameid(s, "gl_PerVertex"); emitstr(SNAMES, SOP_MEMBERNAME, [s, 0], "gl_Position"); p := nid(); emit3(SGLOB, SOP_TYPEPOINTER, p, SC_OUTPUT, s); PVVAR = nid()
@@ -1943,6 +1945,7 @@ assemble() u32[>..]:
 	w u32[>..] ~= [(if STAGE == ST_FRAG { 4 } else if STAGE == ST_COMP { 5 } else { 0 }) as! u32, ENTRYF as! u32]; pushstr(w, "main"); w.append(SIFACE[..])
 	m.push(((w.len + 1) << 16 | SOP_ENTRYPOINT) as! u32); m.append(w[..])
 	if STAGE == ST_FRAG { emit2(m, SOP_EXECUTIONMODE, ENTRYF, 7) } else if STAGE == ST_COMP { emitw(m, SOP_EXECUTIONMODE, [ENTRYF, 17, LSIZE[0], LSIZE[1], LSIZE[2]]) }
+	if NEEDFD: emit2(m, SOP_EXECUTIONMODE, ENTRYF, 12)
 	m.append(SNAMES[..]); m.append(SDECOS[..]); m.append(SGLOB[..]); m.append(SFUNCS[..]); m
 reset():
 	SNB.clear(); SNM.clear(); SNH.clear(); TY.clear(); EX.clear(); ST.clear(); GRP.clear(); DC.clear(); SY.clear(); DECLS.clear(); INS.clear(); INIX = dictionary<int, int>{..}
@@ -1950,7 +1953,7 @@ reset():
 	LAIDS = dictionary<int, int>{..}; LAIDA = dictionary<int, int>{..}; LAIDE = dictionary<int, int>{..}; SAMPIMG = dictionary<int, int>{..}; SCD = dictionary<u64, int>{..}; FNS = dictionary<int, int>{..}
 	SNAMES.clear(); SDECOS.clear(); SGLOB.clear(); SFUNCS.clear(); SBODY.clear(); SLOCALS.clear(); SIFACE.clear(); SCN.clear(); SCM.clear(); SFILES.clear(); AHEAD.clear()
 	RSAMP.clear(); RIMG.clear(); RBUF.clear(); RBLK.clear(); RMEM.clear(); RINP.clear(); ERRM.clear(); MSLO.clear(); HLSLO.clear(); WGSLO.clear(); WGERR.clear(); WB.clear(); TPW = false
-	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; NEEDCA = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
+	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; NEEDCA = false; NEEDFD = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
 cspv(src const byte[:], stage int, spv u32[>..]&) bool:
 	reset(); STAGE = stage; initins(); ok ~= true
 	body():
@@ -1960,6 +1963,7 @@ cspv(src const byte[:], stage int, spv u32[>..]&) bool:
 			pervertex(); builtin("gl_VertexIndex", TINT, 42); builtin("gl_InstanceIndex", TINT, 43)
 		else if stage == ST_FRAG:
 			builtin("gl_FragCoord", TVEC[2], 15); builtin("gl_FrontFacing", TBOOL, 17)
+			if find(PPO[..], "gl_FragDepth", 0) >= 0 { NEEDFD = true; builtin("gl_FragDepth", TFLOAT, 22, SC_OUTPUT) }
 		else:
 			for n, i ["gl_GlobalInvocationID", "gl_LocalInvocationID", "gl_WorkGroupID", "gl_NumWorkGroups", "gl_LocalInvocationIndex"]: builtin(n, if i == 4 { TUINT } else { TUVEC[1] }, [28, 27, 26, 24, 29][i])
 		adv(); gentop()
@@ -2411,6 +2415,7 @@ emithlsl():
 		if dup: continue
 		seen.push(ki); format(TPO, "int2 cf_imgsize(", if y.ro { "" } else { "RW" }, "Texture2D<", el, "> t) { uint w, h; t.GetDimensions(w, h); return int2(w, h); }\n")
 	TPO.append(if STAGE == ST_VERT { "static float4 gl_Position;\nstatic int gl_VertexIndex;\nstatic int gl_InstanceIndex;\n" } else if STAGE == ST_FRAG { "static float4 gl_FragCoord;\nstatic bool gl_FrontFacing;\n" } else { "static uint3 gl_GlobalInvocationID;\nstatic uint3 gl_LocalInvocationID;\nstatic uint3 gl_WorkGroupID;\nstatic uint gl_LocalInvocationIndex;\n" })
+	if NEEDFD: TPO.append("static float gl_FragDepth;\n")
 	for d DECLS:
 		y := DC[d]; k := y.k; n := snm(y.name)
 		if k == D_STRUCT:
@@ -2453,8 +2458,9 @@ emithlsl():
 		TPO.append("\tgl_VertexIndex = (int)cf_vid;\n\tgl_InstanceIndex = (int)cf_iid;\n\tcf_main_();\n\tcf_vs_out cf_out;\n\tcf_out.cf_position = gl_Position;\n"); ioassign(false, "\tcf_out.", "_out = ", ";\n"); TPO.append("\treturn cf_out;\n}\n")
 	else if STAGE == ST_FRAG:
 		TPO.append("\nstruct cf_ps_in\n{\n\tfloat4 cf_position : SV_Position;\n\tbool cf_front : SV_IsFrontFace;\n"); ioloop(true, "_in : TEXCOORD", ";\n", true); TPO.append("};\nstruct cf_ps_out\n{\n"); ioloop(false, "_out : SV_Target", ";\n", false)
+		if NEEDFD: TPO.append("\tfloat cf_depth : SV_Depth;\n")
 		TPO.append("};\ncf_ps_out main(cf_ps_in cf_in)\n{\n\tgl_FragCoord = cf_in.cf_position;\n\tgl_FrontFacing = cf_in.cf_front;\n"); ioassign(true, "\t", " = cf_in.", "_in;\n")
-		TPO.append("\tcf_main_();\n\tcf_ps_out cf_out;\n"); ioassign(false, "\tcf_out.", "_out = ", ";\n"); TPO.append("\treturn cf_out;\n}\n")
+		TPO.append("\tcf_main_();\n\tcf_ps_out cf_out;\n"); ioassign(false, "\tcf_out.", "_out = ", ";\n"); if NEEDFD { TPO.append("\tcf_out.cf_depth = gl_FragDepth;\n") }; TPO.append("\treturn cf_out;\n}\n")
 	else:
 		format(TPO, "\n[numthreads(", LSIZE[0], ", ", LSIZE[1], ", ", LSIZE[2], ")]\n")
 		TPO.append("void main(uint3 cf_gtid : SV_GroupThreadID, uint3 cf_dtid : SV_DispatchThreadID, uint3 cf_gid : SV_GroupID, uint cf_gidx : SV_GroupIndex)\n{\n\tgl_GlobalInvocationID = cf_dtid;\n\tgl_LocalInvocationID = cf_gtid;\n\tgl_WorkGroupID = cf_gid;\n\tgl_LocalInvocationIndex = cf_gidx;\n\tcf_main_();\n}\n")
@@ -2616,6 +2622,7 @@ emitmsl():
 		else if y.k == D_SHARED:
 			format(TPO, "\tthreadgroup ", hlslty(if TY[y.ty].k == T_ARR { TY[y.ty].el } else { y.ty }), "* ", n, ";\n")
 	TPO.append(if STAGE == ST_VERT { "\tfloat4 gl_Position;\n\tint gl_VertexIndex;\n\tint gl_InstanceIndex;\n" } else if STAGE == ST_FRAG { "\tfloat4 gl_FragCoord;\n\tbool gl_FrontFacing;\n" } else { "\tuint3 gl_GlobalInvocationID;\n\tuint3 gl_LocalInvocationID;\n\tuint3 gl_WorkGroupID;\n\tuint gl_LocalInvocationIndex;\n" })
+	if NEEDFD: TPO.append("\tfloat gl_FragDepth;\n")
 	for d DECLS: y := DC[d]; if y.k == D_INOUT || y.k == D_GLOBAL && !y.isc { TPO.push('\t'); tpvar(y.ty, snm(y.name)); TPO.append(";\n") }
 	for d DECLS: if DC[d].k == D_FUNC { TPO.push('\n'); mslfunc(d) }
 	TPO.append("};\n")
@@ -2630,6 +2637,7 @@ emitmsl():
 		for d DECLS: y := DC[d]; if y.k == D_INOUT && y.isin { format(TPO, "\t", hlslty(y.ty), " ", snm(y.name), " [[user(locn", y.loc, ")", if y.flat { ", flat" } else { "" }, "]];\n") }
 		TPO.append("};\nstruct cf_ps_out\n{\n")
 		for d DECLS: y := DC[d]; if y.k == D_INOUT && !y.isin { format(TPO, "\t", hlslty(y.ty), " ", snm(y.name), " [[color(", y.loc, ")]];\n") }
+		if NEEDFD: TPO.append("\tfloat cf_depth [[depth(any)]];\n")
 		TPO.append("};\n")
 	TPO.append(if STAGE == ST_VERT { "\nvertex cf_vs_out main0(cf_vs_in cf_in [[stage_in]], uint cf_vid [[vertex_id]], uint cf_iid [[instance_id]]" } else if STAGE == ST_FRAG { "\nfragment cf_ps_out main0(cf_ps_in cf_in [[stage_in]], bool cf_front [[front_facing]]" } else { "\nkernel void main0(uint3 cf_gtid [[thread_position_in_threadgroup]], uint3 cf_dtid [[thread_position_in_grid]], uint3 cf_gid [[threadgroup_position_in_grid]], uint cf_gidx [[thread_index_in_threadgroup]]" })
 	for d DECLS:
@@ -2675,6 +2683,7 @@ emitmsl():
 	else if STAGE == ST_FRAG:
 		TPO.append("\tcf_ps_out cf_out;\n")
 		for d DECLS: y := DC[d]; if y.k == D_INOUT && !y.isin { format(TPO, "\tcf_out.", snm(y.name), " = s.", snm(y.name), ";\n") }
+		if NEEDFD: TPO.append("\tcf_out.cf_depth = s.gl_FragDepth;\n")
 		TPO.append("\treturn cf_out;\n}\n")
 	else:
 		TPO.append("}\n")
@@ -2865,6 +2874,7 @@ emitwgsl():
 	tpclear(); TPH = false; TPM = false; TPW = true; TPO.append(WGSL_PRE)
 	for d DECLS: y := DC[d]; if y.k == D_BLOCK && !y.isbuf && y.inst < 0 { for m y.mnm { r byte[>..] ~= []; format(r, wid(y.name), ".", wid(m)); tprename(m, sid(r[..])) } }
 	TPO.append(if STAGE == ST_VERT { "var<private> gl_Position: vec4<f32>;\nvar<private> gl_VertexIndex: i32;\nvar<private> gl_InstanceIndex: i32;\n" } else if STAGE == ST_FRAG { "var<private> gl_FragCoord: vec4<f32>;\nvar<private> gl_FrontFacing: bool;\n" } else { "var<private> gl_GlobalInvocationID: vec3<u32>;\nvar<private> gl_LocalInvocationID: vec3<u32>;\nvar<private> gl_WorkGroupID: vec3<u32>;\nvar<private> gl_NumWorkGroups: vec3<u32>;\nvar<private> gl_LocalInvocationIndex: u32;\n" })
+	if NEEDFD: TPO.append("var<private> gl_FragDepth: f32;\n")
 	for d DECLS:
 		y := DC[d]; k := y.k; n := wid(y.name); g := y.set; b := y.bind * 2
 		if k == D_STRUCT:
@@ -2899,13 +2909,13 @@ emitwgsl():
 	vs := STAGE == ST_VERT; fs := STAGE == ST_FRAG
 	if vs || fs:
 		if ni > 0: format(TPO, "\nstruct ", if vs { "cf_vs_in" } else { "cf_ps_in" }, "\n{\n"); ioloop(true, "", "", true); TPO.append("}\n")
-		if vs || no > 0: format(TPO, "\nstruct ", if vs { "cf_vs_out\n{\n\t@builtin(position) cf_position: vec4<f32>,\n" } else { "cf_ps_out\n{\n" }); ioloop(false, "", "", vs); TPO.append("}\n")
+		if vs || no > 0 || NEEDFD: format(TPO, "\nstruct ", if vs { "cf_vs_out\n{\n\t@builtin(position) cf_position: vec4<f32>,\n" } else if NEEDFD { "cf_ps_out\n{\n\t@builtin(frag_depth) cf_depth: f32,\n" } else { "cf_ps_out\n{\n" }); ioloop(false, "", "", vs); TPO.append("}\n")
 		TPO.append(if vs { "@vertex\nfn main(" } else { "@fragment\nfn main(@builtin(position) cf_position: vec4<f32>, @builtin(front_facing) cf_front: bool" })
 		if ni > 0: TPO.append(if vs { "cf_in: cf_vs_in, " } else { ", cf_in: cf_ps_in" })
-		TPO.append(if vs { "@builtin(vertex_index) cf_vid: u32, @builtin(instance_index) cf_iid: u32) -> cf_vs_out\n{\n" } else if no > 0 { ") -> cf_ps_out\n{\n" } else { ")\n{\n" })
+		TPO.append(if vs { "@builtin(vertex_index) cf_vid: u32, @builtin(instance_index) cf_iid: u32) -> cf_vs_out\n{\n" } else if no > 0 || NEEDFD { ") -> cf_ps_out\n{\n" } else { ")\n{\n" })
 		ioassign(true, "\t", " = cf_in.", ";\n")
 		TPO.append(if vs { "\tgl_VertexIndex = i32(cf_vid);\n\tgl_InstanceIndex = i32(cf_iid);\n\tcf_main_();\n\tvar cf_out: cf_vs_out;\n\tcf_out.cf_position = gl_Position;\n" } else { "\tgl_FragCoord = cf_position;\n\tgl_FrontFacing = cf_front;\n\tcf_main_();\n" })
-		if vs || no > 0: TPO.append(if vs { "" } else { "\tvar cf_out: cf_ps_out;\n" }); ioassign(false, "\tcf_out.", " = ", ";\n"); TPO.append("\treturn cf_out;\n")
+		if vs || no > 0 || NEEDFD: TPO.append(if vs { "" } else { "\tvar cf_out: cf_ps_out;\n" }); ioassign(false, "\tcf_out.", " = ", ";\n"); if NEEDFD { TPO.append("\tcf_out.cf_depth = gl_FragDepth;\n") }; TPO.append("\treturn cf_out;\n")
 		TPO.append("}\n")
 	else:
 		format(TPO, "@compute @workgroup_size(", LSIZE[0], ", ", LSIZE[1], ", ", LSIZE[2], ")\nfn main(@builtin(global_invocation_id) cf_dtid: vec3<u32>, @builtin(local_invocation_id) cf_gtid: vec3<u32>, @builtin(workgroup_id) cf_gid: vec3<u32>, @builtin(num_workgroups) cf_nwg: vec3<u32>, @builtin(local_invocation_index) cf_gidx: u32)\n{\n\tgl_GlobalInvocationID = cf_dtid;\n\tgl_LocalInvocationID = cf_gtid;\n\tgl_WorkGroupID = cf_gid;\n\tgl_NumWorkGroups = cf_nwg;\n\tgl_LocalInvocationIndex = cf_gidx;\n\tcf_main_();\n}\n")

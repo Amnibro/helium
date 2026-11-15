@@ -115,10 +115,14 @@ void main() {
 	}
 	vec3 so = sway_o.xyz;
 	float sh = sway_o.w;
+	vec3 itint = vec3(0.0);
 	if (inst.y >= 0.0) {
 		int q = int(inst.y) + gl_InstanceIndex;
 		int k = (int(inst.x) + int(inst_ids[q >> 2][q & 3])) * 4;
 		mat4 im = mat4(inst_cols[k], inst_cols[k + 1], inst_cols[k + 2], inst_cols[k + 3]);
+		// a copy's tint rides in the matrix's unused bottom row; all zero means none
+		itint = vec3(im[0].w, im[1].w, im[2].w);
+		im[0].w = 0.0; im[1].w = 0.0; im[2].w = 0.0;
 		m = im * model;
 		pm = im * prev_model;
 		vec3 i0 = m[0].xyz;
@@ -142,7 +146,7 @@ void main() {
 	out_nrm = wn;
 	out_tan = vec4((m * vec4(in_tan.xyz, 0.0)).xyz, in_tan.w);
 	out_uv = vec4(in_uv0, in_uv1);
-	out_col = in_col;
+	out_col = dot(itint, vec3(1.0)) > 0.0 ? vec4(in_col.rgb * itint, in_col.a) : in_col;
 	out_cur = cur_vp * w;
 	out_prev = prev_vp * pw;
 	gl_Position = view_proj * w;

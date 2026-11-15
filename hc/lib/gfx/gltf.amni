@@ -58,7 +58,9 @@ struct Material {
 	height_tex TexRef = TexRef { -1, 0 }, height_scale f32 = 0.0, sealed f32 = 0.0,
 	aniso f32 = 0.0, aniso_rot f32 = 0.0, aniso_tex TexRef = TexRef { -1, 0 },
 	irid f32 = 0.0, irid_ior f32 = 1.3, irid_min f32 = 100.0, irid_max f32 = 400.0, irid_tex TexRef = TexRef { -1, 0 }, irid_t_tex TexRef = TexRef { -1, 0 },
-	sheen_c_tex TexRef = TexRef { -1, 0 }, sheen_r_tex TexRef = TexRef { -1, 0 }
+	sheen_c_tex TexRef = TexRef { -1, 0 }, sheen_r_tex TexRef = TexRef { -1, 0 },
+	sp_base TexRef[4] = [TexRef { -1, 0 }, TexRef { -1, 0 }, TexRef { -1, 0 }, TexRef { -1, 0 }], sp_mr TexRef[4] = [TexRef { -1, 0 }, TexRef { -1, 0 }, TexRef { -1, 0 }, TexRef { -1, 0 }], sp_normal TexRef[4] = [TexRef { -1, 0 }, TexRef { -1, 0 }, TexRef { -1, 0 }, TexRef { -1, 0 }],
+	sp_scale float4 = float4 { 0.0, 0.0, 0.0, 0.0 }, sp_flat f32 = 0.55, sp_depth f32 = 0.2, sp_desat f32 = 0.0, sp_tint float4[4] = [float4 { 1.0, 1.0, 1.0, 1.0 }, float4 { 1.0, 1.0, 1.0, 1.0 }, float4 { 1.0, 1.0, 1.0, 1.0 }, float4 { 1.0, 1.0, 1.0, 1.0 }], sp_vtint bool = false, sp_detile bool = false
 }
 struct Primitive { vfirst int, vcount int, ifirst int, icount int, material int, mfirst int, targets int, lo float3, hi float3, tangents bool, skinned bool }
 struct PLight { kind int, rgb float3, range f32, inner f32, outer f32 }

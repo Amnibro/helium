@@ -770,6 +770,13 @@ s3d::pushers.push(float4 { player.x, player.y, player.z, 0.5 });
   `s3d::instance_drawn(set, level)` gives the number of copies drawn last frame,
   `s3d::instance_list(set, level)` their indices and `s3d::instance_triangles(set)` the
   triangles sent.
+* **Sets without shadows.** `s3d::instances[set].shadow = false` keeps a set out of
+  every shadow pass. Such a set is also tested as a whole first: when the box around
+  all its copies is wholly behind one camera plane, no copy is tested or drawn that
+  frame. Use it for grass and other small ground cover in many sets.
+* **A color per copy.** The bottom row of a copy's matrix is not part of its
+  transform. Its first three values (`c0.w`, `c1.w`, `c2.w`) are a color that
+  multiplies the copy's vertex color; all zero means no tint.
 * **Two levels of detail.** With `lod_asset` set, a copy whose sphere center is
   `lod_distance` meters or more from the eye is drawn with that asset instead. Both
   assets should have the same size and node layout.

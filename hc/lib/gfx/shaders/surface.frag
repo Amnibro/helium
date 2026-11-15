@@ -111,7 +111,17 @@ layout(set = 3, binding = 1) uniform Surface {
 	vec4 xm_det;
 	vec4 xo_det;
 	vec4 top_lay;
+	vec4 sp_a;
+	vec4 sp_m;
+	vec4 sp_n;
+	vec4 sp_s;
+	vec4 sp_p;
+	vec4 sp_t0;
+	vec4 sp_t1;
+	vec4 sp_t2;
+	vec4 sp_t3;
 };
+vec4 sp_tint(int k) { return k == 0 ? sp_t0 : k == 1 ? sp_t1 : k == 2 ? sp_t2 : sp_t3; }
 
 layout(location = 0) out vec4 out_rgba;
 
@@ -124,6 +134,32 @@ float sea_h = 0.0;
 #include "water.glsl"
 vec4 smp(sampler2D s, vec2 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv) * xo2.z, dFdy(uv) * xo2.z); }
 vec4 smpa(sampler2DArray s, vec3 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv.xy) * xo2.z, dFdy(uv.xy) * xo2.z); }
+vec2 at_a = vec2(0.0);
+vec2 at_b = vec2(0.0);
+float at_t = 0.0;
+bool at_on = false;
+float at_n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f); vec4 h = fract(sin(vec4(dot(i, vec2(127.1, 311.7)), dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7)), dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7)), dot(i + 1.0, vec2(127.1, 311.7)))) * 43758.5453); return mix(mix(h.x, h.y, f.x), mix(h.z, h.w, f.x), f.y); }
+void at_setup(vec3 p) { vec2 q = p.xz + p.y * vec2(0.71, -0.53); float l = (at_n(q * 0.031) * 0.7 + at_n(q * 0.11) * 0.3) * 8.0; float ia = floor(l); at_t = smoothstep(0.3, 0.7, fract(l)); at_a = sin(vec2(3.0, 7.0) * ia); at_b = sin(vec2(3.0, 7.0) * (ia + 1.0)); at_on = true; }
+vec4 ats(sampler2D s, vec2 u) { if (!at_on) return smp(s, u); vec2 dx = dFdx(u) * xo2.z; vec2 dy = dFdy(u) * xo2.z; return mix(textureGrad(s, u + at_a, dx, dy), textureGrad(s, u + at_b, dx, dy), at_t); }
+vec4 atsa(sampler2DArray s, vec2 u, float l, vec2 dx, vec2 dy) { if (!at_on) return smpa(s, vec3(u, l)); return mix(textureGrad(s, vec3(u + at_a, l), dx * xo2.z, dy * xo2.z), textureGrad(s, vec3(u + at_b, l), dx * xo2.z, dy * xo2.z), at_t); }
+vec3 sp_w = vec3(0.0, 1.0, 0.0);
+vec3 sp_g = vec3(0.0, 1.0, 0.0);
+vec3 sp_dx = vec3(0.0);
+vec3 sp_dy = vec3(0.0);
+vec4 atst(sampler2DArray s, float sc, float l) {
+	vec4 c = vec4(0.0);
+	if (sp_w.x > 0.0) c += atsa(s, in_world.zy * sc, l, sp_dx.zy * sc, sp_dy.zy * sc) * sp_w.x;
+	if (sp_w.y > 0.0) c += atsa(s, in_world.xz * sc, l, sp_dx.xz * sc, sp_dy.xz * sc) * sp_w.y;
+	if (sp_w.z > 0.0) c += atsa(s, in_world.xy * sc, l, sp_dx.xy * sc, sp_dy.xy * sc) * sp_w.z;
+	return c;
+}
+vec3 atsn(sampler2DArray s, float sc, float l, float ns) {
+	vec3 r = vec3(0.0);
+	if (sp_w.x > 0.0) { vec3 t = atsa(s, in_world.zy * sc, l, sp_dx.zy * sc, sp_dy.zy * sc).xyz * 2.0 - 1.0; t.xy *= ns; r += vec3(abs(t.z) * sp_g.x, t.y + sp_g.y, t.x + sp_g.z) * sp_w.x; }
+	if (sp_w.y > 0.0) { vec3 t = atsa(s, in_world.xz * sc, l, sp_dx.xz * sc, sp_dy.xz * sc).xyz * 2.0 - 1.0; t.xy *= ns; r += vec3(t.x + sp_g.x, abs(t.z) * sp_g.y, t.y + sp_g.z) * sp_w.y; }
+	if (sp_w.z > 0.0) { vec3 t = atsa(s, in_world.xy * sc, l, sp_dx.xy * sc, sp_dy.xy * sc).xyz * 2.0 - 1.0; t.xy *= ns; r += vec3(t.x + sp_g.x, t.y + sp_g.y, abs(t.z) * sp_g.z) * sp_w.z; }
+	return normalize(r);
+}
 vec2 pick_uv(float set) { return (set > 0.5 ? in_uv.zw : in_uv.xy) + pom_off; }
 vec2 water_grad_w(vec2 p, float tm, vec3 wb) {
 	vec2 g = vec2(0.0);
@@ -654,6 +690,9 @@ float sun_visibility(vec3 p, vec3 n) {
 	vec3 ndc = vec3(s.xy / s.w, min(s.z / s.w, 0.99999));
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+#ifdef SURF_LITE
+	return texture(tex_shadow, vec4(uv, float(c), ndc.z - 0.0008));
+#endif
 	if (view_dir.w > 0.0) return sun_pcss(uv, ndc.z, c, row0, n);
 	float lit = 0.0;
 	// to_sun.w - 1 = penumbra radius in world units: rotated Poisson taps, the noise left to TAA
@@ -930,6 +969,9 @@ void main() {
 	int model = int(misc.y + 0.5);
 	bool is_water = model == 4;
 	if (is_water) model = 0;
+	bool is_puff = model == 5;
+	if (is_puff) model = 0;
+#ifndef SURF_LITE
 	if (misc.z > 0.5 && x_to[12].z >= 0.0 && x_ior.z > 0.0 && abs(in_tan.w) > 0.5) {
 		vec3 nw = normalize(in_nrm);
 		vec3 vw = normalize(eye.xyz - in_world);
@@ -957,21 +999,62 @@ void main() {
 		float gb = pd - (dep - ds);
 		pom_off = off - du * clamp(ga / min(ga - gb, -1e-5), 0.0, 1.0);
 	}
+#endif
 	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
 	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
 	vec4 vcol = model == 3 && shade_a.w > 0.5 ? vec4(in_col.rgb, 1.0) : in_col;
-	vec4 tint = base * vcol * smp(tex_base, buv);
+	bool sp = sp_s.x + sp_s.y + sp_s.z + sp_s.w > 0.0;
+	vec4 vc = sp ? (mod(sp_p.w, 2.0) > 0.5 ? vec4(in_tan.xyz, 1.0) : vec4(1.0)) : vcol;
+	vec2 at_dx = dFdx(in_world.xz);
+	vec2 at_dy = dFdy(in_world.xz);
+	sp_dx = dFdx(in_world);
+	sp_dy = dFdy(in_world);
+	if (sp_p.w > 1.5) at_setup(in_world);
+	vec4 tint = base * vc * smp(tex_base, buv);
 	if (model == 2) tint.rgb *= eye_ring(buv);
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
 	bool tp = tri.x > 0.0;
 	vec3 tw = pow(abs(gw), vec3(4.0));
 	tw /= tw.x + tw.y + tw.z;
+	sp_g = gw;
+	sp_w = tw * step(vec3(0.03), tw);
+	sp_w /= max(sp_w.x + sp_w.y + sp_w.z, 1e-4);
 	vec2 ux = in_world.zy * tri.x;
 	vec2 uy = in_world.xz * tri.x;
 	vec2 uz = in_world.xy * tri.x;
 	vec2 ut = in_world.xz * tri.z;
-	if (tp) tint = base * vcol * (smp(tex_base, ux) * tw.x + smp(tex_base, uy) * tw.y + smp(tex_base, uz) * tw.z);
+	if (tp) tint = base * vc * (ats(tex_base, ux) * tw.x + ats(tex_base, uy) * tw.y + ats(tex_base, uz) * tw.z);
+	vec4 spf = vec4(0.0);
+	float spb = 1.0;
+	if (sp) {
+		vec4 w = in_col * smoothstep(sp_p.x - 0.1, sp_p.x + 0.1, gw.y);
+		if (at_on) { float en = at_n(in_world.xz * 1.3) + at_n(in_world.xz * 4.7) * 0.5 - 0.75; w = clamp(w + en * w * (1.0 - w) * 2.4, 0.0, 1.0); }
+		float wb = max(1.0 - (w.x + w.y + w.z + w.w), 0.0);
+		float eb = wb > 0.001 ? wb + dot(tint.rgb, vec3(0.333)) * 0.5 : -1.0;
+		float mx = eb;
+		vec4 e = vec4(-1.0);
+		vec3 sa[4];
+		for (int k = 0; k < 4; k++) {
+			sa[k] = vec3(0.0);
+			if (sp_s[k] > 0.0 && w[k] > 0.001) {
+				vec3 tx = atst(tex_ext_s, sp_s[k], sp_a[k]).rgb;
+				sa[k] = sp_tint(k).rgb * vc.rgb * mix(tx, vec3(dot(tx, vec3(0.2126, 0.7152, 0.0722))), sp_p.z);
+				e[k] = w[k] + dot(sa[k], vec3(0.333)) * 0.5;
+				mx = max(mx, e[k]);
+			}
+		}
+		float dp = max(sp_p.y, 0.01);
+		spb = eb < 0.0 ? 0.0 : max(eb - mx + dp, 0.0);
+		for (int k = 0; k < 4; k++) spf[k] = e[k] < 0.0 ? 0.0 : max(e[k] - mx + dp, 0.0);
+		float tot = max(spb + spf.x + spf.y + spf.z + spf.w, 1e-4);
+		spb /= tot;
+		spf /= tot;
+		vec3 c = tint.rgb * spb;
+		for (int k = 0; k < 4; k++) c += sa[k] * spf[k];
+		if (at_on) c *= mix(vec3(0.8, 0.82, 0.86), vec3(1.16, 1.13, 1.08), at_n(in_world.xz * 0.045 + 17.0) * 0.65 + at_n(in_world.xz * 0.23 - 5.0) * 0.35);
+		tint.rgb = c;
+	}
 	float topf = 0.0;
 	if (tri.y > 0.0) {
 		vec4 tc = top_tint * smpa(tex_ext_s, vec3(ut, top_lay.x));
@@ -1014,11 +1097,20 @@ void main() {
 		t = dot(t, t) > 1e-16 ? normalize(t) : normalize(cross(abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), n));
 		b = cross(n, t) * (dot(cross(n, t), -bv) < 0.0 ? -1.0 : 1.0);
 	}
+	float wst = 0.0;
+	float wv = 0.0;
+	vec2 wfp = vec2(0.0);
 	if (is_water) {
 		vec3 ww = water_wave(in_world.xz, cluster.w, shade_b.xyz, 11);
-		vec2 wg = ww.xy;
 		sea_h = ww.z;
-		n = normalize(n + vec3(-wg.x, 0.0, -wg.y));
+		wst = smoothstep(0.7, 0.3, abs(n.y));
+		wv = clamp(in_uv.y, 0.0, 1.0);
+		vec3 ws = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-5, 0.0, 0.0));
+		vec3 wu = cross(n, ws);
+		wfp = vec2(in_uv.x * 7.0, in_uv.y * 3.7 - cluster.w * 2.2);
+		vec2 wg = ww.xy;
+		vec2 fg = water_grad(wfp, cluster.w * 0.3);
+		n = normalize(n + mix(vec3(-wg.x, 0.0, -wg.y), (wu * fg.y - ws * fg.x) * 0.7, wst));
 		t = normalize(t - n * dot(n, t));
 		b = cross(n, t) * (dot(cross(n, t), b) < 0.0 ? -1.0 : 1.0);
 	}
@@ -1030,16 +1122,16 @@ void main() {
 	n = normalize(mat3(t, b, n) * tn);
 	vec4 mr = smp(tex_mr, xuv(uv_sets.y, xm_mr, xo0.zw));
 	if (tp) {
-		vec3 nx = smp(tex_normal, ux).xyz * 2.0 - 1.0;
-		vec3 ny = smp(tex_normal, uy).xyz * 2.0 - 1.0;
-		vec3 nz = smp(tex_normal, uz).xyz * 2.0 - 1.0;
+		vec3 nx = ats(tex_normal, ux).xyz * 2.0 - 1.0;
+		vec3 ny = ats(tex_normal, uy).xyz * 2.0 - 1.0;
+		vec3 nz = ats(tex_normal, uz).xyz * 2.0 - 1.0;
 		nx.xy *= params.z; ny.xy *= params.z; nz.xy *= params.z;
 		nx = vec3(nx.xy + gw.zy, abs(nx.z) * gw.x);
 		ny = vec3(ny.xy + gw.xz, abs(ny.z) * gw.y);
 		nz = vec3(nz.xy + gw.xy, abs(nz.z) * gw.z);
 		n = normalize(nx.zyx * tw.x + ny.xzy * tw.y + nz.xyz * tw.z);
 		if (!gl_FrontFacing && alpha.z > 0.5) n = -n;
-		mr = smp(tex_mr, ux) * tw.x + smp(tex_mr, uy) * tw.y + smp(tex_mr, uz) * tw.z;
+		mr = ats(tex_mr, ux) * tw.x + ats(tex_mr, uy) * tw.y + ats(tex_mr, uz) * tw.z;
 	}
 	if (topf > 0.0) {
 		vec3 nt = smpa(tex_ext_l, vec3(ut, top_lay.z)).xyz * 2.0 - 1.0;
@@ -1047,7 +1139,19 @@ void main() {
 		n = normalize(mix(n, nt, topf));
 		mr = mix(mr, smpa(tex_ext_l, vec3(ut, top_lay.y)), topf);
 	}
+	if (sp) {
+		vec3 sn = n * spb;
+		vec4 sm = mr * spb;
+		for (int k = 0; k < 4; k++) {
+			if (spf[k] <= 0.0) continue;
+			sn += atsn(tex_ext_l, sp_s[k], sp_n[k], params.z) * spf[k];
+			sm += (sp_m[k] < 0.0 ? mr : atst(tex_ext_l, sp_s[k], sp_m[k])) * spf[k];
+		}
+		n = normalize(sn);
+		mr = sm;
+	}
 	vec4 dk = vec4(1.0, 0.0, 1.0, 0.0);
+#ifndef SURF_LITE
 	if (decal.y > 0.5 && alpha.x < 1.5) {
 		vec3 wx = dFdx(in_world);
 		vec3 wy = dFdy(in_world);
@@ -1083,6 +1187,7 @@ void main() {
 			dk = d4.w >= 0.0 ? vec4(dk.xy, dk.z * (1.0 - ca), mix(dk.w, d4.w, ca)) : dk;
 		}
 	}
+#endif
 	vec3 nm = n;
 	vec4 dt = smpa(tex_ext_l, vec3(xuv(uv_sets.x, xm_det, xo_det.xy), top_lay.w));
 	float dmask = model == 1 ? mr.b : 1.0;
@@ -1187,6 +1292,31 @@ void main() {
 	if (model == 1 && shade_c.y != 0.0) { vec2 mu = xuv(uv_sets.x, xm_det, xo_det.xy); vec2 mw = max(abs(dFdx(mu)), abs(dFdy(mu))); float mo = (pd_noise(mu * 41.0) - 0.5) * (1.0 - smoothstep(0.25, 0.5, max(mw.x, mw.y) * 41.0)); float mf = (pd_noise(mu * 131.0 + 7.1) - 0.5) * (1.0 - smoothstep(0.25, 0.5, max(mw.x, mw.y) * 131.0)); tint.rgb *= max(vec3(1.0) + abs(shade_c.y) * dmask * (mo * vec3(0.15, 0.35, 0.37) + mf * vec3(0.1, 0.16, 0.16)), vec3(0.0)); }
 	float fab_wet = wet_of();
 	if (fab_wet > 0.0) { tint.rgb = pow(max(tint.rgb, vec3(0.0)), vec3(1.0 + 1.2 * fab_wet)); rough = mix(rough, rough * 0.55, fab_wet); q.pv *= 1.0 - 0.7 * fab_wet; }
+#ifdef SURF_LITE
+	vec3 albedo = tint.rgb * (1.0 - metal);
+	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
+	vec3 v = normalize(eye.xyz - in_world);
+	vec2 eb = ms_lut(max(dot(n, v), 1e-4), rough);
+	vec3 ef = f0 * (eb.x - eb.y) + eb.y;
+	vec3 kd = max(1.0 - ef, vec3(0.0));
+	vec3 l = normalize(to_sun.xyz);
+	vec3 rgb = light_term(n, v, l, sun_rgb.rgb * sun_under(in_world), albedo, f0, rough, vec3(1.0), kd) * sun_visibility(in_world, q.gn) * cst;
+	int count = int(screen.z);
+	for (int i = 0; i < 2; i++) {
+		if (i >= count) break;
+		vec3 lv = light_pos[i].xyz - in_world;
+		float dist = length(lv);
+		vec3 ld = lv / max(dist, 1e-4);
+		rgb += light_term(n, v, ld, light_rgb[i].rgb * range_falloff(dist, light_pos[i].w) * spot_cone(light_rgb[i].w, light_dir[i].w, light_dir[i].xyz, ld), albedo, f0, rough, vec3(1.0), kd);
+	}
+	rgb *= uv_sets2.w;
+	vec3 d = normalize(mix(reflect(-v, n), n, rough * rough));
+	vec3 se = env.x > 0.5 ? textureLod(tex_env, vec4(env_dir(d), 0.0), rough * env.z).rgb * env.y : mix(sky_color(d, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)), env_irr(n), rough * rough) * screen.w;
+	rgb += (albedo * kd * env_irr(n) + ef * se) * occ;
+	rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
+	if (is_puff) { float ed = clamp(dot(normalize(in_nrm), v), 0.0, 1.0); oa *= ed * ed * ed; }
+	out_rgba = vec4(rgb, oa);
+#else
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
@@ -1323,6 +1453,7 @@ void main() {
 		float zw = dot(in_world - eye.xyz, view_dir.xyz);
 		float zs = textureLod(tex_trans, clamp(wuv + n.xz * 0.02, vec2(0.0), vec2(1.0)), 0.0).a;
 		wdz = zs > 0.0 ? max(zs - zw, 0.0) : 7.0;
+		wdz = mix(wdz, 0.35, wst);
 		x.thick = min(wdz, 2.0);
 		tint.rgb = exp(-shade_a.rgb * max(wdz, 0.02));
 	}
@@ -1359,9 +1490,12 @@ void main() {
 	if (is_water && !sea_under) {
 		rgb += shade_c.rgb * (vec3(1.0) - tint.rgb) * sea_lit;
 		float nz = water_grad(in_world.xz * 3.1, cluster.w * 0.7).x * 7.0 + 0.5;
-		float foam = shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz) + shade_c.w * smoothstep(0.3, 0.7, sea_h / max(shade_b.y / shade_b.x * 2.94427, 1e-6)) * clamp(0.5 + 0.5 * nz, 0.4, 1.0);
+		float aer = smoothstep(0.3, 1.0, wv * wv);
+		float fs = water_grad(wfp * vec2(2.7, 0.4 + 1.1 * aer), cluster.w * 0.5).x * 5.0 + 0.55;
+		float foam = max((shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz) + shade_c.w * smoothstep(0.3, 0.7, sea_h / max(shade_b.y / shade_b.x * 2.94427, 1e-6)) * clamp(0.5 + 0.5 * nz, 0.4, 1.0)) * (1.0 - wst), wst * smoothstep(1.0 - 0.65 * aer, 1.25 - 0.5 * aer, fs) * (0.55 + 0.45 * aer));
 		rgb = mix(rgb, vec3(0.87) * sea_lit, clamp(foam, 0.0, 1.0));
 	}
+	if (is_puff) { float ed = clamp(dot(normalize(in_nrm), normalize(eye.xyz - in_world)), 0.0, 1.0); oa *= ed * ed * ed; }
 	out_rgba = vec4(rgb, oa);
 
 	int dbg = int(uv_sets2.y + 0.5);
@@ -1376,4 +1510,5 @@ void main() {
 	else if (dbg == 9) out_rgba = vec4(vec3(spec_occ(reflect(-v, n), n_v, rough, gn, dao, aos, occm)), 1.0);
 	else if (dbg == 10) out_rgba = vec4(sr.w, sr.z, 0.0, 1.0);
 	else if (dbg == 11) out_rgba = vec4(in_world, 1.0);
+#endif
 }
