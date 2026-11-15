@@ -22,6 +22,7 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `clusters` | clustered forward light grid, 16 x 9 x 24 cells, with the light and cell records the surface shader reads |
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
 | `meshopt` | decoder for glTF buffer views compressed with `EXT_meshopt_compression` or `KHR_meshopt_compression`: vertex streams (versions 0 and 1), triangle and index streams, and the octahedral, quaternion, exponential and color filters; `gltf` calls it while loading, so compressed files need no extra step |
+| `draco` | decoder for Draco 2.2 meshes (`KHR_draco_mesh_compression`): sequential and edgebreaker (standard and valence) connectivity, every prediction scheme and transform the 2.2 encoders write, quantized and integer attributes; `gltf` calls it while loading |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
 | `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
@@ -4446,6 +4447,43 @@ group and across blocks, smooth, random and all-zero data, both vertex stream ve
 The meshopt reference decoder and the encoder both treat a triangle's corner order as free; nothing in the
 renderer depends on which corner comes first.
 
+### Compressed meshes (Draco)
+
+`draco` decodes Draco 2.2 streams (the only version current encoders write, and the one
+`KHR_draco_mesh_compression` uses): sequential and edgebreaker connectivity (standard and valence),
+topology splits, attribute seams, the depth-first and prediction-degree traversals, the delta,
+parallelogram, constrained multi-parallelogram, texture-coordinate and geometric-normal predictions, the
+wrap and octahedral normal transforms, quantized floats and integer attributes. Metadata is skipped.
+`gltf` decodes a compressed primitive while loading and reads its accessors from the decoded data.
+
+`draco_check` (built from `draco_check.gold`, run by `gfxtest.sh`, CPU only) checks it against 342 streams
+made by the draco3d 1.5.7 encoders (the full build and the glTF build, identical streams removed), whose
+expected output is the draco3d 1.5.7 reference decoder's (`hc/test/gfx/fixtures/draco_cases.bin`: grids
+with and without holes, spheres with and without a texture seam, a torus, a random triangle soup, meshes
+sharing a vertex (non-manifold), a single triangle, and two meshes over 1,000 faces so the encoder picks
+valence connectivity; positions, normals, texture coordinates, 8-bit and float colors, 16-bit joints,
+float weights, 8-bit generic data and metadata; quantization from 7 to 20 bits; speeds 0 to 10).
+Bars, registered before the first run:
+
+- D1, D2: every stream decodes to exactly the reference points, triangles and attribute values (floats
+  bit for bit), counted per kind (sequential, standard, valence, metadata, and each encoder build and
+  speed); each kind must have cases.
+- D3: 1,710 damaged streams (cut by one byte, cut in half, a wrong header, a flipped byte, a run of 0xff)
+  never crash; a decode either fails and leaves nothing or gives triangles whose points all exist and the
+  full set of values; wrong headers fail.
+- D4: a 47,960-triangle sphere (valence, standard and no-prediction streams) decodes at more than 2 million
+  triangles per second each way.
+- D5: `scene_draco.glb` (the test scene's cube compressed with `KHR_draco_mesh_compression`) loads to the
+  same vertex and index lists as `scene_draco_ref.glb` (the same cube stored as the reference decoder's
+  output).
+
+Results (2026-11-15, PC CPU): D1 and D2 pass with every one of the 342 streams exact (24 sequential, 262
+standard, 12 valence, 44 with metadata); D3 passes 1,710 damaged decodes; D4 decodes the sphere in 17.6 ms
+(valence, 2.7 million triangles per second), 3.9 ms (standard) and 3.5 ms (no prediction). The native
+draco 1.5.7 decoder (Release build, same PC) takes 110 ms, 3 ms and 2 ms on the same files, so valence
+files, which need the geometric-normal and multi-parallelogram predictions, are about 6 times faster
+here. D5 passes.
+
 ## Provenance
 
 * `sdf_font.amni` is Auron's own: glyphs defined as strokes in code, no font files.
@@ -4465,6 +4503,10 @@ renderer depends on which corner comes first.
   The PNG and JPEG came from a one-off encoder script that was not kept (their
   headers match Pillow's defaults). They are committed as data; the test only needs
   their decoded checksums to stay the same.
+* `draco_cases.bin`, `draco_big_s*.drc`, `scene_draco.glb` and `scene_draco_ref.glb` were made from
+  synthetic meshes (grids, spheres, a torus, a random soup) and from `scene.glb` by a one-off Node script
+  that drove the draco3d 1.5.7 encoders and reference decoder (Apache-2.0, npm packages `draco3d` and
+  `draco3dgltf`); the script was not kept. They are committed as data.
 
 ## References
 

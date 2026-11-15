@@ -13,6 +13,7 @@ import gfx.codec_jpeg;
 import gfx.bc;
 import gfx.ktx2;
 import gfx.meshopt;
+import gfx.draco;
 
 // One vertex is 26 floats: position 3, normal 3, uv0 2, uv1 2, tangent 4,
 // color 4, joints 4, weights 4.
@@ -104,6 +105,7 @@ var view_at int[>..];
 var view_len int[>..];
 var view_stride int[>..];
 var accessor_node int[>..];
+var acc_view int[>..];
 
 fn error() const byte[:] { problem[..] }
 fn skipped() int { if skipped_prims.len == 0 { 0 } else { skipped_prims[0] } }
@@ -258,13 +260,14 @@ fn read_accessor<T>(d json::Doc&, index int, out T[>..]&) int, int, bool {
 	let column_bytes = if cols > 1 { (rows * cs + 3) / 4 * 4 } else { rows * cs };
 	let packed = cols * column_bytes;
 	let base = out.len;
-	let view = whole(d, a, "bufferView", -1);
+	let view = if acc_view[index] >= 0 { acc_view[index] } else { whole(d, a, "bufferView", -1) };
 	if view < 0 {
 		for i in count * width { out.push(0.0 as T); }
 	} else {
 		if view >= view_at.len { return 0, 0, false; }
 		let stride = if view_stride[view] > 0 { view_stride[view] } else { packed };
-		let start = view_at[view] + whole(d, a, "byteOffset", 0);
+		let skip = if acc_view[index] >= 0 { 0 } else { whole(d, a, "byteOffset", 0) };
+		let start = view_at[view] + skip;
 		if count > 0 && start + stride * (count - 1) + packed > view_at[view] + view_len[view] { return 0, 0, false; }
 		for i in count {
 			for c in cols {
@@ -430,7 +433,7 @@ fn presize(d json::Doc&, root int) {
 	if indices.len == 0 && ni * 4 > 8 << 20 { indices.resize(ni + ni / 2 + 65536, 0 as u32); indices.clear(); }
 }
 fn load_bytes(data const byte[:], dir const byte[:]) int {
-	blob.clear(); buf_at.clear(); buf_len.clear(); view_at.clear(); view_len.clear(); view_stride.clear(); accessor_node.clear();
+	blob.clear(); buf_at.clear(); buf_len.clear(); view_at.clear(); view_len.clear(); view_stride.clear(); accessor_node.clear(); acc_view.clear();
 	if skipped_prims.len == 0 { skipped_prims.push(0); }
 	var json_at = 0;
 	var json_len = data.len;
@@ -461,7 +464,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
 		let ext = json::text_of(d, e);
-		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" && ext != "EXT_meshopt_compression" && ext != "KHR_meshopt_compression" {
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" && ext != "EXT_meshopt_compression" && ext != "KHR_meshopt_compression" && ext != "KHR_draco_mesh_compression" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
 	}
@@ -519,7 +522,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		view_stride.push(whole(d, v, "byteStride", 0));
 	}
 	children_of(d, get(d, root, "accessors"), list);
-	for a in list { accessor_node.push(a); }
+	for a in list { accessor_node.push(a); acc_view.push(-1); }
 
 	var asset = Asset { ok: true, .. };
 
@@ -843,6 +846,57 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 }
 
 // Reads one mesh primitive into the vertex, index and morph pools.
+fn put_value(v real, kind int) {
+	let x = v as int;
+	match kind {
+		5126 => { let b = binary::f32_bits(v as f32) as int; for k in 4 { blob.push(((b >> (8 * k)) & 255) as byte); } },
+		5120, 5121 => blob.push((x & 255) as byte),
+		5122, 5123 => { blob.push((x & 255) as byte); blob.push(((x >> 8) & 255) as byte); },
+		_ => { for k in 4 { blob.push(((x >> (8 * k)) & 255) as byte); } },
+	}
+}
+fn draco_view(ai int, at int) {
+	while blob.len % 4 != 0 { blob.push(0); }
+	acc_view[ai] = view_at.len;
+	view_at.push(at);
+	view_len.push(blob.len - at);
+	view_stride.push(0);
+}
+fn unpack_draco(d json::Doc&, p int, attrs int) bool {
+	let dx = get(d, get(d, p, "extensions"), "KHR_draco_mesh_compression");
+	if dx < 0 { return true; }
+	let bv = whole(d, dx, "bufferView", -1);
+	if bv < 0 || bv >= view_at.len { problem.clear(); problem.append("a Draco primitive names a missing bufferView"); return false; }
+	var src byte[>..] = [];
+	src.append(blob[view_at[bv]..view_at[bv] + view_len[bv]]);
+	if !draco::decode(src[..]) { problem.clear(); problem.append(str("Draco data does not decode: ", draco::error())); return false; }
+	let ids = get(d, dx, "attributes");
+	let names = ["POSITION", "NORMAL", "TEXCOORD_0", "TEXCOORD_1", "TANGENT", "COLOR_0", "JOINTS_0", "WEIGHTS_0"];
+	for name in names {
+		let ai = whole(d, attrs, name, -1);
+		let uid = whole(d, ids, name, -1);
+		if ai < 0 || uid < 0 { continue; }
+		let k = draco::find(uid);
+		if ai >= acc_view.len || k < 0 { problem.clear(); problem.append(str("Draco data has no ", name)); return false; }
+		let kind = whole(d, accessor_node[ai], "componentType", 0);
+		let cols, rows = type_shape(word(d, accessor_node[ai], "type"));
+		let w = cols * rows;
+		if w != draco::att_comps[k] || cols > 1 && rows > 1 { problem.clear(); problem.append(str("Draco ", name, " has the wrong size")); return false; }
+		while blob.len % 4 != 0 { blob.push(0); }
+		let at = blob.len;
+		for i in draco::points * w { put_value(draco::values[draco::att_first[k] + i], kind); }
+		draco_view(ai, at);
+	}
+	let ia = whole(d, p, "indices", -1);
+	if ia >= 0 && ia < acc_view.len {
+		let kind = whole(d, accessor_node[ia], "componentType", 5125);
+		while blob.len % 4 != 0 { blob.push(0); }
+		let at = blob.len;
+		for f in draco::faces { put_value(f as real, kind); }
+		draco_view(ia, at);
+	}
+	return true;
+}
 fn add_primitive(d json::Doc&, p int, mat_base int, mat_count int) bool {
 	let mode = whole(d, p, "mode", 4);
 	if mode < 4 || mode > 6 {
@@ -850,6 +904,7 @@ fn add_primitive(d json::Doc&, p int, mat_base int, mat_count int) bool {
 		return true;
 	}
 	let attrs = get(d, p, "attributes");
+	if !unpack_draco(d, p, attrs) { return false; }
 	var pos f32[>..] = [];
 	let n, pw, pok = read_accessor(d, whole(d, attrs, "POSITION", -1), pos);
 	if !pok || pw != 3 { problem.clear(); problem.append("a primitive has no usable POSITION"); return false; }

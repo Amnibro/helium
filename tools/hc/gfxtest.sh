@@ -59,6 +59,8 @@ HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/garment_check.amni" > "$O/g
 grep -q "^garment: ok$" "$O/garment_check.txt" || { say "gfxtest: FAILED: garment bars"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/meshopt_check.amni" "$R/hc/test/gfx/fixtures/meshopt_cases.bin" > "$O/meshopt_check.txt" 2>&1; cat "$O/meshopt_check.txt"; cat "$O/meshopt_check.txt" >> "$RES"
 grep -q "^meshopt: ok$" "$O/meshopt_check.txt" || { say "gfxtest: FAILED: meshopt decoder checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/draco_check.amni" "$R/hc/test/gfx/fixtures/draco_cases.bin" > "$O/draco_check.txt" 2>&1; cat "$O/draco_check.txt"; cat "$O/draco_check.txt" >> "$RES"
+grep -q "^draco: ok$" "$O/draco_check.txt" || { say "gfxtest: FAILED: draco decoder checks"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/soak_check.amni" > "$O/soak_check.txt" 2>&1; cat "$O/soak_check.txt"; cat "$O/soak_check.txt" >> "$RES"
 grep -q "^soak: ok$" "$O/soak_check.txt" || { say "gfxtest: FAILED: wet fabric bars"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/locks_check.amni" > "$O/locks_check.txt" 2>&1; cat "$O/locks_check.txt"; cat "$O/locks_check.txt" >> "$RES"

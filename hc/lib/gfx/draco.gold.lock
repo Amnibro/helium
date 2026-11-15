@@ -1,0 +1,2121 @@
+=== -1eafee58bfa50c1c
+namespace draco;
+import math;
+import binary;
+=== 5f8706538427767d
+fn w32(x int) int { let y = x as! i32; y }
+fn u32of(x int) int { x & 0xFFFFFFFF }
+fn idiv(a int, b int) int { a / b }
+=== 04058bf1a67459e5
+var faces u32[>..];
+var points int = 0;
+var att_type int[>..];
+var att_dtype int[>..];
+var att_comps int[>..];
+var att_norm int[>..];
+var att_uid int[>..];
+var att_first int[>..];
+var values real[>..];
+var why byte[>..];
+fn error() const byte[:] { why[0..why.len] }
+fn find(uid int) int {
+	for i in att_uid.len {
+		if att_uid[i] == uid { return i; }
+	}
+	-1
+}
+fn fail(msg const byte[:]) bool {
+	why.clear();
+	why.append(msg);
+	false
+}
+=== 576d6dc26af2fab4
+var buf byte[>..];
+var pos int = 0;
+var bad bool = false;
+fn left() int { buf.len - pos }
+fn bt(i int) int { let v int = buf[i]; v }
+fn u8v() int {
+	if pos >= buf.len { bad = true; return 0; }
+	let v = bt(pos);
+	pos += 1;
+	v
+}
+fn i8v() int {
+	let v = u8v();
+	if v >= 128 { v - 256 } else { v }
+}
+fn u16v() int {
+	if left() < 2 { bad = true; return 0; }
+	let v = bt(pos) | (bt(pos + 1) << 8);
+	pos += 2;
+	v
+}
+fn u32v() int {
+	if left() < 4 { bad = true; return 0; }
+	let v = bt(pos) | (bt(pos + 1) << 8) | (bt(pos + 2) << 16) | (bt(pos + 3) << 24);
+	pos += 4;
+	v
+}
+fn i32v() int { w32(u32v()) }
+fn f32v() f32 {
+	let u = u32v();
+	binary::f32_from_bits(u as! u32)
+}
+fn varintv(limit int) int {
+	var r = 0;
+	var n = 0;
+	loop {
+		if pos >= buf.len || n >= limit { bad = true; return 0; }
+		let b = bt(pos);
+		pos += 1;
+		r = r | ((b & 127) << (7 * n));
+		n += 1;
+		if b < 128 { break; }
+	}
+	if limit <= 5 && r > 0xFFFFFFFF { bad = true; return 0; }
+	r
+}
+=== 2ff052d364ecdb03
+var bit_at int = 0;
+var bit_end int = 0;
+var bit_off int = 0;
+fn bits_begin(at int, end int) {
+	bit_at = at;
+	bit_end = end;
+	bit_off = 0;
+}
+fn bits(n int) int {
+	if n > 32 { bad = true; return 0; }
+	var r = 0;
+	for i in n {
+		let p = bit_off;
+		let bi = bit_at + p / 8;
+		if bi >= bit_end || bi >= buf.len || bi < 0 { continue; }
+		r = r | (((bt(bi) >> (p % 8)) & 1) << i);
+		bit_off += 1;
+	}
+	r
+}
+fn bits_bytes() int { (bit_off + 7) / 8 }
+=== -4aad03c2be884e2c
+var rb_data int[>..];
+var rb_off int[>..];
+var rb_state int[>..];
+var rb_p0 int[>..];
+fn rbit_start() int {
+	let p0 = u8v();
+	let size = varintv(5);
+	if bad || size == 0 || size > left() { return -1; }
+	let last = pos + size - 1;
+	let b = bt(last);
+	let x = b >> 6;
+	var state = 0;
+	var off = 0;
+	if x == 0 {
+		state = b & 63;
+		off = size - 1;
+	} else if x == 1 {
+		if size < 2 { return -1; }
+		state = (bt(last - 1) | (b << 8)) & 0x3FFF;
+		off = size - 2;
+	} else if x == 2 {
+		if size < 3 { return -1; }
+		state = (bt(last - 2) | (bt(last - 1) << 8) | (b << 16)) & 0x3FFFFF;
+		off = size - 3;
+	} else {
+		return -1;
+	}
+	state += 4096;
+	if state >= 4096 * 256 { return -1; }
+	rb_data.push(pos);
+	rb_off.push(off);
+	rb_state.push(state);
+	rb_p0.push(p0);
+	pos += size;
+	rb_data.len - 1
+}
+fn rbit(k int) bool {
+	if k < 0 || k >= rb_state.len { bad = true; return false; }
+	let p = 256 - rb_p0[k];
+	var st = rb_state[k];
+	if st < 4096 && rb_off[k] > 0 {
+		rb_off[k] = rb_off[k] - 1;
+		st = st * 256 + bt(rb_data[k] + rb_off[k]);
+	}
+	let q = st / 256;
+	let r = st % 256;
+	let bit = r < p;
+	if bit { st = q * p + r; } else { st = st - q * p - p; }
+	rb_state[k] = st;
+	bit
+}
+=== -700a606dceecc91d
+var rs_prob int[>..];
+var rs_cum int[>..];
+var rs_lut int[>..];
+var rs_precision int = 0;
+var rs_data int = 0;
+var rs_off int = 0;
+var rs_state int = 0;
+fn rans_table(nb int) int {
+	let pp = min(max(3 * nb / 2, 12), 20);
+	rs_precision = 1 << pp;
+	let n = varintv(5);
+	if bad || n / 64 > left() { return -1; }
+	rs_prob.clear();
+	rs_cum.clear();
+	rs_lut.clear();
+	if n == 0 { return 0; }
+	for k in n { rs_prob.push(0); }
+	var i = 0;
+	while i < n {
+		let d = u8v();
+		if bad { return -1; }
+		if (d & 3) == 3 {
+			let o = d >> 2;
+			if i + o >= n { return -1; }
+			i += o + 1;
+		} else {
+			var pr = d >> 2;
+			for b in (d & 3) {
+				let e = u8v();
+				pr = pr | (e << (8 * (b + 1) - 2));
+			}
+			if bad { return -1; }
+			rs_prob[i] = pr;
+			i += 1;
+		}
+	}
+	var sum = 0;
+	for s in n {
+		rs_cum.push(sum);
+		let pr = rs_prob[s];
+		if sum + pr > rs_precision { return -1; }
+		for k in pr { rs_lut.push(s); }
+		sum += pr;
+	}
+	if sum != rs_precision { return -1; }
+	n
+}
+fn rans_begin() bool {
+	let c = varintv(10);
+	if bad || c > left() || c < 1 { return false; }
+	rs_data = pos;
+	pos += c;
+	let last = rs_data + c - 1;
+	let b = bt(last);
+	let x = b >> 6;
+	var st = 0;
+	var off = 0;
+	if x == 0 {
+		st = b & 63;
+		off = c - 1;
+	} else if x == 1 {
+		if c < 2 { return false; }
+		st = (bt(last - 1) | (b << 8)) & 0x3FFF;
+		off = c - 2;
+	} else if x == 2 {
+		if c < 3 { return false; }
+		st = (bt(last - 2) | (bt(last - 1) << 8) | (b << 16)) & 0x3FFFFF;
+		off = c - 3;
+	} else {
+		if c < 4 { return false; }
+		st = (bt(last - 3) | (bt(last - 2) << 8) | (bt(last - 1) << 16) | (b << 24)) & 0x3FFFFFFF;
+		off = c - 4;
+	}
+	st += 4 * rs_precision;
+	if st >= 4 * rs_precision * 256 { return false; }
+	rs_state = st;
+	rs_off = off;
+	true
+}
+fn rans_next() int {
+	if rs_precision == 0 || rs_lut.len == 0 { bad = true; return 0; }
+	let lb = 4 * rs_precision;
+	while rs_state < lb && rs_off > 0 {
+		rs_off -= 1;
+		rs_state = rs_state * 256 + bt(rs_data + rs_off);
+	}
+	let q = rs_state / rs_precision;
+	let r = rs_state % rs_precision;
+	if r >= rs_lut.len { bad = true; return 0; }
+	let s = rs_lut[r];
+	rs_state = q * rs_prob[s] + r - rs_cum[s];
+	s
+}
+=== 3c2126a446b23ceb
+fn symbols(n int, comps int, out int[>..]&) bool {
+	if n == 0 { return true; }
+	if comps < 1 { return false; }
+	let sch = u8v();
+	if bad { return false; }
+	if sch == 0 {
+		if rans_table(5) <= 0 { return false; }
+		if !rans_begin() { return false; }
+		bits_begin(pos, buf.len);
+		var cnt = 0;
+		while cnt < n {
+			let len = rans_next();
+			if bad { return false; }
+			for j in comps {
+				if cnt >= n { break; }
+				out.push(bits(len));
+				cnt += 1;
+			}
+			if bad { return false; }
+		}
+		pos += bits_bytes();
+		return !bad;
+	}
+	if sch == 1 {
+		let m = u8v();
+		if bad || m < 1 || m > 18 { return false; }
+		if rans_table(m) <= 0 { return false; }
+		if !rans_begin() { return false; }
+		for i in n {
+			out.push(rans_next());
+			if bad { return false; }
+		}
+		return true;
+	}
+	false
+}
+=== 58f5ae4b80e9619c
+fn skip_bytes(n int) {
+	if n < 0 || n > left() { bad = true; return; }
+	pos += n;
+}
+fn skip_tree() bool {
+	var pending = 1;
+	var root = true;
+	while pending > 0 {
+		pending -= 1;
+		if !root {
+			let nl = u8v();
+			skip_bytes(nl);
+		}
+		root = false;
+		let ne = varintv(5);
+		if bad { return false; }
+		for e in ne {
+			let nl = u8v();
+			skip_bytes(nl);
+			let size = varintv(5);
+			if bad || size < 1 || size > left() { return false; }
+			pos += size;
+		}
+		let sub = varintv(5);
+		if bad || sub > left() { return false; }
+		pending += sub;
+	}
+	!bad
+}
+fn skip_meta() bool {
+	let n = varintv(5);
+	if bad { return false; }
+	for i in n {
+		let id = varintv(5);
+		if bad { return false; }
+		if !skip_tree() { return false; }
+	}
+	skip_tree()
+}
+=== 1be4e00bbc4e2c99
+var c2v int[>..];
+var opp int[>..];
+var lmc int[>..];
+var n_ad int = 0;
+var nc int = 0;
+var a_c2v int[>..];
+var a_seam bool[>..];
+var a_vseam bool[>..];
+var a_lmc int[>..];
+var a_lmc_at int[>..];
+var a_nv int[>..];
+fn nxt(c int) int {
+	if c < 0 { return -1; }
+	if c % 3 == 2 { c - 2 } else { c + 1 }
+}
+fn prv(c int) int {
+	if c < 0 { return -1; }
+	if c % 3 == 0 { c + 2 } else { c - 1 }
+}
+fn vert(t int, c int) int {
+	if c < 0 || c >= nc { return -1; }
+	if t < 0 {
+		if c >= c2v.len { return -1; }
+		return c2v[c];
+	}
+	let i = t * nc + c;
+	if i >= a_c2v.len { return -1; }
+	a_c2v[i]
+}
+fn oppo(t int, c int) int {
+	if c < 0 || c >= nc || c >= opp.len { return -1; }
+	if t >= 0 {
+		let i = t * nc + c;
+		if i >= a_seam.len || a_seam[i] { return -1; }
+	}
+	opp[c]
+}
+fn lm(t int, v int) int {
+	if v < 0 { return -1; }
+	if t < 0 {
+		if v >= lmc.len { return -1; }
+		return lmc[v];
+	}
+	if t >= a_nv.len || v >= a_nv[t] { return -1; }
+	a_lmc[a_lmc_at[t] + v]
+}
+fn nverts(t int) int { if t < 0 { lmc.len } else { a_nv[t] } }
+fn swl(t int, c int) int { nxt(oppo(t, nxt(c))) }
+fn swr(t int, c int) int { prv(oppo(t, prv(c))) }
+fn boundary(t int, v int) bool { swl(t, lm(t, v)) == -1 }
+fn on_seam(k int, c int) bool {
+	let v = vert(-1, c);
+	if v < 0 { return false; }
+	let i = k * lmc.len + v;
+	if i >= a_vseam.len { return false; }
+	a_vseam[i]
+}
+fn set_opp(a int, b int) {
+	if a < 0 || b < 0 || a >= opp.len || b >= opp.len { return; }
+	opp[a] = b;
+	opp[b] = a;
+}
+=== -3ce7025faaa2039f
+fn around(t int, c int, out int[>..]&) {
+	out.clear();
+	if c < 0 || c >= nc { return; }
+	out.push(c);
+	var steps = 3 * nc + 3;
+	var cur = c;
+	var closed = false;
+	while steps > 0 {
+		steps -= 1;
+		let n = swl(t, cur);
+		if n == -1 { break; }
+		if n == c { closed = true; break; }
+		out.push(n);
+		cur = n;
+	}
+	if !closed {
+		cur = c;
+		while steps > 0 {
+			steps -= 1;
+			let n = swr(t, cur);
+			if n == -1 { break; }
+			out.push(n);
+			cur = n;
+		}
+	}
+}
+=== 32c0e2ee781bc494
+var valence bool = false;
+var ev int = 0;
+var ef int = 0;
+var es int = 0;
+var eq int = 0;
+var maxv int = 0;
+var hole bool[>..];
+var sp_src int[>..<];
+var sp_split int[>..<];
+var sp_edge int[>..<];
+fn edgebreaker() bool {
+	let v = varintv(5);
+	let f = varintv(5);
+	if bad { return fail("edgebreaker counts"); }
+	if v > 3 * f { return fail("vertex count"); }
+	if (v * (v - 1)) / 2 < (3 * f) / 2 { return fail("vertex count too small"); }
+	n_ad = u8v();
+	let s = varintv(5);
+	let q = varintv(5);
+	if bad { return fail("symbol counts"); }
+	if s > f || f > s + s / 3 || q > s { return fail("symbol counts"); }
+	if f > 256 * buf.len + 1024 { return fail("face count"); }
+	ev = v;
+	ef = f;
+	es = s;
+	eq = q;
+	nc = 3 * f;
+	c2v.clear();
+	opp.clear();
+	for i in nc {
+		c2v.push(-1);
+		opp.push(-1);
+	}
+	lmc.clear();
+	maxv = v + q;
+	hole.clear();
+	for i in maxv { hole.push(true); }
+	let ns = varintv(5);
+	if bad || ns > f { return fail("split count"); }
+	sp_src.clear();
+	sp_split.clear();
+	sp_edge.clear();
+	var src = 0;
+	for i in ns {
+		let ds = varintv(5);
+		let dp = varintv(5);
+		if bad { return fail("split data"); }
+		src += ds;
+		if dp > src { return fail("split delta"); }
+		sp_src.push(src);
+		sp_split.push(src - dp);
+	}
+	bits_begin(pos, buf.len);
+	for i in ns { sp_edge.push(bits(1)); }
+	pos += bits_bytes();
+	if bad { return fail("split bits"); }
+	true
+}
+=== 5ba0d0057e3e291f
+var start_dec int = -1;
+var seam_dec int[>..];
+var valences int[>..];
+var ctx_sym int[>..];
+var ctx_at int[>..];
+var ctx_left int[>..];
+var active int = -1;
+var att_start int = 0;
+fn traversal_start() bool {
+	if !valence {
+		let z = varintv(10);
+		if bad || z > left() { return fail("symbol size"); }
+		bits_begin(pos, buf.len);
+		pos += z;
+	}
+	start_dec = rbit_start();
+	if start_dec < 0 { return fail("start decoder"); }
+	seam_dec.clear();
+	for k in n_ad {
+		let d = rbit_start();
+		if d < 0 { return fail("seam decoder"); }
+		seam_dec.push(d);
+	}
+	if valence {
+		valences.clear();
+		for i in maxv { valences.push(0); }
+		ctx_sym.clear();
+		ctx_at.clear();
+		ctx_left.clear();
+		for k in 6 {
+			let cnt = varintv(5);
+			if bad || cnt > ef { return fail("context count"); }
+			ctx_at.push(ctx_sym.len);
+			ctx_left.push(cnt);
+			if !symbols(cnt, 1, ctx_sym) { return fail("context symbols"); }
+		}
+		active = -1;
+	}
+	att_start = pos;
+	true
+}
+=== 4dbd18e564a11ef5
+fn next_symbol() int {
+	if !valence {
+		if bits(1) == 1 { return 1 | (bits(2) << 1); }
+		return 0;
+	}
+	if active == -1 { return 7; }
+	ctx_left[active] = ctx_left[active] - 1;
+	let l = ctx_left[active];
+	if l < 0 { return 99; }
+	let s = ctx_sym[ctx_at[active] + l];
+	if s > 4 { return 99; }
+	if s == 0 { return 0; }
+	if s == 1 { return 1; }
+	if s == 2 { return 3; }
+	if s == 3 { return 5; }
+	7
+}
+fn addval(c int, k int) {
+	let v = vert(-1, c);
+	if v < 0 || v >= valences.len { return; }
+	valences[v] = valences[v] + k;
+}
+fn reached(c int, sym int) {
+	let n = nxt(c);
+	let p = prv(c);
+	if sym == 0 || sym == 1 {
+		addval(n, 1);
+		addval(p, 1);
+	} else if sym == 5 {
+		addval(c, 1);
+		addval(n, 1);
+		addval(p, 2);
+	} else if sym == 3 {
+		addval(c, 1);
+		addval(n, 2);
+		addval(p, 1);
+	} else if sym == 7 {
+		addval(c, 2);
+		addval(n, 2);
+		addval(p, 2);
+	}
+	let vn = vert(-1, n);
+	if vn >= 0 && vn < valences.len {
+		active = min(max(valences[vn], 2), 7) - 2;
+	}
+}
+=== 00fbf9de874fd9b7
+var stk int[>..<];
+var sp_corner int[>..];
+var removed int[>..];
+var nfaces int = 0;
+var tmp int[>..];
+var conn_nv int = 0;
+fn split_check(i int) bool {
+	let e = es - i - 1;
+	while sp_src.len > 0 {
+		let s = sp_src[sp_src.len - 1];
+		if s > e { return fail("split source"); }
+		if s != e { break; }
+		let t = stk[stk.len - 1];
+		let nc2 = if sp_edge[sp_edge.len - 1] == 1 { nxt(t) } else { prv(t) };
+		let idx = es - sp_split[sp_split.len - 1] - 1;
+		if idx < 0 || idx >= sp_corner.len { return fail("split index"); }
+		sp_corner[idx] = nc2;
+		sp_src.pop();
+		sp_split.pop();
+		sp_edge.pop();
+	}
+	true
+}
+fn symbol_loop() bool {
+	stk.clear();
+	sp_corner.clear();
+	removed.clear();
+	nfaces = 0;
+	for i in es { sp_corner.push(-1); }
+	for i in es {
+		let g = 3 * i;
+		let sym = next_symbol();
+		if bad { return fail("symbol read"); }
+		if sym == 0 {
+			if stk.len == 0 { return fail("empty stack"); }
+			let a = stk[stk.len - 1];
+			let x = vert(-1, nxt(a));
+			let b = nxt(lm(-1, x));
+			if b < 0 || a == b || opp[a] != -1 || opp[b] != -1 { return fail("bad C symbol"); }
+			set_opp(a, g + 1);
+			set_opp(b, g + 2);
+			let ap = vert(-1, prv(a));
+			let bn = vert(-1, nxt(b));
+			if x < 0 || ap < 0 || bn < 0 || x == ap || x == bn { return fail("bad C vertices"); }
+			c2v[g] = x;
+			c2v[g + 1] = bn;
+			c2v[g + 2] = ap;
+			lmc[ap] = g + 2;
+			hole[x] = false;
+			stk[stk.len - 1] = g;
+		} else if sym == 5 || sym == 3 {
+			if stk.len == 0 { return fail("empty stack"); }
+			let a = stk[stk.len - 1];
+			if opp[a] != -1 { return fail("bad R/L symbol"); }
+			let o = if sym == 5 { g + 2 } else { g + 1 };
+			let l = if sym == 5 { g + 1 } else { g };
+			let r = if sym == 5 { g } else { g + 2 };
+			set_opp(o, a);
+			if lmc.len >= maxv { return fail("too many vertices"); }
+			c2v[o] = lmc.len;
+			lmc.push(o);
+			let vr = vert(-1, prv(a));
+			let vl = vert(-1, nxt(a));
+			if vr < 0 || vl < 0 { return fail("bad R/L vertices"); }
+			c2v[r] = vr;
+			lmc[vr] = r;
+			c2v[l] = vl;
+			stk[stk.len - 1] = g;
+			if !split_check(i) { return false; }
+		} else if sym == 1 {
+			if stk.len == 0 { return fail("empty stack"); }
+			let b = stk.pop();
+			if sp_corner[i] >= 0 { stk.push(sp_corner[i]); }
+			if stk.len == 0 { return fail("empty stack"); }
+			let a = stk[stk.len - 1];
+			if a == b || opp[a] != -1 || opp[b] != -1 { return fail("bad S symbol"); }
+			set_opp(a, g + 2);
+			set_opp(b, g + 1);
+			let vp = vert(-1, prv(a));
+			let vq = vert(-1, nxt(a));
+			let bp = vert(-1, prv(b));
+			let n = nxt(b);
+			let vn = vert(-1, n);
+			if vp < 0 || vq < 0 || bp < 0 || vn < 0 { return fail("bad S vertices"); }
+			c2v[g] = vp;
+			c2v[g + 1] = vq;
+			c2v[g + 2] = bp;
+			lmc[bp] = g + 2;
+			if valence { valences[vp] = valences[vp] + valences[vn]; }
+			lmc[vp] = lmc[vn];
+			var cur = n;
+			while cur != -1 {
+				c2v[cur] = vp;
+				cur = swl(-1, cur);
+				if cur == n { return fail("S merge loop"); }
+			}
+			lmc[vn] = -1;
+			if n_ad == 0 { removed.push(vn); }
+			stk[stk.len - 1] = g;
+		} else if sym == 7 {
+			for k in 3 {
+				if lmc.len >= maxv { return fail("too many vertices"); }
+				c2v[g + k] = lmc.len;
+				lmc.push(g + k);
+			}
+			stk.push(g);
+			if !split_check(i) { return false; }
+		} else {
+			return fail("bad symbol");
+		}
+		if valence { reached(stk[stk.len - 1], sym); }
+		nfaces += 1;
+	}
+	true
+}
+=== -77122c5938aed53f
+fn finish_connectivity() bool {
+	if lmc.len > maxv { return fail("vertex count"); }
+	while stk.len > 0 {
+		let c = stk.pop();
+		if rbit(start_dec) {
+			if nfaces >= ef { return fail("too many faces"); }
+			let a = c;
+			let vn = vert(-1, nxt(a));
+			let b = nxt(lm(-1, vn));
+			let vx = vert(-1, nxt(b));
+			let cc = nxt(lm(-1, vx));
+			if a < 0 || b < 0 || cc < 0 || a == b || a == cc || b == cc { return fail("bad start face"); }
+			if opp[a] != -1 || opp[b] != -1 || opp[cc] != -1 { return fail("bad start face"); }
+			let vp = vert(-1, nxt(cc));
+			if vn < 0 || vx < 0 || vp < 0 { return fail("bad start vertices"); }
+			let h = 3 * nfaces;
+			set_opp(h, a);
+			set_opp(h + 1, b);
+			set_opp(h + 2, cc);
+			c2v[h] = vx;
+			c2v[h + 1] = vp;
+			c2v[h + 2] = vn;
+			hole[vx] = false;
+			hole[vp] = false;
+			hole[vn] = false;
+			nfaces += 1;
+		}
+		if bad { return fail("start face read"); }
+	}
+	if nfaces != ef { return fail("face count mismatch"); }
+	var m = lmc.len;
+	for ri in removed.len {
+		let r = removed[ri];
+		var s = m - 1;
+		while s >= 0 && lmc[s] == -1 {
+			m -= 1;
+			s = m - 1;
+		}
+		if s < 0 { return fail("vertex compaction"); }
+		if s < r { continue; }
+		around(-1, lmc[s], tmp);
+		for a in tmp {
+			if c2v[a] != s { return fail("vertex compaction corner"); }
+			c2v[a] = r;
+		}
+		lmc[r] = lmc[s];
+		lmc[s] = -1;
+		hole[r] = hole[s];
+		hole[s] = false;
+		m -= 1;
+	}
+	conn_nv = m;
+	true
+}
+=== -54ad9b68c3c52226
+fn mark_seam(k int, c int) {
+	let nv = lmc.len;
+	a_seam[k * nc + c] = true;
+	let v1 = vert(-1, nxt(c));
+	let v2 = vert(-1, prv(c));
+	if v1 >= 0 { a_vseam[k * nv + v1] = true; }
+	if v2 >= 0 { a_vseam[k * nv + v2] = true; }
+	let o = opp[c];
+	if o >= 0 {
+		a_seam[k * nc + o] = true;
+		let w1 = vert(-1, nxt(o));
+		let w2 = vert(-1, prv(o));
+		if w1 >= 0 { a_vseam[k * nv + w1] = true; }
+		if w2 >= 0 { a_vseam[k * nv + w2] = true; }
+	}
+}
+fn seams() bool {
+	a_seam.clear();
+	a_vseam.clear();
+	a_c2v.clear();
+	a_lmc.clear();
+	a_lmc_at.clear();
+	a_nv.clear();
+	if n_ad == 0 { return true; }
+	for i in n_ad * nc { a_seam.push(false); }
+	for i in n_ad * lmc.len { a_vseam.push(false); }
+	for f in ef {
+		for j in 3 {
+			let c = 3 * f + j;
+			let o = opp[c];
+			if o < 0 {
+				for k in n_ad { mark_seam(k, c); }
+			} else if o / 3 >= f {
+				for k in n_ad {
+					if rbit(seam_dec[k]) { mark_seam(k, c); }
+				}
+			}
+		}
+	}
+	if bad { return fail("seam read"); }
+	for i in n_ad * nc { a_c2v.push(-1); }
+	for k in n_ad {
+		a_lmc_at.push(a_lmc.len);
+		var cnt = 0;
+		for v in lmc.len {
+			let start = lmc[v];
+			if start == -1 { continue; }
+			var first = start;
+			if a_vseam[k * lmc.len + v] {
+				var w = swl(k, first);
+				while w != -1 {
+					if w == start { return fail("seam walk"); }
+					first = w;
+					w = swl(k, w);
+				}
+			}
+			a_c2v[k * nc + first] = cnt;
+			a_lmc.push(first);
+			cnt += 1;
+			var cur = swr(-1, first);
+			while cur != -1 && cur != first {
+				if a_seam[k * nc + nxt(cur)] {
+					a_lmc.push(cur);
+					cnt += 1;
+				}
+				a_c2v[k * nc + cur] = cnt - 1;
+				cur = swr(-1, cur);
+			}
+		}
+		a_nv.push(cnt);
+	}
+	true
+}
+=== -100e156f02384608
+var cp int[>..];
+fn assign_points() bool {
+	faces.clear();
+	if n_ad == 0 {
+		for c in nc {
+			let v = c2v[c];
+			if v < 0 || v >= conn_nv { return fail("face vertex"); }
+			faces.push(v as! u32);
+		}
+		points = conn_nv;
+		return true;
+	}
+	cp.clear();
+	for i in nc { cp.push(-1); }
+	var np = 0;
+	for v in lmc.len {
+		let c = lmc[v];
+		if c == -1 { continue; }
+		var d = c;
+		if !hole[v] {
+			var done = false;
+			for k in n_ad {
+				if done { break; }
+				if !on_seam(k, c) { continue; }
+				var a = swr(-1, c);
+				while a != c {
+					if a == -1 { return fail("point walk"); }
+					if vert(k, a) != vert(k, c) {
+						d = a;
+						done = true;
+						break;
+					}
+					a = swr(-1, a);
+				}
+			}
+		}
+		cp[d] = np;
+		np += 1;
+		var pc = d;
+		var a = swr(-1, d);
+		while a != -1 && a != d {
+			var differs = false;
+			for k in n_ad {
+				if vert(k, a) != vert(k, pc) { differs = true; }
+			}
+			if differs {
+				cp[a] = np;
+				np += 1;
+			} else {
+				cp[a] = cp[pc];
+			}
+			pc = a;
+			a = swr(-1, a);
+		}
+	}
+	for c in nc {
+		if cp[c] < 0 { return fail("unassigned corner"); }
+		faces.push(cp[c] as! u32);
+	}
+	points = np;
+	true
+}
+=== -524d12cd80a0a407
+fn sequential() bool {
+	let f = varintv(5);
+	let p = varintv(5);
+	if bad { return fail("sequential counts"); }
+	if f > left() / 3 || p > 256 * buf.len + 1024 { return fail("sequential counts"); }
+	let m = u8v();
+	if bad { return fail("sequential method"); }
+	faces.clear();
+	if m == 0 {
+		var vals int[>..] = [];
+		if !symbols(3 * f, 1, vals) { return fail("sequential symbols"); }
+		var last = 0;
+		for u in vals {
+			var d = u >> 1;
+			if (u & 1) == 1 {
+				if d > last { return fail("index delta"); }
+				d = 0 - d;
+			}
+			let ix = last + d;
+			last = ix;
+			if ix < 0 || ix >= p { return fail("index range"); }
+			faces.push(ix as! u32);
+		}
+	} else if m == 1 {
+		for i in 3 * f {
+			var ix = 0;
+			if p < 256 {
+				ix = u8v();
+			} else if p < 65536 {
+				ix = u16v();
+			} else if p < 2097152 {
+				ix = varintv(5);
+			} else {
+				ix = u32v();
+			}
+			if bad { return fail("index read"); }
+			if ix >= p { return fail("index range"); }
+			faces.push(ix as! u32);
+		}
+	} else {
+		return fail("sequential method");
+	}
+	points = p;
+	true
+}
+=== 715b9667679d4d1c
+var dec_slot int[>..];
+var dec_type int[>..];
+var dec_trav int[>..];
+var dec_first int[>..];
+var dec_cnt int[>..];
+var att_dkind int[>..];
+var port_at int[>..];
+var pmap_at int[>..];
+var gen_at int[>..];
+var port_pc int[>..];
+fn read_decoders(edge bool) bool {
+	let nd = u8v();
+	if bad { return fail("decoder count"); }
+	var used int[>..] = [];
+	for k in n_ad { used.push(0); }
+	var pos_used = false;
+	for d in nd {
+		var slot = -1;
+		var ty = 0;
+		var tr = 0;
+		if edge {
+			slot = i8v();
+			ty = u8v();
+			tr = u8v();
+			if bad { return fail("decoder header"); }
+			if slot >= 0 {
+				if slot >= n_ad || used[slot] == 1 { return fail("decoder slot"); }
+				used[slot] = 1;
+			} else {
+				if pos_used { return fail("position decoder twice"); }
+				pos_used = true;
+			}
+			if ty == 0 {
+				if tr > 1 { return fail("traversal kind"); }
+			} else if ty == 1 {
+				if tr != 0 || slot < 0 { return fail("corner decoder"); }
+			} else {
+				return fail("decoder type");
+			}
+		}
+		dec_slot.push(slot);
+		dec_type.push(ty);
+		dec_trav.push(tr);
+	}
+	var total = 0;
+	for d in nd {
+		let na = varintv(5);
+		if bad || na < 1 || na > 5 * left() { return fail("attribute count"); }
+		dec_first.push(att_type.len);
+		dec_cnt.push(na);
+		for a in na {
+			let kind = u8v();
+			let dt = u8v();
+			let cm = u8v();
+			let nm = u8v();
+			let uid = varintv(5);
+			if bad { return fail("attribute header"); }
+			if kind >= 9 || dt < 1 || dt > 11 || cm < 1 { return fail("attribute fields"); }
+			att_type.push(kind);
+			att_dtype.push(dt);
+			att_comps.push(cm);
+			att_norm.push(if nm != 0 { 1 } else { 0 });
+			att_uid.push(uid);
+			att_first.push(total);
+			total += points * cm;
+			if total > 67108864 { return fail("too many values"); }
+			port_at.push(-1);
+			pmap_at.push(-1);
+			gen_at.push(-1);
+			port_pc.push(0);
+		}
+		let base = att_type.len - na;
+		for a in na {
+			let dk = u8v();
+			if bad || dk > 3 { return fail("decoder kind"); }
+			let ai = base + a;
+			if dk == 2 && att_dtype[ai] != 9 { return fail("quantized needs float32"); }
+			if dk == 3 && (att_dtype[ai] != 9 || att_comps[ai] != 3) { return fail("normal needs 3 floats"); }
+			att_dkind.push(dk);
+		}
+	}
+	for i in total { values.push(0.0); }
+	true
+}
+=== 1fc5ba5f8e14433b
+var v2d int[>..];
+var d2c int[>..];
+var seq int[>..];
+var vis_f bool[>..];
+var vis_v bool[>..];
+var dstk int[>..<];
+var pst0 int[>..<];
+var pst1 int[>..<];
+var pst2 int[>..<];
+var pbest int = 0;
+var pdegree int[>..];
+var pmap int[>..];
+var pmaps int[>..];
+var nent int = 0;
+var tt int = -1;
+fn fvis(c int) bool { c < 0 || c / 3 >= vis_f.len || vis_f[c / 3] }
+fn visit(v int, c int) bool {
+	if v < 0 || v >= v2d.len || c < 0 || c >= faces.len { return false; }
+	let p int = faces[c];
+	v2d[v] = seq.len;
+	seq.push(p);
+	d2c.push(c);
+	true
+}
+fn dfs(t int, c0 int) bool {
+	if fvis(c0) { return true; }
+	dstk.clear();
+	dstk.push(c0);
+	let n0 = nxt(c0);
+	let p0 = prv(c0);
+	let vn = vert(t, n0);
+	let vp = vert(t, p0);
+	if vn < 0 || vp < 0 || vn >= vis_v.len || vp >= vis_v.len { return false; }
+	if !vis_v[vn] {
+		vis_v[vn] = true;
+		if !visit(vn, n0) { return false; }
+	}
+	if !vis_v[vp] {
+		vis_v[vp] = true;
+		if !visit(vp, p0) { return false; }
+	}
+	while dstk.len > 0 {
+		var c = dstk[dstk.len - 1];
+		if fvis(c) {
+			dstk.pop();
+			continue;
+		}
+		loop {
+			vis_f[c / 3] = true;
+			let v = vert(t, c);
+			if v < 0 || v >= vis_v.len { return false; }
+			if !vis_v[v] {
+				let bd = boundary(t, v);
+				vis_v[v] = true;
+				if !visit(v, c) { return false; }
+				if !bd {
+					c = oppo(t, nxt(c));
+					if c < 0 { return false; }
+					continue;
+				}
+			}
+			let r = oppo(t, nxt(c));
+			let l = oppo(t, prv(c));
+			let rv = fvis(r);
+			let lv = fvis(l);
+			if rv {
+				if lv {
+					dstk.pop();
+					break;
+				} else {
+					c = l;
+				}
+			} else {
+				if lv {
+					c = r;
+				} else {
+					dstk[dstk.len - 1] = l;
+					dstk.push(r);
+					break;
+				}
+			}
+		}
+	}
+	true
+}
+fn ppush(p int, c int) {
+	if p == 0 {
+		pst0.push(c);
+	} else if p == 1 {
+		pst1.push(c);
+	} else {
+		pst2.push(c);
+	}
+	if p < pbest { pbest = p; }
+}
+fn pnext() int {
+	var i = pbest;
+	while i < 3 {
+		if i == 0 && pst0.len > 0 {
+			pbest = 0;
+			return pst0.pop();
+		}
+		if i == 1 && pst1.len > 0 {
+			pbest = 1;
+			return pst1.pop();
+		}
+		if i == 2 && pst2.len > 0 {
+			pbest = 2;
+			return pst2.pop();
+		}
+		i += 1;
+	}
+	-1
+}
+fn ppri(t int, c int) int {
+	let v = vert(t, c);
+	if v < 0 || v >= vis_v.len || v >= pdegree.len { return -1; }
+	if vis_v[v] { return 0; }
+	pdegree[v] = pdegree[v] + 1;
+	if pdegree[v] > 1 { 1 } else { 2 }
+}
+fn pdeg_trav(t int, c0 int) bool {
+	if pdegree.len == 0 { return true; }
+	pst0.clear();
+	pst1.clear();
+	pst2.clear();
+	pbest = 0;
+	ppush(0, c0);
+	let n0 = nxt(c0);
+	let p0 = prv(c0);
+	let vn = vert(t, n0);
+	let vp = vert(t, p0);
+	let vt = vert(t, c0);
+	if vn < 0 || vp < 0 || vt < 0 || vn >= vis_v.len || vp >= vis_v.len || vt >= vis_v.len { return false; }
+	if !vis_v[vn] {
+		vis_v[vn] = true;
+		if !visit(vn, n0) { return false; }
+	}
+	if !vis_v[vp] {
+		vis_v[vp] = true;
+		if !visit(vp, p0) { return false; }
+	}
+	if !vis_v[vt] {
+		vis_v[vt] = true;
+		if !visit(vt, c0) { return false; }
+	}
+	loop {
+		var c = pnext();
+		if c < 0 { break; }
+		if fvis(c) { continue; }
+		loop {
+			vis_f[c / 3] = true;
+			let v = vert(t, c);
+			if v < 0 || v >= vis_v.len { return false; }
+			if !vis_v[v] {
+				vis_v[v] = true;
+				if !visit(v, c) { return false; }
+			}
+			let r = oppo(t, nxt(c));
+			let l = oppo(t, prv(c));
+			let rv = fvis(r);
+			let lv = fvis(l);
+			if !lv {
+				let pri = ppri(t, l);
+				if pri < 0 { return false; }
+				if rv && pri <= pbest {
+					c = l;
+					continue;
+				}
+				ppush(pri, l);
+			}
+			if !rv {
+				let pri = ppri(t, r);
+				if pri < 0 { return false; }
+				if pri <= pbest {
+					c = r;
+					continue;
+				}
+				ppush(pri, r);
+			}
+			break;
+		}
+	}
+	true
+}
+fn build_sequence(d int, edge bool) bool {
+	seq.clear();
+	d2c.clear();
+	v2d.clear();
+	pmap.clear();
+	if !edge {
+		for p in points {
+			seq.push(p);
+			pmap.push(p);
+		}
+		nent = points;
+	} else {
+		let t = if dec_type[d] == 1 { dec_slot[d] } else { -1 };
+		tt = t;
+		let nv = max(nverts(t), lmc.len);
+		vis_f.clear();
+		vis_v.clear();
+		pdegree.clear();
+		for i in nv {
+			v2d.push(-1);
+			vis_v.push(false);
+			pdegree.push(0);
+		}
+		for i in ef { vis_f.push(false); }
+		for f in ef {
+			if dec_trav[d] == 0 {
+				if !dfs(t, 3 * f) { return fail("traversal"); }
+			} else {
+				if !pdeg_trav(t, 3 * f) { return fail("traversal"); }
+			}
+		}
+		for i in points { pmap.push(-1); }
+		for c in nc {
+			let v = vert(t, c);
+			if v < 0 || v >= v2d.len { return fail("point map vertex"); }
+			let e = v2d[v];
+			let pt int = faces[c];
+			if e < 0 || e >= points || e >= seq.len || pt >= points { return fail("point map"); }
+			pmap[pt] = e;
+		}
+		for i in points {
+			if pmap[i] < 0 { return fail("unmapped point"); }
+		}
+		nent = seq.len;
+	}
+	let at = pmaps.len;
+	pmaps.append(pmap);
+	for a in dec_cnt[d] { pmap_at[dec_first[d] + a] = at; }
+	true
+}
+=== 1a6927bc33024658
+var cor int[>..];
+var port int[>..];
+var gen real[>..];
+fn p2(k int) real {
+	var r = 1.0;
+	if k >= 0 {
+		for i in k { r = r * 2.0; }
+	} else {
+		for i in 0 - k { r = r * 0.5; }
+	}
+	r
+}
+fn f64_of(x int) real {
+	let u = x as! u64;
+	let e = ((u >> 52) & 0x7FF) as int;
+	let m = (u & 0xFFFFFFFFFFFFF) as int;
+	var v = 0.0;
+	if e == 0 {
+		v = (m as real) * p2(-1074);
+	} else if e == 2047 {
+		let inf = p2(1023) * 2.0;
+		if m == 0 { v = inf; } else { v = inf - inf; }
+	} else {
+		v = (1.0 + (m as real) / 4503599627370496.0) * p2(e - 1023);
+	}
+	if x < 0 { 0.0 - v } else { v }
+}
+fn gen_read(ai int) bool {
+	let dt = att_dtype[ai];
+	let cm = att_comps[ai];
+	gen_at[ai] = gen.len;
+	var sz = 8;
+	if dt == 1 || dt == 2 || dt == 11 {
+		sz = 1;
+	} else if dt == 3 || dt == 4 {
+		sz = 2;
+	} else if dt == 5 || dt == 6 || dt == 9 {
+		sz = 4;
+	}
+	if sz * cm * nent > left() { return false; }
+	for e in nent {
+		for j in cm {
+			var x = 0;
+			for b in sz { x = x | (u8v() << (8 * b)); }
+			var r = 0.0;
+			if dt == 1 {
+				r = (((x & 255) ^ 128) - 128) as real;
+			} else if dt == 2 {
+				r = (x & 255) as real;
+			} else if dt == 3 {
+				r = (((x & 65535) ^ 32768) - 32768) as real;
+			} else if dt == 4 {
+				r = (x & 65535) as real;
+			} else if dt == 5 {
+				r = w32(x) as real;
+			} else if dt == 6 {
+				r = x as real;
+			} else if dt == 7 {
+				r = x as real;
+			} else if dt == 8 {
+				if x < 0 { r = (x as real) + 18446744073709551616.0; } else { r = x as real; }
+			} else if dt == 9 {
+				let f = binary::f32_from_bits(x as! u32);
+				r = f;
+			} else if dt == 10 {
+				r = f64_of(x);
+			} else {
+				if (x & 255) != 0 { r = 1.0; }
+			}
+			gen.push(r);
+		}
+	}
+	!bad
+}
+fn pick_kind(pm int, isnorm bool, edge bool) int {
+	if !edge { return 0; }
+	if isnorm {
+		if pm == 6 { return 6; }
+		return 0;
+	}
+	if pm == 1 { return 1; }
+	if pm == 4 { return 4; }
+	if pm == 5 { return 5; }
+	if pm == 6 { return -1; }
+	if pm == 2 || pm == 3 { return -1; }
+	0
+}
+fn first_pos() int {
+	for i in att_type.len {
+		if att_type[i] == 0 { return i; }
+	}
+	-1
+}
+fn read_cor(n int, pc int, zig bool) bool {
+	cor.clear();
+	let flag = u8v();
+	if bad { return false; }
+	if flag != 0 {
+		if !symbols(n, pc, cor) { return false; }
+	} else {
+		let w = u8v();
+		if bad || w > 4 { return false; }
+		if w == 4 {
+			for i in n {
+				cor.push(i32v());
+				if bad { return false; }
+			}
+		} else {
+			if w * n > left() { return false; }
+			for i in n {
+				var x = 0;
+				for b in w { x = x | (u8v() << (8 * b)); }
+				cor.push(x);
+			}
+		}
+	}
+	if zig {
+		for i in cor.len {
+			let u = cor[i];
+			let d = u >> 1;
+			cor[i] = if (u & 1) == 1 { 0 - d - 1 } else { d };
+		}
+	}
+	true
+}
+=== 7123fc05a622a1cb
+var wmin int = 0;
+var wmax int = 0;
+var wdif int = 1;
+var nmq int = 0;
+var nmv int = 0;
+var nce int = 0;
+fn read_wrap() bool {
+	let mn = i32v();
+	let mx = i32v();
+	if bad || mn > mx || mx - mn >= 2147483647 { return false; }
+	wmin = mn;
+	wmax = mx;
+	wdif = mx - mn + 1;
+	true
+}
+fn wrap_apply(pv int, e int) int {
+	let p = min(max(pv, wmin), wmax);
+	var v = p + e;
+	if v > wmax {
+		v = v - wdif;
+	} else if v < wmin {
+		v = v + wdif;
+	}
+	w32(v)
+}
+fn read_norm() bool {
+	let m = i32v();
+	i32v();
+	if bad || m <= 0 || (m & 1) == 0 { return false; }
+	var q = 0;
+	var x = m;
+	while x > 0 {
+		q += 1;
+		x = x >> 1;
+	}
+	if q < 2 || q > 30 { return false; }
+	nmq = (1 << q) - 1;
+	nmv = nmq - 1;
+	nce = nmv / 2;
+	true
+}
+fn modmax(x int) int {
+	if x > nce { x - nmq } else if x < 0 - nce { x + nmq } else { x }
+}
+fn rot2(r int, s int, t int) int, int {
+	if r == 1 { return t, 0 - s; }
+	if r == 2 { return 0 - s, 0 - t; }
+	if r == 3 { return 0 - t, s; }
+	return s, t;
+}
+fn invert(s int, t int) int, int {
+	var ss = 1;
+	var st = 1;
+	if s >= 0 && t >= 0 {
+		ss = 1;
+		st = 1;
+	} else if s <= 0 && t <= 0 {
+		ss = -1;
+		st = -1;
+	} else {
+		ss = if s > 0 { 1 } else { -1 };
+		st = if t > 0 { 1 } else { -1 };
+	}
+	let cs = ss * nce;
+	let ct = st * nce;
+	var us = 2 * s - cs;
+	var ut = 2 * t - ct;
+	if ss * st >= 0 {
+		let a = 0 - ut;
+		let b = 0 - us;
+		us = a;
+		ut = b;
+	} else {
+		let a = us;
+		us = ut;
+		ut = a;
+	}
+	us = w32(us + cs);
+	ut = w32(ut + ct);
+	return us / 2, ut / 2;
+}
+fn norm_apply(ps int, pt int, e int, f int) int, int {
+	var s = ps - nce;
+	var t = pt - nce;
+	let indiamond = abs(s) + abs(t) <= nce;
+	if !indiamond {
+		let a, b = invert(s, t);
+		s = a;
+		t = b;
+	}
+	let bl = (s == 0 && t == 0) || (s < 0 && t <= 0);
+	var r = 0;
+	if s == 0 {
+		if t == 0 { r = 0; } else if t > 0 { r = 3; } else { r = 1; }
+	} else if s > 0 {
+		if t >= 0 { r = 2; } else { r = 1; }
+	} else {
+		if t <= 0 { r = 0; } else { r = 3; }
+	}
+	if !bl {
+		let a, b = rot2(r, s, t);
+		s = a;
+		t = b;
+	}
+	var rs = modmax(s + e);
+	var rt = modmax(t + f);
+	if !bl {
+		let a, b = rot2((4 - r) % 4, rs, rt);
+		rs = a;
+		rt = b;
+	}
+	if !indiamond {
+		let a, b = invert(rs, rt);
+		rs = a;
+		rt = b;
+	}
+	return rs + nce, rt + nce;
+}
+=== 69eff5a1ef6954f6
+var pbad bool = false;
+var pbase int = 0;
+var pos_ai int = -1;
+var pred int[>..];
+fn wmul(a int, b int) int { let x = (a as! u64) * (b as! u64); x as! int }
+fn wadd(a int, b int) int { let x = (a as! u64) + (b as! u64); x as! int }
+fn wsub(a int, b int) int { let x = (a as! u64) - (b as! u64); x as! int }
+fn wabs(a int) int { if a < 0 { wsub(0, a) } else { a } }
+fn idw(a int, b int) int { if b == -1 { wsub(0, a) } else { a / b } }
+fn zero_pred(pc int) {
+	pred.clear();
+	for j in pc { pred.push(0); }
+}
+fn dat(k int) int {
+	let i = pbase + k;
+	if i < 0 || i >= port.len { pbad = true; return 0; }
+	port[i]
+}
+fn prev_pred(p int, pc int) {
+	pred.clear();
+	for j in pc { pred.push(dat((p - 1) * pc + j)); }
+}
+fn ent(t int, c int) int {
+	let v = vert(t, c);
+	if v < 0 || v >= v2d.len { pbad = true; return -1; }
+	let e = v2d[v];
+	if e < 0 { pbad = true; }
+	e
+}
+fn posc(e int, k int) int {
+	if e < 0 || e >= seq.len || pos_ai < 0 { pbad = true; return 0; }
+	if pmap_at[pos_ai] < 0 || port_at[pos_ai] < 0 { pbad = true; return 0; }
+	let mi = pmap_at[pos_ai] + seq[e];
+	if mi >= pmaps.len { pbad = true; return 0; }
+	let en = pmaps[mi];
+	let i = port_at[pos_ai] + en * 3 + k;
+	if en < 0 || i >= port.len { pbad = true; return 0; }
+	port[i]
+}
+fn posof(e int) int, int, int {
+	let x = posc(e, 0);
+	let y = posc(e, 1);
+	let z = posc(e, 2);
+	return x, y, z;
+}
+fn pred_delta(p int, pc int) {
+	if p == 0 { zero_pred(pc); } else { prev_pred(p, pc); }
+}
+=== 44fa8d7bbfa59dd2
+var cf_data int[>..];
+var cf_at int[>..];
+var cf_cnt int[>..];
+var cf_used int[>..];
+var pall int[>..];
+var psum int[>..];
+fn para(t int, p int, c int, pc int) bool {
+	let o = oppo(t, c);
+	if o < 0 { return false; }
+	let eo = ent(t, o);
+	let en = ent(t, nxt(o));
+	let ep = ent(t, prv(o));
+	if pbad { return false; }
+	if eo < 0 || en < 0 || ep < 0 || eo >= p || en >= p || ep >= p { return false; }
+	pred.clear();
+	for j in pc { pred.push(w32(dat(en * pc + j) + dat(ep * pc + j) - dat(eo * pc + j))); }
+	true
+}
+fn pred_para(p int, pc int) {
+	if p == 0 { zero_pred(pc); return; }
+	if p < d2c.len && para(tt, p, d2c[p], pc) { return; }
+	prev_pred(p, pc);
+}
+fn cmp_data() bool {
+	cf_data.clear();
+	cf_at.clear();
+	cf_cnt.clear();
+	cf_used.clear();
+	for k in 4 {
+		let cnt = varintv(5);
+		if bad || cnt > nc { return false; }
+		cf_at.push(cf_data.len);
+		cf_cnt.push(cnt);
+		cf_used.push(0);
+		if cnt > 0 {
+			let d = rbit_start();
+			if d < 0 { return false; }
+			for i in cnt { cf_data.push(if rbit(d) { 1 } else { 0 }); }
+		}
+	}
+	true
+}
+fn pred_cmp(p int, pc int) {
+	if p == 0 { zero_pred(pc); return; }
+	pall.clear();
+	var cnt = 0;
+	let start = d2c[p];
+	var cur = start;
+	var first = true;
+	while cur != -1 {
+		if para(tt, p, cur, pc) {
+			for j in pc { pall.push(pred[j]); }
+			cnt += 1;
+			if cnt == 4 { break; }
+		}
+		if pbad { return; }
+		if first { cur = swl(tt, cur); } else { cur = swr(tt, cur); }
+		if cur == start { break; }
+		if cur == -1 && first {
+			first = false;
+			cur = swr(tt, start);
+		}
+	}
+	psum.clear();
+	for j in pc { psum.push(0); }
+	var used = 0;
+	if cnt > 0 {
+		let ctx = cnt - 1;
+		for i in cnt {
+			let u = cf_used[ctx];
+			if u >= cf_cnt[ctx] { pbad = true; return; }
+			let crease = cf_data[cf_at[ctx] + u] == 1;
+			cf_used[ctx] = u + 1;
+			if !crease {
+				used += 1;
+				for j in pc { psum[j] = w32(psum[j] + pall[i * pc + j]); }
+			}
+		}
+	}
+	if used == 0 {
+		prev_pred(p, pc);
+	} else {
+		pred.clear();
+		for j in pc { pred.push(psum[j] / used); }
+	}
+}
+=== -422de1898911413e
+var orient int[>..<];
+fn tex_data(n int) bool {
+	let cnt = i32v();
+	if bad || cnt < 0 || cnt > n { return false; }
+	let d = rbit_start();
+	if d < 0 { return false; }
+	orient.clear();
+	var last = 1;
+	for i in cnt {
+		if !rbit(d) { last = 1 - last; }
+		orient.push(last);
+	}
+	true
+}
+fn isqrt(n int) int {
+	let nn = n as! u64;
+	if nn == 0 { return 0; }
+	var r u64 = 1;
+	var c = nn;
+	while c >= 2 {
+		r = r * 2;
+		c = c / 4;
+	}
+	loop {
+		r = (r + nn / r) / 2;
+		if r * r <= nn { break; }
+	}
+	r as! int
+}
+fn pred_tex(p int, pc int) {
+	let c = d2c[p];
+	let nd = ent(tt, nxt(c));
+	let pd = ent(tt, prv(c));
+	if pbad { return; }
+	if nd < p && pd < p {
+		let nu0 = dat(nd * 2);
+		let nu1 = dat(nd * 2 + 1);
+		let pu0 = dat(pd * 2);
+		let pu1 = dat(pd * 2 + 1);
+		if nu0 == pu0 && nu1 == pu1 {
+			pred.clear();
+			pred.push(pu0);
+			pred.push(pu1);
+			return;
+		}
+		let tx, ty, tz = posof(p);
+		let nx, ny, nz = posof(nd);
+		let qx, qy, qz = posof(pd);
+		if pbad { return; }
+		let pnx = qx - nx;
+		let pny = qy - ny;
+		let pnz = qz - nz;
+		let pn2 = wadd(wadd(wmul(pnx, pnx), wmul(pny, pny)), wmul(pnz, pnz));
+		if pn2 != 0 {
+			let cnx = tx - nx;
+			let cny = ty - ny;
+			let cnz = tz - nz;
+			let dot = wadd(wadd(wmul(pnx, cnx), wmul(pny, cny)), wmul(pnz, cnz));
+			let puv0 = pu0 - nu0;
+			let puv1 = pu1 - nu1;
+			let big = 9223372036854775807;
+			let mnu = max(wabs(nu0), wabs(nu1));
+			if mnu > big / pn2 { pbad = true; return; }
+			let ad = wabs(dot);
+			let mp = max(wabs(puv0), wabs(puv1));
+			if mp != 0 && ad > big / mp { pbad = true; return; }
+			let mpn = max(max(wabs(pnx), wabs(pny)), wabs(pnz));
+			if mpn != 0 && ad > big / mpn { pbad = true; return; }
+			let xu0 = wadd(wmul(nu0, pn2), wmul(puv0, dot));
+			let xu1 = wadd(wmul(nu1, pn2), wmul(puv1, dot));
+			let xpx = wadd(nx, idw(wmul(dot, pnx), pn2));
+			let xpy = wadd(ny, idw(wmul(dot, pny), pn2));
+			let xpz = wadd(nz, idw(wmul(dot, pnz), pn2));
+			let dx = tx - xpx;
+			let dy = ty - xpy;
+			let dz = tz - xpz;
+			let cx2 = wadd(wadd(wmul(dx, dx), wmul(dy, dy)), wmul(dz, dz));
+			let sq = isqrt(wmul(cx2, pn2));
+			let cu0 = wmul(puv1, sq);
+			let cu1 = wmul(0 - puv0, sq);
+			if orient.len == 0 { pbad = true; return; }
+			let o = orient.pop();
+			var r0 = 0;
+			var r1 = 0;
+			if o == 1 {
+				r0 = wadd(xu0, cu0);
+				r1 = wadd(xu1, cu1);
+			} else {
+				r0 = wsub(xu0, cu0);
+				r1 = wsub(xu1, cu1);
+			}
+			pred.clear();
+			pred.push(w32(idw(r0, pn2)));
+			pred.push(w32(idw(r1, pn2)));
+			return;
+		}
+	}
+	if nd < p {
+		pred.clear();
+		pred.push(dat(nd * 2));
+		pred.push(dat(nd * 2 + 1));
+	} else if p > 0 {
+		prev_pred(p, 2);
+	} else {
+		zero_pred(2);
+	}
+}
+=== 7ef52049871b9db6
+var flip_dec int = -1;
+var ar int[>..];
+fn pred_geo(p int, pc int) {
+	let c = d2c[p];
+	let cv = ent(tt, c);
+	if pbad { return; }
+	let cx, cy, cz = posof(cv);
+	var sx = 0;
+	var sy = 0;
+	var sz = 0;
+	around(tt, c, ar);
+	for a in ar {
+		let en = ent(tt, nxt(a));
+		let ep = ent(tt, prv(a));
+		if pbad { return; }
+		let nx, ny, nz = posof(en);
+		let qx, qy, qz = posof(ep);
+		let ax = nx - cx;
+		let ay = ny - cy;
+		let az = nz - cz;
+		let bx = qx - cx;
+		let by = qy - cy;
+		let bz = qz - cz;
+		sx = wadd(sx, wsub(wmul(ay, bz), wmul(az, by)));
+		sy = wadd(sy, wsub(wmul(az, bx), wmul(ax, bz)));
+		sz = wadd(sz, wsub(wmul(ax, by), wmul(ay, bx)));
+	}
+	if pbad { return; }
+	var s = wadd(wadd(wabs(sx), wabs(sy)), wabs(sz));
+	if s > 536870912 {
+		let q = s / 536870912;
+		sx = idw(sx, q);
+		sy = idw(sy, q);
+		sz = idw(sz, q);
+	}
+	s = wadd(wadd(wabs(sx), wabs(sy)), wabs(sz));
+	var x = 0;
+	var y = 0;
+	var z = 0;
+	if s == 0 {
+		x = nce;
+	} else {
+		x = idw(wmul(sx, nce), s);
+		y = idw(wmul(sy, nce), s);
+		let zz = nce - abs(x) - abs(y);
+		z = if sz < 0 { 0 - zz } else { zz };
+	}
+	if rbit(flip_dec) {
+		x = 0 - x;
+		y = 0 - y;
+		z = 0 - z;
+	}
+	var os = 0;
+	var ot = 0;
+	if x >= 0 {
+		os = y + nce;
+		ot = z + nce;
+	} else {
+		os = if y < 0 { abs(z) } else { nmv - abs(z) };
+		ot = if z < 0 { abs(y) } else { nmv - abs(y) };
+	}
+	if (os == 0 && ot == 0) || (os == 0 && ot == nmv) || (os == nmv && ot == 0) {
+		os = nmv;
+		ot = nmv;
+	} else if os == 0 && ot > nce {
+		ot = 2 * nce - ot;
+	} else if os == nmv && ot < nce {
+		ot = 2 * nce - ot;
+	} else if ot == nmv && os < nce {
+		os = 2 * nce - os;
+	} else if ot == 0 && os > nce {
+		os = 2 * nce - os;
+	}
+	pred.clear();
+	pred.push(os);
+	pred.push(ot);
+}
+=== 7664f5d53746f897
+fn compute(ai int, kind int, xf int, pc int) bool {
+	pbad = false;
+	if kind == 5 || kind == 6 {
+		pos_ai = first_pos();
+		if pc != 2 || pos_ai < 0 || port_at[pos_ai] < 0 || port_pc[pos_ai] != 3 { return false; }
+	}
+	pbase = port.len;
+	port_at[ai] = pbase;
+	port_pc[ai] = pc;
+	let n = nent * pc;
+	if kind == 4 {
+		if !cmp_data() { return false; }
+	}
+	if kind == 5 {
+		if !tex_data(n) { return false; }
+	}
+	if xf == 1 {
+		if !read_wrap() { return false; }
+	} else {
+		if !read_norm() { return false; }
+	}
+	if kind == 6 {
+		flip_dec = rbit_start();
+		if flip_dec < 0 { return false; }
+	}
+	for p in nent {
+		if kind == 1 {
+			pred_para(p, pc);
+		} else if kind == 4 {
+			pred_cmp(p, pc);
+		} else if kind == 5 {
+			pred_tex(p, pc);
+		} else if kind == 6 {
+			pred_geo(p, pc);
+		} else {
+			pred_delta(p, pc);
+		}
+		if pbad || pred.len != pc { return false; }
+		if xf == 1 {
+			for j in pc { port.push(wrap_apply(pred[j], cor[p * pc + j])); }
+		} else {
+			let a, b = norm_apply(pred[0], pred[1], cor[p * 2], cor[p * 2 + 1]);
+			port.push(w32(a));
+			port.push(w32(b));
+		}
+	}
+	!bad
+}
+fn portable(ai int, edge bool) bool {
+	let dk = att_dkind[ai];
+	if dk == 0 { return gen_read(ai); }
+	let pm = i8v();
+	if bad || pm < -2 || pm > 6 { return false; }
+	var xf = -1;
+	if pm != -2 {
+		xf = i8v();
+		if bad || xf < -1 || xf > 3 { return false; }
+	}
+	let isnorm = dk == 3;
+	let has = pm != -2 && ((isnorm && xf == 3) || (!isnorm && xf == 1));
+	var kind = 0;
+	if has {
+		kind = pick_kind(pm, isnorm, edge);
+		if kind < 0 { return false; }
+	}
+	let pc = if isnorm { 2 } else { att_comps[ai] };
+	let n = nent * pc;
+	if !read_cor(n, pc, !(has && xf == 3)) { return false; }
+	if !has {
+		port_at[ai] = port.len;
+		port_pc[ai] = pc;
+		for i in cor.len { port.push(w32(cor[i])); }
+		return true;
+	}
+	compute(ai, kind, xf, pc)
+}
+fn conv(dt int, v int) int {
+	if dt == 2 { return v & 255; }
+	if dt == 1 { return ((v & 255) ^ 128) - 128; }
+	if dt == 4 { return v & 65535; }
+	if dt == 3 { return ((v & 65535) ^ 32768) - 32768; }
+	if dt == 6 { return v & 0xFFFFFFFF; }
+	v
+}
+fn finalize(ai int) bool {
+	let dk = att_dkind[ai];
+	let cm = att_comps[ai];
+	let dt = att_dtype[ai];
+	let base = att_first[ai];
+	let pa = port_at[ai];
+	let ma = pmap_at[ai];
+	if dk == 0 {
+		for pt in points {
+			let e = pmaps[ma + pt];
+			for j in cm { values[base + pt * cm + j] = gen[gen_at[ai] + e * cm + j]; }
+		}
+		return true;
+	}
+	if dk == 1 {
+		if dt < 1 || dt > 6 { return fail("integer type"); }
+		for pt in points {
+			let e = pmaps[ma + pt];
+			for j in cm { values[base + pt * cm + j] = conv(dt, port[pa + e * cm + j]) as real; }
+		}
+		return true;
+	}
+	if dk == 2 {
+		var mins f32[>..] = [];
+		for j in cm { mins.push(f32v()); }
+		let rg = f32v();
+		let qb = u8v();
+		if bad || qb < 1 || qb > 30 { return fail("quantization"); }
+		let dl f32 = rg / (((1 << qb) - 1) as f32);
+		for pt in points {
+			let e = pmaps[ma + pt];
+			for j in cm {
+				let v f32 = port[pa + e * cm + j] as f32;
+				let m f32 = v * dl;
+				let r f32 = m + mins[j];
+				values[base + pt * cm + j] = r;
+			}
+		}
+		return true;
+	}
+	let nb = u8v();
+	if bad || nb < 2 || nb > 30 { return fail("normal bits"); }
+	let mv = (1 << nb) - 2;
+	let sc f32 = 2.0 / (mv as f32);
+	for pt in points {
+		let e = pmaps[ma + pt];
+		let s = port[pa + e * 2];
+		let t = port[pa + e * 2 + 1];
+		var y f32 = (s as f32) * sc - 1.0;
+		var z f32 = (t as f32) * sc - 1.0;
+		let x f32 = 1.0 - abs(y) - abs(z);
+		let o f32 = max(0.0 - x, 0.0);
+		if y < 0.0 { y = y + o; } else { y = y - o; }
+		if z < 0.0 { z = z + o; } else { z = z - o; }
+		let n2 f32 = x * x + y * y + z * z;
+		if n2 < 0.000001 {
+			values[base + pt * 3] = 0.0;
+			values[base + pt * 3 + 1] = 0.0;
+			values[base + pt * 3 + 2] = 0.0;
+		} else {
+			let sq f32 = sqrt(n2 as real) as f32;
+			let dd f32 = 1.0 / sq;
+			values[base + pt * 3] = x * dd;
+			values[base + pt * 3 + 1] = y * dd;
+			values[base + pt * 3 + 2] = z * dd;
+		}
+	}
+	true
+}
+fn soft(msg const byte[:]) bool {
+	if why.len == 0 { why.append(msg); }
+	false
+}
+fn attributes(edge bool) bool {
+	port.clear();
+	gen.clear();
+	pmaps.clear();
+	if !read_decoders(edge) { return false; }
+	for d in dec_slot.len {
+		if !build_sequence(d, edge) { return soft("sequence"); }
+		for a in dec_cnt[d] {
+			if !portable(dec_first[d] + a, edge) { return soft("attribute values"); }
+		}
+		for a in dec_cnt[d] {
+			if !finalize(dec_first[d] + a) { return soft("attribute transform"); }
+		}
+	}
+	true
+}
+=== 0dead0728abbafec
+fn clear_outputs() {
+	faces.clear();
+	points = 0;
+	att_type.clear();
+	att_dtype.clear();
+	att_comps.clear();
+	att_norm.clear();
+	att_uid.clear();
+	att_first.clear();
+	values.clear();
+}
+fn reset() {
+	clear_outputs();
+	why.clear();
+	buf.clear();
+	pos = 0;
+	bad = false;
+	bit_at = 0;
+	bit_end = 0;
+	bit_off = 0;
+	rb_data.clear();
+	rb_off.clear();
+	rb_state.clear();
+	rb_p0.clear();
+	rs_prob.clear();
+	rs_cum.clear();
+	rs_lut.clear();
+	rs_precision = 0;
+	c2v.clear();
+	opp.clear();
+	lmc.clear();
+	n_ad = 0;
+	nc = 0;
+	a_c2v.clear();
+	a_seam.clear();
+	a_vseam.clear();
+	a_lmc.clear();
+	a_lmc_at.clear();
+	a_nv.clear();
+	valence = false;
+	hole.clear();
+	sp_src.clear();
+	sp_split.clear();
+	sp_edge.clear();
+	start_dec = -1;
+	seam_dec.clear();
+	valences.clear();
+	ctx_sym.clear();
+	ctx_at.clear();
+	ctx_left.clear();
+	active = -1;
+	att_start = 0;
+	stk.clear();
+	sp_corner.clear();
+	removed.clear();
+	nfaces = 0;
+	tmp.clear();
+	conn_nv = 0;
+	cp.clear();
+	dec_slot.clear();
+	dec_type.clear();
+	dec_trav.clear();
+	dec_first.clear();
+	dec_cnt.clear();
+	att_dkind.clear();
+	port_at.clear();
+	pmap_at.clear();
+	gen_at.clear();
+	port_pc.clear();
+	v2d.clear();
+	d2c.clear();
+	seq.clear();
+	vis_f.clear();
+	vis_v.clear();
+	pdegree.clear();
+	pmap.clear();
+	pmaps.clear();
+	port.clear();
+	gen.clear();
+	cor.clear();
+	pred.clear();
+	cf_data.clear();
+	cf_at.clear();
+	cf_cnt.clear();
+	cf_used.clear();
+	pall.clear();
+	psum.clear();
+	orient.clear();
+	ar.clear();
+	nent = 0;
+	tt = -1;
+	pos_ai = -1;
+	flip_dec = -1;
+	pbad = false;
+}
+fn body() bool {
+	let magic = "DRACO";
+	for i in 5 {
+		let b = u8v();
+		let w int = magic[i];
+		if b != w { return fail("not a Draco stream"); }
+	}
+	let maj = u8v();
+	let mnr = u8v();
+	let et = u8v();
+	let method = u8v();
+	let flags = u16v();
+	if bad { return fail("header too short"); }
+	if maj != 2 || mnr != 2 { return fail("unsupported version"); }
+	if et != 1 { return fail("not a triangle mesh"); }
+	if method > 1 { return fail("unknown encoding method"); }
+	if (flags & 0x8000) != 0 {
+		if !skip_meta() { return fail("metadata"); }
+	}
+	if method == 1 {
+		let tr = u8v();
+		if bad || (tr != 0 && tr != 2) { return fail("traversal type"); }
+		valence = tr == 2;
+		if !edgebreaker() { return soft("edgebreaker"); }
+		if !traversal_start() { return soft("traversal start"); }
+		if !symbol_loop() { return soft("symbols"); }
+		if !finish_connectivity() { return soft("connectivity"); }
+		if !seams() { return soft("seams"); }
+		if !assign_points() { return soft("points"); }
+		pos = att_start;
+		if !attributes(true) { return soft("attributes"); }
+		return true;
+	}
+	if !sequential() { return soft("sequential"); }
+	if !attributes(false) { return soft("attributes"); }
+	true
+}
+fn decode(src const byte[:]) bool {
+	reset();
+	buf.append(src);
+	var ok = body();
+	if ok && bad { ok = fail("read past end"); }
+	if !ok {
+		clear_outputs();
+		if why.len == 0 { why.append("decode failed"); }
+	}
+	ok
+}
