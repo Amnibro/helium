@@ -3358,7 +3358,13 @@ The default sweater (`garment::spec()` with `fine` 2) on `hc/test/gfx/fixtures/m
   the neck band's folded edge and the two cuffs.
 * **G2 even texture.** At most 0.5% of triangles have a largest texture-coordinate
   edge outside 0.3 to 2.5 times their largest edge in space. Control: the same
-  measure with every u halved must fail.
+  measure with every u halved must fail. Added after the first run, when that control
+  did not fire (halving u flagged only 0.08%; the edge ratio cannot see a 2x squash):
+  the texture stretch of a triangle is the ratio of the larger to the smaller singular
+  value of its map from space (meters) to texture coordinates; the median stretch is
+  at most 1.25 and at most 5% of triangles stretch more than 2. The first run measured
+  a median of 1.48 with 25% above 2: stitches were wider at the sides of the body than
+  at the front.
 * **G3 off the body.** Every vertex the drape does not hold sits at least `gap`
   (0.002) outside its anchor's tangent plane on the shell.
 * **G4 the hem lands.** The lowest garment point is within 0.01 of the pelvis

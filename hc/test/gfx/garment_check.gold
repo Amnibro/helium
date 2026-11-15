@@ -1,0 +1,16 @@
+use std
+into garment_check.amni
+
+Imports: os, math, dictionary, gfx.obj, gfx.cloth and gfx.garment. A standalone program that checks the garment module on the CPU and prints one line per check, then "garment: ok" when all pass or "garment: FAILED" when any fails. The module functions and arrays already exist; never define them here: `obj::load(path) bool`, `obj::V` (f32, three per vertex), `obj::tris_of(name, out)` (out a growable int array), `obj::centroid(name) real, real, real`; `garment::spec() garment::Spec` (a struct with real fields including `unit`, `hem`, `gap` and `fine`), `garment::make(P, I, joints, s) bool` (P read-only f32 slice, I read-only int slice, joints read-only f32 slice), `garment::drape(steps int) int`, and the result arrays `garment::pos`, `garment::uv`, `garment::anchor`, `garment::anchor_n` (f32), `garment::body` and `garment::rib` (u32, three per triangle) and `garment::held` (bool). `os::clock()` gives seconds as a real. The fixture path is the first argument after the program's own name (`args()` lists the program first), or "hc/test/gfx/fixtures/mh_tights.obj" when missing.
+
+`tri(t int) int, int, int` gives triangle t's three vertex numbers, counting `garment::body`'s triangles first and then `garment::rib`'s. `ntri() int` is the total triangle count.
+
+`loops() int, int` welds vertices at exactly equal positions (a hash map from the three position floats' bit patterns, each read as a u32 and combined into one int key as x times 1000003 squared plus y times 1000003 plus z, with collisions resolved by comparing positions in a list per key) and counts, over every triangle's three edges between distinct welded vertices, how many triangles use each undirected welded edge. It returns the largest use count and the number of closed loops among the edges used once: join each such edge's two ends (union-find over welded vertices) and count the distinct roots among their ends.
+
+`uv_bad(scale real) real` is the share of triangles whose largest texture-coordinate edge (with every u multiplied by scale) is below 0.3 times or above 2.5 times their largest edge in space in meters (positions times `garment::S.unit`).
+
+`clearance() real` is the smallest, over vertices not held, of (position minus anchor) dot anchor normal, times `garment::S.unit`.
+
+`lowest() real` is the smallest garment y times `garment::S.unit`.
+
+`main()`: load the fixture (print "garment: no fixture" and stop when it fails); get the joints as 30 f32 numbers from the centroids of "joint-pelvis", "joint-spine-2", "joint-spine-1", "joint-neck", "joint-l-shoulder", "joint-l-elbow", "joint-l-hand", "joint-r-shoulder", "joint-r-elbow", "joint-r-hand" in that order; the shell is `obj::tris_of("helper-tights")`. With s = `garment::spec()` and `s.fine` 2, time `garment::make` plus `garment::drape(240)` with `os::clock()`. Print "G1 edges: max use M loops L" with pass when M is at most 2 and L is 4. Print "G2 uv: share X control Y" with pass when X is at most 0.005 and the control (scale 0.5) is above 0.005. Print "G3 clearance: X m" with pass when X is at least `s.gap`. Print "G4 hem: lowest X want Y" with Y the pelvis centroid's y times `s.unit` plus `s.hem`, pass when the absolute difference is at most 0.01. Print "G5 cost: X s" with pass when X is at most 5. Each line ends with " ok" or " FAIL".
