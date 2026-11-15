@@ -10,6 +10,7 @@ import gfx;
 import gfx.linalg;
 import gfx.codec_png;
 import gfx.codec_jpeg;
+import gfx.codec_webp;
 import gfx.bc;
 import gfx.ktx2;
 import gfx.meshopt;
@@ -339,6 +340,9 @@ fn need_pixels(i int) {
 		} else if codec_png::is_png(src) {
 			let a, b, c = codec_png::decode(src, decoded);
 			w = a; h = b; ok = c;
+		} else if codec_webp::is_webp(src) {
+			let a, b, c = codec_webp::decode(src, decoded);
+			w = a; h = b; ok = c;
 		} else {
 			let a, b, c = codec_jpeg::decode(src, decoded);
 			w = a; h = b; ok = c;
@@ -376,6 +380,9 @@ fn decode_image(data const byte[:]) Image {
 		if codec_png::is_png(data) {
 			let a, b, c = codec_png::size(data);
 			w = a; h = b; ok = c;
+		} else if codec_webp::is_webp(data) {
+			let a, b, c = codec_webp::size(data);
+			w = a; h = b; ok = c;
 		} else {
 			let a, b, c = codec_jpeg::size(data);
 			w = a; h = b; ok = c;
@@ -392,6 +399,9 @@ fn decode_image(data const byte[:]) Image {
 	var ok = false;
 	if codec_png::is_png(data) {
 		let a, b, c = codec_png::decode(data, px);
+		w = a; h = b; ok = c;
+	} else if codec_webp::is_webp(data) {
+		let a, b, c = codec_webp::decode(data, px);
 		w = a; h = b; ok = c;
 	} else if data.len > 3 && data[0] == 255 && data[1] == 216 {
 		let a, b, c = codec_jpeg::decode(data, px);
@@ -464,7 +474,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
 		let ext = json::text_of(d, e);
-		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" && ext != "EXT_meshopt_compression" && ext != "KHR_meshopt_compression" && ext != "KHR_draco_mesh_compression" {
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" && ext != "EXT_meshopt_compression" && ext != "KHR_meshopt_compression" && ext != "KHR_draco_mesh_compression" && ext != "EXT_texture_webp" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
 	}
@@ -563,7 +573,8 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	asset.textures.first = textures.len;
 	children_of(d, get(d, root, "textures"), list);
 	for t in list {
-		let src = whole(d, t, "source", -1);
+		let ws = whole(d, get(d, get(d, t, "extensions"), "EXT_texture_webp"), "source", -1);
+		let src = if ws >= 0 { ws } else { whole(d, t, "source", -1) };
 		let si = whole(d, t, "sampler", -1);
 		let s = if si >= 0 && si < samplers.len { samplers[si] } else { -1 };
 		let mag = whole(d, s, "magFilter", 9729);

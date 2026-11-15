@@ -1,0 +1,353 @@
+=== 00ec14b9241b07e1
+import os;
+import gfx.codec_webp;
+import gfx.gltf;
+var failed bool = false;
+fn check(name const byte[:], ok bool, detail const byte[:]) {
+	if detail.len > 0 {
+		print(if ok { "PASS " } else { "FAIL " }, name, " (", detail, ")");
+	} else {
+		print(if ok { "PASS " } else { "FAIL " }, name);
+	}
+	if !ok { failed = true; }
+}
+=== -27ce9ff21b7728b0
+fn u32at(b const byte[:], at int) int {
+	(b[at] as int) | ((b[at + 1] as int) << 8) | ((b[at + 2] as int) << 16) | ((b[at + 3] as int) << 24)
+}
+fn fnv(b const byte[:]) u64 {
+	var h u64 = 0xcbf29ce484222325;
+	for x in b {
+		h = (h ^ (x as u64)) * 0x100000001b3;
+	}
+	h
+}
+fn hex16(v u64) byte[>..] {
+	var out byte[>..] = [];
+	for i in 16 {
+		let sh = (15 - i) * 4;
+		let d = ((v >> sh) & 15) as int;
+		if d < 10 { out.push(('0' + d) as byte); } else { out.push(('a' + d - 10) as byte); }
+	}
+	out
+}
+=== 013a46bc908fd77f
+var data byte[>..];
+var dir byte[>..];
+var nofs int[>..];
+var nlen int[>..];
+var fofs int[>..];
+var flen int[>..];
+var cw int[>..];
+var ch int[>..];
+var ehash u64[>..];
+fn cnt() int { nofs.len }
+fn file(rec int) const byte[:] { data[fofs[rec]..fofs[rec] + flen[rec]] }
+fn rec_name(rec int) const byte[:] { data[nofs[rec]..nofs[rec] + nlen[rec]] }
+fn kind(rec int) int {
+	let f = file(rec);
+	if f.len >= 16 {
+		let t = f[12..16];
+		if t == "VP8X" { return 1; }
+		if t == "VP8L" {
+			if f.len > 24 && (f[24] & 0x10) != 0 { return 3; }
+			return 2;
+		}
+	}
+	return 0;
+}
+fn load_cases() bool {
+	var path byte[>..] = [];
+	if arg_count() > 1 {
+		for s, i in args() {
+			if i == 1 { path.append(s); }
+		}
+	} else {
+		path.append("hc/test/gfx/fixtures/webp_cases.bin");
+	}
+	var cut = 0;
+	for i in path.len {
+		if path[i] == '/' { cut = i + 1; }
+	}
+	dir.clear();
+	dir.append(path[..cut]);
+	if !read_file(path, data) {
+		check("cases file", false, path);
+		return false;
+	}
+	let n = data.len;
+	var at = 0;
+	var whole = true;
+	while at < n && whole {
+		var p = at;
+		guard p + 4 <= n else { whole = false; break; }
+		let nl = u32at(data, p);
+		p += 4;
+		let nat = p;
+		p += nl;
+		guard p + 4 <= n else { whole = false; break; }
+		let fl = u32at(data, p);
+		p += 4;
+		let fat = p;
+		p += fl;
+		guard p + 20 <= n else { whole = false; break; }
+		let w = u32at(data, p);
+		let h = u32at(data, p + 4);
+		var hv u64 = 0;
+		for k in 8 {
+			hv = hv | ((data[p + 8 + k] as u64) << (k * 8));
+		}
+		let el = u32at(data, p + 16);
+		p += 20;
+		guard p + el <= n else { whole = false; break; }
+		p += el;
+		nofs.push(nat);
+		nlen.push(nl);
+		fofs.push(fat);
+		flen.push(fl);
+		cw.push(w);
+		ch.push(h);
+		ehash.push(hv);
+		at = p;
+	}
+	if !whole { check("cases file is whole", false, ""); }
+	return true;
+}
+=== 5467823f2648eabd
+var last byte[>..];
+fn setlast(rec int, why const byte[:], more const byte[:]) {
+	last.clear();
+	format(last, rec_name(rec), " ", why, more);
+}
+fn same(rec int) bool {
+	var px byte[>..] = [];
+	let w, h, ok = codec_webp::decode(file(rec), px);
+	if !ok {
+		setlast(rec, "decode: ", codec_webp::error());
+		return false;
+	}
+	if w != cw[rec] || h != ch[rec] || px.len != w * h * 4 {
+		setlast(rec, "size", "");
+		return false;
+	}
+	if fnv(px) != ehash[rec] {
+		setlast(rec, "hash", "");
+		return false;
+	}
+	return true;
+}
+=== 083773c5981ca064
+fn w1() {
+	var pass = 0;
+	var first byte[>..] = [];
+	for rec in cnt() {
+		if same(rec) {
+			pass += 1;
+		} else if first.len == 0 {
+			first.append(last);
+		}
+	}
+	var d byte[>..] = [];
+	format(d, pass, " of ", cnt());
+	if pass < cnt() { format(d, " ", first); }
+	check("W1 every record decodes the same", pass == cnt(), d);
+}
+=== -ccd3cff2d9b0a46
+fn has(hay const byte[:], sub const byte[:]) bool {
+	if hay.len < sub.len { return false; }
+	for i in hay.len - sub.len + 1 {
+		if starts_with(hay[i..], sub) { return true; }
+	}
+	return false;
+}
+fn size_tag(g int) const byte[:] {
+	match g {
+		0 => " 1x1 ",
+		1 => " 2x3 ",
+		2 => " 17x13 ",
+		3 => " 64x64 ",
+		4 => " 33x70 ",
+		_ => " 129x67 ",
+	}
+}
+fn group_label(g int) const byte[:] {
+	match g {
+		0 => "lossy",
+		1 => "lossy alpha",
+		2 => "lossless",
+		3 => "lossless alpha",
+		4 => "size 1x1",
+		5 => "size 2x3",
+		6 => "size 17x13",
+		7 => "size 64x64",
+		8 => "size 33x70",
+		_ => "size 129x67",
+	}
+}
+fn in_group(g int, rec int) bool {
+	if g < 4 { return kind(rec) == g; }
+	return has(rec_name(rec), size_tag(g - 4));
+}
+fn w2() {
+	for g in 10 {
+		var p = 0;
+		var t = 0;
+		for rec in cnt() {
+			if in_group(g, rec) {
+				t += 1;
+				if same(rec) { p += 1; }
+			}
+		}
+		var nm byte[>..] = [];
+		format(nm, "W2 ", group_label(g));
+		var d byte[>..] = [];
+		format(d, p, " of ", t);
+		check(nm, t > 0 && p == t, d);
+	}
+}
+=== 22f5594d9f81dd38
+var tried int = 0;
+fn damaged(buf const byte[:], must_fail bool) bool {
+	var px byte[>..] = [];
+	let w, h, ok = codec_webp::decode(buf, px);
+	tried += 1;
+	if must_fail && ok { return false; }
+	if !ok { return px.len == 0; }
+	return px.len == w * h * 4;
+}
+fn w3() {
+	var good = true;
+	for rec in cnt() {
+		let f = file(rec);
+		guard f.len > 1 else { continue; }
+		if !damaged(f[..f.len - 1], false) { good = false; }
+		if !damaged(f[..f.len / 2], false) { good = false; }
+		var c byte[>..] = [];
+		c.append(f);
+		c[0] = 0x55;
+		if !damaged(c, true) { good = false; }
+		c.clear();
+		c.append(f);
+		c[f.len / 2] = c[f.len / 2] ^ 0x5a;
+		if !damaged(c, false) { good = false; }
+		c.clear();
+		c.append(f);
+		for i in f.len / 2..f.len {
+			c[i] = 0xff;
+		}
+		if !damaged(c, false) { good = false; }
+	}
+	var d byte[>..] = [];
+	format(d, tried);
+	check("W3 damaged files never crash", good, d);
+}
+=== -588461809d5134a9
+fn big_name(i int) const byte[:] {
+	match i {
+		0 => "webp_big_lossy.webp",
+		1 => "webp_big_lossless.webp",
+		2 => "webp_big_lossy_alpha.webp",
+		_ => "webp_big_lossless_alpha.webp",
+	}
+}
+fn big_hash(i int) const byte[:] {
+	match i {
+		0 => "e96d3f73f75a7ffa",
+		1 => "0a98e80c86ee464f",
+		2 => "117a5a16faae1dc9",
+		_ => "22f082db1dd576da",
+	}
+}
+fn now_ns() real {
+	clock() * 1000000000.0
+}
+fn w4() {
+	for i in 4 {
+		let nm = big_name(i);
+		let path = dirjoin(nm);
+		var bytes byte[>..] = [];
+		var nm2 byte[>..] = [];
+		format(nm2, "W4 ", nm);
+		var d byte[>..] = [];
+		if !read_file(path, bytes) {
+			format(d, path);
+			check(nm2, false, d);
+			continue;
+		}
+		var good = true;
+		var best real = 1e18;
+		for r in 7 {
+			var px byte[>..] = [];
+			let t0 = now_ns();
+			let w, h, ok = codec_webp::decode(bytes, px);
+			let t1 = now_ns();
+			let ns = max(t1 - t0, 1.0);
+			if ns < best { best = ns; }
+			if !ok || w != 1024 || h != 768 || px.len != w * h * 4 {
+				good = false;
+			} else if hex16(fnv(px)) != big_hash(i) {
+				good = false;
+			}
+		}
+		let ms = best / 1000000.0;
+		let mpx = 1024.0 * 768.0 * 1000.0 / best;
+		format_flt(d, ms, 1);
+		format(d, " ms, ");
+		format_flt(d, mpx, 1);
+		format(d, " Mpx/s");
+		check(nm2, good && mpx > 10.0, d);
+	}
+}
+=== 7cfd78aa46192464
+fn put32(out byte[>..]&, v int) {
+	for k in 4 {
+		out.push(((v >> (k * 8)) & 255) as byte);
+	}
+}
+fn snapshot(path const byte[:], out byte[>..]&) int {
+	gltf::reset();
+	let a = gltf::load(path);
+	if a < 0 {
+		var d byte[>..] = [];
+		format(d, path, " ", gltf::error());
+		check("W5 gltf load", false, d);
+		return -1;
+	}
+	var n = 0;
+	for &t in gltf::textures {
+		let i = t.image as int;
+		put32(out, gltf::images[i].width as int);
+		put32(out, gltf::images[i].height as int);
+		out.append(gltf::image_pixels(i));
+		n += 1;
+	}
+	return n;
+}
+fn dirjoin(name const byte[:]) byte[>..] {
+	var p byte[>..] = [];
+	p.append(dir);
+	p.append(name);
+	p
+}
+fn w5() {
+	var a byte[>..] = [];
+	var b byte[>..] = [];
+	let pa = dirjoin("scene_webp.glb");
+	let pb = dirjoin("scene_webp_ref.glb");
+	let na = snapshot(pa, a);
+	let nb = snapshot(pb, b);
+	var d byte[>..] = [];
+	format(d, na, " textures, ", a.len, " bytes");
+	check("W5 glTF textures load the same", na == 2 && nb == 2 && a == b, d);
+}
+=== 3521ad498eb83235
+fn main() {
+	if load_cases() {
+		w1();
+		w2();
+		w3();
+	}
+	w4();
+	w5();
+	if failed { print("webp: FAILED"); } else { print("webp: ok"); }
+}

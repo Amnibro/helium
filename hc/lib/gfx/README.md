@@ -23,6 +23,7 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
 | `meshopt` | decoder for glTF buffer views compressed with `EXT_meshopt_compression` or `KHR_meshopt_compression`: vertex streams (versions 0 and 1), triangle and index streams, and the octahedral, quaternion, exponential and color filters; `gltf` calls it while loading, so compressed files need no extra step |
 | `draco` | decoder for Draco 2.2 meshes (`KHR_draco_mesh_compression`): sequential and edgebreaker (standard and valence) connectivity, every prediction scheme and transform the 2.2 encoders write, quantized and integer attributes; `gltf` calls it while loading |
+| `codec_webp` | WebP decoder: lossy VP8 (with `ALPH` alpha) and lossless VP8L stills, simple and extended containers, output equal to libwebp's RGBA; `gltf` calls it for `.webp` images and `EXT_texture_webp` |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
 | `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
@@ -4484,6 +4485,38 @@ draco 1.5.7 decoder (Release build, same PC) takes 110 ms, 3 ms and 2 ms on the 
 files, which need the geometric-normal and multi-parallelogram predictions, are about 6 times faster
 here. D5 passes.
 
+### WebP textures
+
+`codec_webp` decodes WebP still pictures to RGBA8: lossy (VP8, with or without an `ALPH` alpha plane,
+raw or lossless-compressed, with any of the four alpha filters) and lossless (VP8L, every transform,
+color cache and meta codes), in the simple and the extended (`VP8X`) container. Its output is meant to
+match libwebp's `WebPDecodeRGBA` byte for byte (fancy chroma upsampling, unpremultiplied alpha).
+Animated files fail cleanly. `gltf` decodes `.webp` images and reads the `EXT_texture_webp` source of a
+texture before its plain `source` fallback.
+
+`webp_check` (built from `webp_check.gold`, run by `gfxtest.sh`, CPU only) checks it against 472 files
+made by the libwebp 1.6.0 encoder, whose expected output is the libwebp 1.6.0 decoder's
+(`hc/test/gfx/fixtures/webp_cases.bin`: 160 lossy, 120 lossy with alpha, 120 lossless, 72 lossless with
+alpha; sizes 1x1, 2x3, 17x13, 64x64, 33x70 and 129x67; smooth gradients, noise, hard edges and few-color
+pictures; lossy quality, filter strength, sharpness, segments, partitions and alpha settings; lossless
+effort levels, exact mode and palettes). Bars, registered before the first run:
+
+- W1, W2: every file decodes to exactly the reference RGBA (FNV-1a 64 of every byte), counted per kind
+  (lossy, lossy with alpha, lossless, lossless with alpha) and per size; each group must have cases.
+- W3: 2,360 damaged files (cut by one byte, cut in half, a wrong first byte, a flipped byte, a run of
+  0xff) never crash; a decode either fails and leaves no pixels or gives exactly width times height
+  pixels; a wrong first byte fails.
+- W4: four 1024x768 pictures (lossy, lossless, and each with alpha) decode exactly and at more than
+  10 million pixels per second each.
+- W5: `scene_webp.glb` (two `EXT_texture_webp` textures, one lossless and one lossy, one with a PNG
+  fallback and one without) loads to the same texture sizes and pixels as `scene_webp_ref.glb` (the same
+  scene with PNG textures holding the reference decoder's output).
+
+Results (2026-11-15, PC CPU): W1 and W2 pass with all 472 files exact (160 lossy, 120 lossy with alpha,
+120 lossless, 72 lossless with alpha); W3 passes 2,360 damaged decodes; W4 decodes the 1024x768 pictures
+in 11.4 ms (lossy, 69 million pixels per second), 2.4 ms (lossless), 16.5 ms (lossy with alpha) and
+10.2 ms (lossless with alpha). The native libwebp 1.6.0 decoder (system build with SIMD, same PC) takes
+2.3, 0.5, 5.2 and 4.4 ms on the same files, so it is still 2 to 5 times faster. W5 passes.
 ## Provenance
 
 * `sdf_font.amni` is Auron's own: glyphs defined as strokes in code, no font files.
@@ -4507,6 +4540,10 @@ here. D5 passes.
   synthetic meshes (grids, spheres, a torus, a random soup) and from `scene.glb` by a one-off Node script
   that drove the draco3d 1.5.7 encoders and reference decoder (Apache-2.0, npm packages `draco3d` and
   `draco3dgltf`); the script was not kept. They are committed as data.
+* `webp_cases.bin`, `webp_big_*.webp`, `scene_webp.glb` and `scene_webp_ref.glb` were made from synthetic
+  pictures (gradients, noise, checkers, a disc, a seven-color pattern) and from `scene.glb` by one-off C and
+  Node programs that drove the libwebp 1.6.0 encoder and decoder (BSD-3-Clause); the programs were not
+  kept. They are committed as data.
 
 ## References
 
