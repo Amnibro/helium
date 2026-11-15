@@ -1038,7 +1038,13 @@ fn forget() {
 	ml_dirty = true;
 }
 
+var vtouch_lo = -1;
+var vtouch_hi = -1;
+fn touch_verts(first int, count int) { vtouch_lo = if vtouch_lo < 0 { first } else { min(vtouch_lo, first) }; vtouch_hi = max(vtouch_hi, first + count); }
 fn upload_geometry() {
+	if gltf::verts.len == uploaded_verts && vtouch_lo >= 0 && vtouch_hi > vtouch_lo { let vf = gltf::VERTEX_FLOATS; gfx::update_buffer(vbuf, vtouch_lo * vf * 4, bytes_of(gltf::verts[vtouch_lo * vf..vtouch_hi * vf])); }
+	vtouch_lo = -1;
+	vtouch_hi = -1;
 	if gltf::verts.len != uploaded_verts {
 		if uploaded_verts >= 0 || uploaded_verts == -2 { gfx::release(vbuf); }
 		var bytes = bytes_of(gltf::verts);

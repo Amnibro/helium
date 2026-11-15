@@ -1394,6 +1394,29 @@ garment::drape(240);
   `rib` (bands), ready for two materials; `part` (0 front, 1 left arm, 2 right arm, 4 back,
   5 neck band), `anchor`, `anchor_n`, `held`, `goal` describe each vertex.
 
+### Wet fabric (E14)
+
+```
+soak::setup(garment::pos, tris, 1.0);
+soak::rain_map(0.15, -1.0, 0.1, lo_x, lo_y, lo_z, hi_x, hi_y, hi_z, 0.04);
+soak::occlude(garment::pos, tris); soak::occlude(body_p, body_tris);
+soak::expose(garment::pos, garment::nrm, 0.01);
+soak::step(1.0 / 30.0, rate, dry, wick);
+```
+
+`gfx.soak` keeps a wetness history per vertex (`soak::wet`, 0 dry to 1 soaked), welded
+across seams. `rain_map`/`occlude` project every mesh along the rain and bin its
+triangles; `expose` finds, at each vertex's own point, whether any triangle lies more
+than `tol` above it (sheltered: under arms, under a fold, under the chin), else rain
+reaches it in proportion to how squarely it faces the rain. `step` soaks
+(`rate` times exposure times what is still dry), wicks along the cloth (`wick`, more
+readily downhill by `fall`) and dries exponentially (`dry`, half-life ln 2 / `dry`).
+Put `wet` in vertex color alpha and set `shade_a.w` 1 on a fabric material
+(`shading` 3): the fabric darkens (base color to the power 1 + 1.2 wet), gets
+smoother, loses fuzz and sheen, and gains a water-film highlight (f0 0.02, roughness
+0.15, weighted by wet squared). `s3d::touch_verts(first, count)` re-uploads changed
+vertices.
+
 ### Volumetric clouds (E6)
 
 ```
@@ -3392,7 +3415,7 @@ The default sweater (`garment::spec()` with `fine` 2) on `hc/test/gfx/fixtures/m
 draped with `garment::drape(240)`; `soak::setup` on its body and rib triangles with
 `fall` 1; rain straight down, the rain map over the garment's box grown by 0.05 m with
 4 mm cells, the garment and the body shell added with `soak::occlude`, `expose` with a
-tolerance of 2 cells. CPU checks in `hc/test/gfx/soak_check`. Lengths in meters.
+tolerance of 1 mm (first run: 2 cells, see the results). CPU checks in `hc/test/gfx/soak_check`. Lengths in meters.
 
 * **S1 the rain map agrees with rays.** For 500 vertices picked evenly through the
   list, a brute-force ray straight up from 1 mm above the vertex (along its normal)
@@ -3424,6 +3447,17 @@ tolerance of 2 cells. CPU checks in `hc/test/gfx/soak_check`. Lengths in meters.
   0.01 of 1 (the flag, not the alpha, makes it wet).
 * **S7 nothing else moved.** `cloth: ok`, `garment: ok`, the knit and weave bars
   pass unchanged.
+
+Results (2026-11-15): S1 agree 0.982, 41% of up-facing vertices blocked, control
+0.764; S2 0.5001, control 0.250; S3 water kept to 1e-8, area 105 to 627, drop
+0.038 with fall against 0.0005 without; S4 92% of reached vertices soaked, 2.9% of
+down-facing ones, control 68%; S5 0.027 s and 0.6 ms; S6 wet over dry 0.548,
+highlights 0.936, control 1.000; S7 in the gate. **The first run failed S1 (0.893)
+and S4 (0.849)**: the map kept only each 4 mm cell's highest point, so steep cloth
+shaded itself and a 2-cell tolerance hid the neck band's fold 4 mm above the band.
+`expose` now tests binned triangles at the vertex's exact point with a 1 mm
+tolerance; the bars did not change. **S6 also failed first** (highlights 0.548:
+wet knit lost its glints); the water-film lobe fixed it.
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 

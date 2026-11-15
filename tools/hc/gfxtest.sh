@@ -57,6 +57,8 @@ HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/cloth_check.amni" > "$O/clo
 grep -q "^cloth: ok$" "$O/cloth_check.txt" || { say "gfxtest: FAILED: cloth solver checks"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/garment_check.amni" > "$O/garment_check.txt" 2>&1; cat "$O/garment_check.txt"; cat "$O/garment_check.txt" >> "$RES"
 grep -q "^garment: ok$" "$O/garment_check.txt" || { say "gfxtest: FAILED: garment bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/soak_check.amni" > "$O/soak_check.txt" 2>&1; cat "$O/soak_check.txt"; cat "$O/soak_check.txt" >> "$RES"
+grep -q "^soak: ok$" "$O/soak_check.txt" || { say "gfxtest: FAILED: wet fabric bars"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/gi/cornell_pt.amni" mask > "$T/gi_mask.txt" 2> "$T/gi_mask.err" || { say "gfxtest: FAILED: cornell_pt mask"; tail -n 5 "$T/gi_mask.err"; exit 1; }
 [ "$(wc -l < "$T/gi_mask.txt")" = 16384 ] || { say "gfxtest: FAILED: cornell_pt mask is not 128 x 128"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gfx_smoke.amni" -o "$T/gs" > "$T/build.txt" 2>&1 || { echo "gfxtest: build failed"; grep -av "W[0-9]" "$T/build.txt" | tail -n 5; exit 1; }
@@ -71,6 +73,9 @@ cp "$T/all.txt" "$O/gfx_smoke.txt" 2>/dev/null; cat "$T/all.txt" >> "$RES" 2>/de
 [ $rc = 0 ] || { echo "gfxtest: run failed"; tail -n 5 "$T/all.txt" "$T/err.txt"; exit 1; }
 grep -av "^gpu:" "$T/all.txt" > "$T/cpu.txt"
 cmp -s "$T/cpu.txt" "$R/hc/test/gfx/gfx_smoke.out" || { echo "gfxtest: CPU output differs"; diff "$T/cpu.txt" "$R/hc/test/gfx/gfx_smoke.out"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/soak_look.amni" -o "$T/sl" > "$T/sl_build.txt" 2>&1 || { echo "gfxtest: soak_look build failed"; grep -av "W[0-9]" "$T/sl_build.txt" | tail -n 5; exit 1; }
+"${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$T/sl" > "$O/soak_look.txt" 2>&1; cat "$O/soak_look.txt"; cat "$O/soak_look.txt" >> "$RES"
+grep -q "^soak look: \(ok\|skipped\)$" "$O/soak_look.txt" || { say "gfxtest: FAILED: wet fabric look (S6)"; exit 1; }
 grep -a "^gpu:" "$T/all.txt"; g=$(grep -a "^gpu: \(ok\|skipped\|FAILED\)" "$T/all.txt")
 case "$g" in
 	"gpu: ok"*) say "gfxtest: ok";;

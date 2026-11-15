@@ -121,6 +121,7 @@ vec3 sss_d = vec3(0.0);
 vec3 sss_k = vec3(1.0);
 float sss_w = 1.0;
 float cor_w = 1.0;
+float fab_wet = 0.0;
 float sea_h = 0.0;
 #include "water.glsl"
 vec4 smp(sampler2D s, vec2 uv) { if (xo2.z == 1.0) return texture(s, uv); return textureGrad(s, uv, dFdx(uv) * xo2.z, dFdy(uv) * xo2.z); }
@@ -248,8 +249,9 @@ vec3 mat_term(vec3 n, vec3 v, vec3 l, vec3 e, vec3 albedo, vec3 f0, float rough,
 		float w = shade_a.x;
 		float nl = dot(n, l) * q.ns;
 		vec3 dif = kd * albedo / PI_F * max((nl + w) / (1.0 + w), 0.0) * e;
-		vec3 fz = sheen.rgb * e * shade_a.y * rim(n, v, nl);
-		return ((dif + shade_a.z * light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) + fz) * vis * q.cav;
+		float sw = 1.0 - 0.75 * fab_wet;
+		vec3 fz = sheen.rgb * e * shade_a.y * sw * rim(n, v, nl);
+		return ((dif + mix(shade_a.z, 1.0, 0.6 * fab_wet) * light_term(n, v, l, e, vec3(0.0), f0, rough, ms, kd)) * sheen_keep() + sheen_term(n, v, l, e) * sw + fz + fab_wet * fab_wet * light_term(n, v, l, e, vec3(0.0), vec3(0.02), 0.15, vec3(1.0), kd)) * vis * q.cav;
 	}
 	vec3 tr = model == 5 ? albedo * shade_a.rgb * e * clamp((shade_a.w - dot(n, l)) / ((1.0 + shade_a.w) * (1.0 + shade_a.w)), 0.0, 1.0) * 0.36 / (PI_F * pow(1.0 - 0.64 * pow(clamp(-dot(v, l), 0.0, 1.0), 2.0), 2.0)) : vec3(0.0);
 	return (light_term(n, v, l, e, albedo, f0, rough, ms, kd) * sheen_keep() + sheen_term(n, v, l, e) + tr) * vis;
@@ -948,7 +950,9 @@ void main() {
 	}
 	vec2 buv = xuv(uv_sets.x, xm_base, xo0.xy);
 	if (model == 2) buv = eye_uv(buv, normalize(eye.xyz - in_world), normalize(in_nrm));
-	vec4 tint = base * in_col * smp(tex_base, buv);
+	fab_wet = model == 3 && shade_a.w > 0.5 ? clamp(in_col.a, 0.0, 1.0) : 0.0;
+	vec4 vcol = model == 3 && shade_a.w > 0.5 ? vec4(in_col.rgb, 1.0) : in_col;
+	vec4 tint = base * vcol * smp(tex_base, buv);
 	if (model == 2) tint.rgb *= eye_ring(buv);
 	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
@@ -959,12 +963,12 @@ void main() {
 	vec2 uy = in_world.xz * tri.x;
 	vec2 uz = in_world.xy * tri.x;
 	vec2 ut = in_world.xz * tri.z;
-	if (tp) tint = base * in_col * (smp(tex_base, ux) * tw.x + smp(tex_base, uy) * tw.y + smp(tex_base, uz) * tw.z);
+	if (tp) tint = base * vcol * (smp(tex_base, ux) * tw.x + smp(tex_base, uy) * tw.y + smp(tex_base, uz) * tw.z);
 	float topf = 0.0;
 	if (tri.y > 0.0) {
 		vec4 tc = top_tint * smpa(tex_ext_s, vec3(ut, top_lay.x));
 		float hb = dot(tc.rgb - tint.rgb, vec3(0.333)) * 1.5;
-		topf = clamp((gw.y - 1.0 + tri.y + hb * 0.25) * tri.w, 0.0, 1.0) * in_col.a;
+		topf = clamp((gw.y - 1.0 + tri.y + hb * 0.25) * tri.w, 0.0, 1.0) * vcol.a;
 		tint = mix(tint, vec4(tc.rgb, tint.a), topf);
 	}
 	float oa = alpha.x > 1.5 ? tint.a : 1.0;
@@ -1173,10 +1177,12 @@ void main() {
 		metal *= 1.0 - sn;
 	}
 	if (model == 1 && shade_c.y != 0.0) { vec2 mu = xuv(uv_sets.x, xm_det, xo_det.xy); vec2 mw = max(abs(dFdx(mu)), abs(dFdy(mu))); float mo = (pd_noise(mu * 41.0) - 0.5) * (1.0 - smoothstep(0.25, 0.5, max(mw.x, mw.y) * 41.0)); float mf = (pd_noise(mu * 131.0 + 7.1) - 0.5) * (1.0 - smoothstep(0.25, 0.5, max(mw.x, mw.y) * 131.0)); tint.rgb *= max(vec3(1.0) + abs(shade_c.y) * dmask * (mo * vec3(0.15, 0.35, 0.37) + mf * vec3(0.1, 0.16, 0.16)), vec3(0.0)); }
+	if (fab_wet > 0.0) { tint.rgb = pow(max(tint.rgb, vec3(0.0)), vec3(1.0 + 1.2 * fab_wet)); rough = mix(rough, rough * 0.55, fab_wet); q.pv *= 1.0 - 0.7 * fab_wet; }
 	vec3 albedo = tint.rgb * (1.0 - metal);
 	vec3 f0 = mix(vec3(model == 1 ? shade_c.x : 0.04), tint.rgb, metal);
 	vec3 v = normalize(eye.xyz - in_world);
 	ExtS x = ExtS(n0, 0.0, 0.03, 0.0, 0.0, t, 0.0, b, 1.0, sheen.rgb, sheen.a, vec4(0.0));
+	x.sheen_c *= 1.0 - 0.75 * fab_wet;
 	if (misc.z > 0.5) {
 		float sf = x_ior.y * ext_map(0).a;
 		float fd = ((x_ior.x - 1.0) / (x_ior.x + 1.0));
@@ -1191,7 +1197,7 @@ void main() {
 		}
 		x.trans = x_trans.x * ext_map(5).r;
 		x.thick = x_trans.y * ext_map(6).g;
-		x.sheen_c = sheen.rgb * ext_map(10).rgb;
+		x.sheen_c = sheen.rgb * ext_map(10).rgb * (1.0 - 0.75 * fab_wet);
 		x.sheen_r = clamp(sheen.a * ext_map(11).a, 0.0, 1.0);
 		if (x_aniso.x > 0.0) {
 			vec4 am = ext_map(7);

@@ -10,14 +10,16 @@ var nb_w real[>..];
 var ry real[>..];
 var mw real[>..];
 var mo real[>..];
-var grid real[>..];
+var tri real[>..];
+var bin_at int[>..];
+var bins int[>..];
 var fw real[3];
 var fa real[3];
 var fb real[3];
 var lo_a real = 0.0;
 var lo_b real = 0.0;
 var cell real = 1.0;
-var gn int = 0;
+var gn int = 1;
 fn bits32(v f32) uint {
 	var x f32[1];
 	x[0] = v;
@@ -124,9 +126,9 @@ fn rain_map(dir_x real, dir_y real, dir_z real, lo_x real, lo_y real, lo_z real,
 	fw[0] = -dir_x / dl;
 	fw[1] = -dir_y / dl;
 	fw[2] = -dir_z / dl;
-	var ax = 0.0;
-	var ay = 0.0;
-	var az = 0.0;
+	var ax real = 0.0;
+	var ay real = 0.0;
+	var az real = 0.0;
 	if abs(fw[0]) > 0.9 {
 		ax = fw[1];
 		ay = -fw[0];
@@ -143,106 +145,141 @@ fn rain_map(dir_x real, dir_y real, dir_z real, lo_x real, lo_y real, lo_z real,
 	fb[0] = fw[1] * fa[2] - fw[2] * fa[1];
 	fb[1] = fw[2] * fa[0] - fw[0] * fa[2];
 	fb[2] = fw[0] * fa[1] - fw[1] * fa[0];
-	var min_a = 1e30;
-	var max_a = -1e30;
-	var min_b = 1e30;
-	var max_b = -1e30;
+	var mina = 1e300;
+	var maxa = -1e300;
+	var minb = 1e300;
+	var maxb = -1e300;
 	for c in 8 {
-		let x = if (c & 1) == 0 { lo_x } else { hi_x };
-		let y = if (c & 2) == 0 { lo_y } else { hi_y };
-		let z = if (c & 4) == 0 { lo_z } else { hi_z };
+		var x = lo_x;
+		var y = lo_y;
+		var z = lo_z;
+		if (c & 1) != 0 { x = hi_x; }
+		if (c & 2) != 0 { y = hi_y; }
+		if (c & 4) != 0 { z = hi_z; }
 		let a = x * fa[0] + y * fa[1] + z * fa[2];
 		let b = x * fb[0] + y * fb[1] + z * fb[2];
-		min_a = min(min_a, a);
-		max_a = max(max_a, a);
-		min_b = min(min_b, b);
-		max_b = max(max_b, b);
+		mina = min(mina, a);
+		maxa = max(maxa, a);
+		minb = min(minb, b);
+		maxb = max(maxb, b);
 	}
-	lo_a = min_a - 2.0 * size;
-	lo_b = min_b - 2.0 * size;
+	lo_a = mina - 2.0 * size;
+	lo_b = minb - 2.0 * size;
 	cell = size;
-	let span = max(max_a - min_a, max_b - min_b);
+	let span = max(maxa - mina, maxb - minb);
 	gn = min(1 + ((span + 4.0 * size) / size) as int, 4096);
-	grid.clear();
-	grid.resize(gn * gn, -1e30);
+	tri.clear();
 }
 fn cell_of(a real, b real) int {
 	let col = clamp(((a - lo_a) / cell) as int, 0, gn - 1);
 	let row = clamp(((b - lo_b) / cell) as int, 0, gn - 1);
 	row * gn + col
 }
-fn pdot(P const f32[:], v int, d const real[:]) real {
-	(P[3 * v] as real) * d[0] + (P[3 * v + 1] as real) * d[1] + (P[3 * v + 2] as real) * d[2]
-}
 fn occlude(P const f32[:], I const u32[:]) {
-	for v in P.len / 3 {
-		let a = pdot(P, v, fa);
-		let b = pdot(P, v, fb);
-		let h = pdot(P, v, fw);
-		let ci = cell_of(a, b);
-		if h > grid[ci] { grid[ci] = h; }
-	}
 	for t in I.len / 3 {
-		let v0 = I[3 * t] as int;
-		let v1 = I[3 * t + 1] as int;
-		let v2 = I[3 * t + 2] as int;
-		let a0 = pdot(P, v0, fa);
-		let b0 = pdot(P, v0, fb);
-		let h0 = pdot(P, v0, fw);
-		let a1 = pdot(P, v1, fa);
-		let b1 = pdot(P, v1, fb);
-		let h1 = pdot(P, v1, fw);
-		let a2 = pdot(P, v2, fa);
-		let b2 = pdot(P, v2, fb);
-		let h2 = pdot(P, v2, fw);
-		let det = (a1 - a0) * (b2 - b0) - (a2 - a0) * (b1 - b0);
-		if abs(det) >= 1e-20 {
-			let c_lo = cell_of(min(a0, min(a1, a2)), min(b0, min(b1, b2)));
-			let c_hi = cell_of(max(a0, max(a1, a2)), max(b0, max(b1, b2)));
-			let col0 = c_lo % gn;
-			let row0 = c_lo / gn;
-			let col1 = c_hi % gn;
-			let row1 = c_hi / gn;
-			for row in row0..row1 + 1 {
-				for col in col0..col1 + 1 {
-					let ca = lo_a + (col as real + 0.5) * cell;
-					let cb = lo_b + (row as real + 0.5) * cell;
-					let w1 = ((ca - a0) * (b2 - b0) - (a2 - a0) * (cb - b0)) / det;
-					let w2 = ((a1 - a0) * (cb - b0) - (ca - a0) * (b1 - b0)) / det;
-					let w0 = 1.0 - w1 - w2;
-					if w0 >= -1e-9 && w1 >= -1e-9 && w2 >= -1e-9 {
-						let h = w0 * h0 + w1 * h1 + w2 * h2;
-						let ci = row * gn + col;
-						if h > grid[ci] { grid[ci] = h; }
+		for k in 3 {
+			let v = I[3 * t + k] as int;
+			let x = P[3 * v] as real;
+			let y = P[3 * v + 1] as real;
+			let z = P[3 * v + 2] as real;
+			tri.push(x * fa[0] + y * fa[1] + z * fa[2]);
+			tri.push(x * fb[0] + y * fb[1] + z * fb[2]);
+			tri.push(x * fw[0] + y * fw[1] + z * fw[2]);
+		}
+	}
+}
+fn expose(P const f32[:], N const f32[:], tol real) {
+	let nt = tri.len / 9;
+	let cells = gn * gn;
+	bin_at.clear();
+	bin_at.resize(cells + 1, 0);
+	for pass in 2 {
+		if pass == 1 {
+			for i in cells { bin_at[i + 1] += bin_at[i]; }
+			bins.clear();
+			bins.resize(bin_at[cells], 0);
+		}
+		var fillpos int[>..] = [];
+		if pass == 1 {
+			for i in cells { fillpos.push(bin_at[i]); }
+		}
+		for t in nt {
+			let o = 9 * t;
+			let mina = min(tri[o], min(tri[o + 3], tri[o + 6]));
+			let maxa = max(tri[o], max(tri[o + 3], tri[o + 6]));
+			let minb = min(tri[o + 1], min(tri[o + 4], tri[o + 7]));
+			let maxb = max(tri[o + 1], max(tri[o + 4], tri[o + 7]));
+			let c0 = cell_of(mina, minb);
+			let c1 = cell_of(maxa, maxb);
+			let col0 = c0 % gn;
+			let row0 = c0 / gn;
+			let col1 = c1 % gn;
+			let row1 = c1 / gn;
+			for r in row0..row1 + 1 {
+				for c in col0..col1 + 1 {
+					let k = r * gn + c;
+					if pass == 0 {
+						bin_at[k + 1] += 1;
+					} else {
+						bins[fillpos[k]] = t;
+						fillpos[k] += 1;
 					}
 				}
 			}
 		}
 	}
-}
-fn expose(P const f32[:], N const f32[:], tol real) {
-	let n = P.len / 3;
-	for i in mo.len { mo[i] = 0.0; }
-	for v in n {
-		let a = pdot(P, v, fa);
-		let b = pdot(P, v, fb);
-		let h = pdot(P, v, fw);
-		let ci = cell_of(a, b);
-		var o = 0.0;
-		if h >= grid[ci] - tol {
+	for v in open.len {
+		let x = P[3 * v] as real;
+		let y = P[3 * v + 1] as real;
+		let z = P[3 * v + 2] as real;
+		let a = x * fa[0] + y * fa[1] + z * fa[2];
+		let b = x * fb[0] + y * fb[1] + z * fb[2];
+		let h = x * fw[0] + y * fw[1] + z * fw[2];
+		let c = cell_of(a, b);
+		var blocked = false;
+		for e in bin_at[c]..bin_at[c + 1] {
+			if !blocked {
+				let o = 9 * bins[e];
+				let a0 = tri[o];
+				let b0 = tri[o + 1];
+				let h0 = tri[o + 2];
+				let a1 = tri[o + 3];
+				let b1 = tri[o + 4];
+				let h1 = tri[o + 5];
+				let a2 = tri[o + 6];
+				let b2 = tri[o + 7];
+				let h2 = tri[o + 8];
+				let area = (a1 - a0) * (b2 - b0) - (a2 - a0) * (b1 - b0);
+				if abs(area) >= 1e-20 {
+					let w0 = ((a1 - a) * (b2 - b) - (a2 - a) * (b1 - b)) / area;
+					let w1 = ((a2 - a) * (b0 - b) - (a0 - a) * (b2 - b)) / area;
+					let w2 = ((a0 - a) * (b1 - b) - (a1 - a) * (b0 - b)) / area;
+					if w0 >= -1e-9 && w1 >= -1e-9 && w2 >= -1e-9 {
+						let hh = w0 * h0 + w1 * h1 + w2 * h2;
+						if hh > h + tol { blocked = true; }
+					}
+				}
+			}
+		}
+		var val = 0.0;
+		if !blocked {
 			let nx = N[3 * v] as real;
 			let ny = N[3 * v + 1] as real;
 			let nz = N[3 * v + 2] as real;
-			let l = sqrt(nx * nx + ny * ny + nz * nz);
-			if l > 0.0 {
-				o = max(0.0, (nx * fw[0] + ny * fw[1] + nz * fw[2]) / l);
+			let nl = sqrt(nx * nx + ny * ny + nz * nz);
+			if nl > 0.0 {
+				val = max(0.0, (nx * fw[0] + ny * fw[1] + nz * fw[2]) / nl);
 			}
 		}
-		open[v] = o as f32;
+		open[v] = val as f32;
+	}
+	for i in mo.len { mo[i] = 0.0; }
+	for v in open.len {
 		let r = rep[v];
+		let o = open[v] as real;
 		if o > mo[r] { mo[r] = o; }
 	}
-	for v in n { open[v] = mo[rep[v]] as f32; }
+	for v in open.len { open[v] = mo[rep[v]] as f32; }
 }
 fn step(dt real, rate real, dry real, wick real) {
 	let n = 1 + (dt * wick * 16.0) as int;

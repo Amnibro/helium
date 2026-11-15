@@ -1,0 +1,96 @@
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.scene3d;
+fn half(lo byte, hi byte) real {
+	let h = ((hi as int) << 8) | (lo as int);
+	let e = (h >> 10) & 31;
+	let f = h & 1023;
+	var v = 0.0;
+	if e == 0 {
+		v = (f as real) * pow(2.0, -24.0);
+	} else if e == 31 {
+		v = 65504.0;
+	} else {
+		v = (1024 + f) as real * pow(2.0, (e - 25) as real);
+	}
+	if ((h >> 15) & 1) == 1 { -v } else { v }
+}
+fn lum(px const byte[:]) real, real {
+	var ls real[>..] = [];
+	var sum = 0.0;
+	for row in 160..560 {
+		for col in 440..840 {
+			let o = (row * 1280 + col) * 8;
+			let l = 0.2126 * half(px[o], px[o + 1]) + 0.7152 * half(px[o + 2], px[o + 3]) + 0.0722 * half(px[o + 4], px[o + 5]);
+			ls.push(l);
+			sum += l;
+		}
+	}
+	sort(ls) { a, b => a > b };
+	var top = 0.0;
+	let k = ls.len / 100;
+	for i in k { top += ls[i]; }
+	return sum / (ls.len as real), top / (k as real);
+}
+fn main() {
+	if !gfx::open_headless(1280, 720) {
+		print("soak look: skipped");
+		return;
+	}
+	s3d::init(1280, 720);
+	s3d::temporal = 0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::look.bloom = 0.0;
+	let sl = sqrt(0.45 * 0.45 + 0.7 * 0.7 + 0.55 * 0.55) as f32;
+	s3d::atmosphere(float3 { -0.45 / sl, 0.7 / sl, 0.55 / sl }, 3.5, 1.0, 0.3);
+	var dry = shapes::material(float3 { 0.62, 0.57, 0.5 }, 0.0, 0.9);
+	dry.shading = 3;
+	dry.shade_c = float4 { 0.8, 140.0, -6.0, 8.0 };
+	dry.shade_a = float4 { 0.3, 0.5, 0.2, 1.0 };
+	var wet = shapes::material(float3 { 0.62, 0.57, 0.5 }, 0.0, 0.9);
+	wet.shading = 3;
+	wet.shade_c = float4 { 0.8, 140.0, -6.0, 8.0 };
+	wet.shade_a = float4 { 0.3, 0.5, 0.2, 1.0 };
+	var off = shapes::material(float3 { 0.62, 0.57, 0.5 }, 0.0, 0.9);
+	off.shading = 3;
+	off.shade_c = float4 { 0.8, 140.0, -6.0, 8.0 };
+	off.shade_a = float4 { 0.3, 0.5, 0.2, 0.0 };
+	fn build(m gltf::Material, alpha f32, x f32) {
+		let before = gltf::verts.len / gltf::VERTEX_FLOATS;
+		let asset = shapes::plane(0.15, m);
+		let after = gltf::verts.len / gltf::VERTEX_FLOATS;
+		for v in before..after {
+			gltf::verts[v * gltf::VERTEX_FLOATS + gltf::AT_COL + 3] = alpha;
+		}
+		let item = s3d::add(asset);
+		s3d::place(item, gfx::translate(float3 { x, 0.0, 0.0 }));
+	}
+	build(dry, 0.0, -1.0);
+	build(wet, 1.0, 0.0);
+	build(off, 1.0, 1.0);
+	let target = gfx::render_target(1280, 720, gfx::RGBA8);
+	fn measure(x f32) real, real {
+		s3d::view = s3d::Camera { eye: float3 { x, 0.3, 0.0001 }, target: float3 { x, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.42, near: 0.01, far: 10.0 };
+		for i in 2 {
+			s3d::render(target);
+			gfx::flush();
+		}
+		let px = gfx::read_pixels(s3d::hdr_target());
+		return lum(px);
+	}
+	let md, bd = measure(-1.0);
+	let mw, bw = measure(0.0);
+	let mo, bo = measure(1.0);
+	let ratio = mw / md;
+	let highlight = bw / bd;
+	let control = mo / md;
+	let good = ratio >= 0.45 && ratio <= 0.8 && highlight >= 0.8 && highlight <= 1.5 && abs(control - 1.0) <= 0.01;
+	print("S6 wet look: ratio ", ratio, " highlights ", highlight, " control ", control, if good { " ok" } else { " FAIL" });
+	print(if good { "soak look: ok" } else { "soak look: FAILED" });
+}
