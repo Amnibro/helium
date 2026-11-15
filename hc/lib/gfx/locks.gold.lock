@@ -366,7 +366,8 @@ fn material(r f32, g f32, b f32, tex int) gltf::Material {
 	m.shade_c = float4 { -0.08, 0.12, 120.0, 30.0 };
 	m
 }
-=== -7bc9aa97fd426652
+=== -25ea470a5f9a70c0
+var jitter real = 0.18;
 fn mesh(m gltf::Material) int {
 	let v0 = gltf::verts.len / gltf::VERTEX_FLOATS;
 	let i0 = gltf::indices.len;
@@ -374,15 +375,20 @@ fn mesh(m gltf::Material) int {
 	var hi = float3 { -1e30, -1e30, -1e30 };
 	let nv = P.len / 3;
 	for i in nv {
-		let p = float3 { P[3 * i], P[3 * i + 1], P[3 * i + 2] };
-		let n = float3 { N[3 * i], N[3 * i + 1], N[3 * i + 2] };
-		let t = float4 { T[3 * i], T[3 * i + 1], T[3 * i + 2], 1.0 };
-		shapes::vertex(p, n, UV[2 * i], UV[2 * i + 1], t);
+		let p = float3 { P[i * 3], P[i * 3 + 1], P[i * 3 + 2] };
+		let n = float3 { N[i * 3], N[i * 3 + 1], N[i * 3 + 2] };
+		let t = float4 { T[i * 3], T[i * 3 + 1], T[i * 3 + 2], 1.0 };
+		shapes::vertex(p, n, UV[i * 2], UV[i * 2 + 1], t);
 		lo = float3 { min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z) };
 		hi = float3 { max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z) };
+		let k = 1.0 + jitter * (2.0 * hash01(row_lock[i / 2], 31) - 1.0);
+		let at = (v0 + i) * gltf::VERTEX_FLOATS + gltf::AT_COL;
+		gltf::verts[at] = k as f32;
+		gltf::verts[at + 1] = k as f32;
+		gltf::verts[at + 2] = k as f32;
 	}
-	for k in I.len {
-		gltf::indices.push(I[k]);
+	for x in I {
+		gltf::indices.push(x);
 	}
 	shapes::finish(v0, i0, lo, hi, m)
 }

@@ -1439,6 +1439,11 @@ from behind, all from the sun; other lights shade hair with the standard model (
 surface shader sits at 252 of 256 registers, and a fiber term at every light made it
 spill). The results stay readable in `locks::P`, `N`, `T`, `UV`, `I` and the
 row tables.
+`mesh` gives every lock its own brightness (vertex color 1 ± `locks::jitter`, 0.18 by
+default). `scalp(data, P, r)` tints the skin under the hair: it writes `locks::scalp_w`
+(f32, one per point of P), 1 near a groom root fading to 0 at distance r, for the
+caller to mix the hair color into the head's vertex colors, so gaps between locks
+show hair-colored scalp instead of bare skin.
 
 ### Volumetric clouds (E6)
 
@@ -3559,6 +3564,15 @@ at the sun's site only (252, no spills, Y6 0.19 ms).
   with o the head direction and t the row's unit tangent, op = o minus t (t . o):
   among rows where op is at least 0.3 long, the mean of L2's absolute dot product
   over op's length is at least 0.97. Control: `flat` false at most 0.8.
+
+* **L8 scalp tint** (added after the first run, registered before L8's first run).
+  `scalp(data, P, r)` gives each point 1 minus smoothstep(r/2, r, d), with d its
+  distance to the nearest groom root (the first point of each segment). On the 0.1 m
+  ball with "long waves": every root moved 1 mm toward the ball's center scores at
+  least 0.95, and the ball's lowest point scores 0. For 20,000 points spread evenly
+  over the ball (a Fibonacci sphere), r 0.015 takes at most 70 ms, and the share of
+  points above 0.5 is between 0.3 and 0.8 (hair covers part of the head, not all
+  or none). Control: r 0.001 gives a share below 0.15.
 
 ### Volumetric cloud bars (E6, registered before the first GPU run)
 
