@@ -569,6 +569,7 @@ inject_key(name const byte[:], down bool) bool:
 	if sc == 0: return false
 	evw(if down { 768 } else { 769 }); w32(EVW, 24, sc); w32(EVW, 28, s_key(sc as i32, 0, false) as int); EVW[36] = if down { 1 } else { 0 }; s_push(ffi::ptr(EVW[..]))
 set_fullscreen(on bool) bool: WIN != 0 && s_fullscr(WIN, on)
+is_fullscreen() bool: WIN != 0 && s_wflags(WIN) & 1 != 0
 pad_axis(a int) f32: if a >= 0 && a < PADX.len { PADX[a] } else { 0.0 }
 pad_down(b int) bool: b >= 0 && b < PADB.len && PADB[b]
 pad_pressed(b int) bool: b >= 0 && b < PADP.len && PADP[b]
