@@ -1,0 +1,344 @@
+=== -629aa808e806c877
+import os;
+import gfx.meshopt;
+import gfx.gltf;
+var failed bool = false;
+fn check(name const byte[:], ok bool, detail const byte[:]) {
+	var s byte[>..] = [];
+	if ok {
+		s.append("PASS ");
+	} else {
+		s.append("FAIL ");
+	}
+	s.append(name);
+	if detail.len > 0 {
+		s.append(" (");
+		s.append(detail);
+		s.append(")");
+	}
+	print(s);
+	if !ok { failed = true; }
+}
+=== 567305ec02ee37f0
+fn u32at(b const byte[:], at int) int {
+	(b[at] as int) | ((b[at + 1] as int) << 8) | ((b[at + 2] as int) << 16) | ((b[at + 3] as int) << 24)
+}
+=== 27a4c76abe3d2571
+struct Rec { mode int, filter int, count int, stride int, sat int, slen int, eat int, elen int }
+var data byte[>..];
+var recs Rec[>..];
+var pass bool[>..];
+var dec_ns int = 0;
+var exp_bytes int = 0;
+fn load() bool {
+	var path byte[>..] = [];
+	if arg_count() > 1 {
+		let av = args();
+		for x, i in av {
+			if i == 1 { path.append(x); }
+		}
+	} else {
+		path.append("hc/test/gfx/fixtures/meshopt_cases.bin");
+	}
+	if !read_file(path, data) {
+		check("cases file", false, path);
+		return false;
+	}
+	var p = 0;
+	var ok = true;
+	let n = data.len;
+	while p < n {
+		if p + 16 > n { ok = false; break; }
+		let mode = u32at(data, p);
+		let filter = u32at(data, p + 4);
+		let count = u32at(data, p + 8);
+		let stride = u32at(data, p + 12);
+		p += 16;
+		if p + 4 > n { ok = false; break; }
+		let sl = u32at(data, p);
+		p += 4;
+		let sat = p;
+		if sl < 0 || p + sl + 4 > n { ok = false; break; }
+		p += sl;
+		let el = u32at(data, p);
+		p += 4;
+		let eat = p;
+		if el < 0 || p + el > n { ok = false; break; }
+		p += el;
+		recs.push(Rec { mode: mode, filter: filter, count: count, stride: stride, sat: sat, slen: sl, eat: eat, elen: el });
+	}
+	check("cases file is whole", ok, "");
+	true
+}
+=== 7335db2c526a86f0
+fn m1() {
+	var out byte[>..] = [];
+	var passed = 0;
+	var first = -1;
+	for r, i in recs {
+		out.clear();
+		let t0 = clock();
+		let ok = meshopt::decode(data[r.sat..r.sat + r.slen], r.count, r.stride, r.mode, r.filter, out);
+		dec_ns += ((clock() - t0) * 1000000000.0) as int;
+		exp_bytes += r.elen;
+		let good = ok && out.len == r.elen && out[..] == data[r.eat..r.eat + r.elen];
+		pass.push(good);
+		if good {
+			passed += 1;
+		} else if first < 0 {
+			first = i;
+		}
+	}
+	var d byte[>..] = [];
+	format(d, passed, " of ", recs.len);
+	if first >= 0 {
+		let f = recs[first];
+		format(d, " first fail ", first, " mode ", f.mode, " filter ", f.filter, " count ", f.count, " stride ", f.stride);
+	}
+	check("M1 records decode", passed == recs.len && recs.len > 0, d);
+}
+=== -1e25ef170f6a7757
+fn m2() {
+	var tot int[8] = [0; 8];
+	var ps int[8] = [0; 8];
+	fn add(k int, good bool) {
+		tot[k] += 1;
+		if good { ps[k] += 1; }
+	}
+	for r, i in recs {
+		let good = pass[i];
+		if r.mode == 0 {
+			if r.slen > 0 {
+				if data[r.sat] == 0xa0 { add(0, good); }
+				if data[r.sat] == 0xa1 { add(1, good); }
+			}
+			if r.filter >= 1 && r.filter <= 4 { add(1 + r.filter, good); }
+		} else if r.mode == 1 {
+			add(6, good);
+		} else if r.mode == 2 {
+			add(7, good);
+		}
+	}
+	let names = ["M2 attributes 0xa0", "M2 attributes 0xa1", "M2 filter 1", "M2 filter 2", "M2 filter 3", "M2 filter 4", "M2 triangles", "M2 indices"];
+	for k in 8 {
+		var d byte[>..] = [];
+		format(d, ps[k], " of ", tot[k]);
+		check(names[k], tot[k] > 0 && ps[k] == tot[k], d);
+	}
+}
+=== -1238210b92531dab
+fn m3() {
+	var out byte[>..] = [];
+	var tried = 0;
+	var bad = 0;
+	fn run(r Rec, s const byte[:], must_fail bool) {
+		out.clear();
+		let ok = meshopt::decode(s, r.count, r.stride, r.mode, r.filter, out);
+		tried += 1;
+		if ok {
+			if must_fail || out.len != r.count * r.stride { bad += 1; }
+		} else if out.len != 0 {
+			bad += 1;
+		}
+	}
+	for r in recs {
+		if r.slen < 2 { continue; }
+		let a = r.sat;
+		let b = r.sat + r.slen;
+		run(r, data[a..b - 1], true);
+		var c byte[>..] = [];
+		c.append(data[a..b]);
+		c[0] = 0x55;
+		run(r, c[..], true);
+		var m byte[>..] = [];
+		m.append(data[a..b]);
+		let mid = r.slen / 2;
+		m[mid] = m[mid] ^ 0x5a;
+		run(r, m[..], false);
+		var f byte[>..] = [];
+		f.append(data[a..b]);
+		for j in mid..r.slen { f[j] = 0xff; }
+		run(r, f[..], false);
+	}
+	let d = str(tried);
+	check("M3 damaged streams", bad == 0, d);
+}
+=== 09f551a58b3bd685
+import math;
+fn m4() {
+	let secs = dec_ns as real / 1000000000.0;
+	let mb = exp_bytes as real / 1000000.0;
+	let speed = if secs > 0.0 { mb / secs } else { 0.0 };
+	var d byte[>..] = [];
+	format_flt(d, speed, 1);
+	d.append(" MB/s");
+	check("M4 decode speed", speed > 70.0, d);
+}
+=== 0902d84c29952b3c
+fn cases_path(out byte[>..]&) {
+	out.clear();
+	if arg_count() > 1 {
+		let av = args();
+		for x, i in av {
+			if i == 1 { out.append(x); }
+		}
+	} else {
+		out.append("hc/test/gfx/fixtures/meshopt_cases.bin");
+	}
+}
+fn dir_len(p const byte[:]) int {
+	var cut = 0;
+	for i in p.len {
+		if p[i] == '/' { cut = i + 1; }
+	}
+	cut
+}
+fn same_f(a const f32[:], b const f32[:]) bool {
+	if a.len != b.len { return false; }
+	for i in a.len {
+		if a[i] != b[i] { return false; }
+	}
+	true
+}
+fn same_u(a const u32[:], b const u32[:]) bool {
+	if a.len != b.len { return false; }
+	for i in a.len {
+		if a[i] != b[i] { return false; }
+	}
+	true
+}
+fn snapshot(path const byte[:], v f32[>..]&, ix u32[>..]&) int {
+	gltf::reset();
+	let a = gltf::load(path);
+	if a < 0 {
+		var d byte[>..] = [];
+		format(d, path, ": ", gltf::error());
+		check("load", false, d);
+		return -1;
+	}
+	v.clear();
+	v.append(gltf::verts[..]);
+	ix.clear();
+	ix.append(gltf::indices[..]);
+	gltf::prims.len
+}
+fn m5() {
+	var cp byte[>..] = [];
+	cases_path(cp);
+	let cut = dir_len(cp[..]);
+	var pa byte[>..] = [];
+	pa.append(cp[..cut]);
+	pa.append("scene.glb");
+	var pv f32[>..] = [];
+	var pi u32[>..] = [];
+	let pn = snapshot(pa[..], pv, pi);
+	let names = ["scene_meshopt.glb", "scene_meshopt1.glb"];
+	let labels = ["M5 EXT_meshopt_compression", "M5 KHR_meshopt_compression"];
+	for k in 2 {
+		var fa byte[>..] = [];
+		fa.append(cp[..cut]);
+		fa.append(names[k]);
+		var ov f32[>..] = [];
+		var oi u32[>..] = [];
+		let on = snapshot(fa[..], ov, oi);
+		let good = pn >= 0 && on >= 0 && pn == on && same_f(pv[..], ov[..]) && same_u(pi[..], oi[..]);
+		var d byte[>..] = [];
+		format(d, ov.len, " floats ", oi.len, " indices ", on, " prims");
+		check(labels[k], good, d);
+	}
+}
+=== 3b34188d630bf209
+fn arg_at(k int, out byte[>..]&) {
+	out.clear();
+	let av = args();
+	for x, i in av {
+		if i == k { out.append(x); }
+	}
+}
+fn m6() {
+	if arg_count() <= 3 { return; }
+	var pa byte[>..] = [];
+	var pb byte[>..] = [];
+	arg_at(2, pa);
+	arg_at(3, pb);
+	var tmp byte[>..] = [];
+	var size_a = 0.0;
+	var size_b = 0.0;
+	if read_file(pa, tmp) { size_a = tmp.len as real / 1024.0; }
+	tmp.clear();
+	if read_file(pb, tmp) { size_b = tmp.len as real / 1024.0; }
+	tmp.clear();
+	var pv f32[>..] = [];
+	var pi u32[>..] = [];
+	var ov f32[>..] = [];
+	var oi u32[>..] = [];
+	var best_a = 1e30;
+	var best_b = 1e30;
+	var loaded = true;
+	for k in 7 {
+		let t0 = clock();
+		let n = snapshot(pa[..], pv, pi);
+		let dt = (clock() - t0) * 1000.0;
+		if n < 0 { loaded = false; break; }
+		if dt < best_a { best_a = dt; }
+	}
+	if loaded {
+		for k in 7 {
+			let t0 = clock();
+			let n = snapshot(pb[..], ov, oi);
+			let dt = (clock() - t0) * 1000.0;
+			if n < 0 { loaded = false; break; }
+			if dt < best_b { best_b = dt; }
+		}
+	}
+	var good = loaded;
+	if good {
+		good = same_f(pv[..], ov[..]) && pi.len == oi.len;
+	}
+	if good {
+		let tn = pi.len / 3;
+		for t in tn {
+			let a = pi[3 * t];
+			let b = pi[3 * t + 1];
+			let c = pi[3 * t + 2];
+			let x = oi[3 * t];
+			let y = oi[3 * t + 1];
+			let z = oi[3 * t + 2];
+			let ok = (x == a && y == b && z == c) || (x == b && y == c && z == a) || (x == c && y == a && z == b);
+			if !ok { good = false; break; }
+		}
+	}
+	var d byte[>..] = [];
+	d.append("M6 info plain ");
+	format_flt(d, size_a, 1);
+	d.append(" KB meshopt ");
+	format_flt(d, size_b, 1);
+	d.append(" KB fastest plain ");
+	format_flt(d, if loaded { best_a } else { 0.0 }, 1);
+	d.append(" ms meshopt ");
+	format_flt(d, if loaded { best_b } else { 0.0 }, 1);
+	d.append(" ms match ");
+	if good {
+		d.append("yes");
+	} else {
+		d.append("no");
+	}
+	print(d);
+	check("big file matches", good, "");
+}
+=== -1a3c69a13f9fd78
+fn main() {
+	if load() {
+		m1();
+		m2();
+		m3();
+		m4();
+	}
+	m5();
+	m6();
+	if failed {
+		print("meshopt: FAILED");
+	} else {
+		print("meshopt: ok");
+	}
+}

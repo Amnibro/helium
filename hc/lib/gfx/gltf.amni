@@ -12,6 +12,7 @@ import gfx.codec_png;
 import gfx.codec_jpeg;
 import gfx.bc;
 import gfx.ktx2;
+import gfx.meshopt;
 
 // One vertex is 26 floats: position 3, normal 3, uv0 2, uv1 2, tangent 4,
 // color 4, joints 4, weights 4.
@@ -460,7 +461,7 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 	children_of(d, get(d, root, "extensionsRequired"), list);
 	for e in list {
 		let ext = json::text_of(d, e);
-		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" {
+		if ext != "KHR_materials_emissive_strength" && ext != "KHR_materials_unlit" && ext != "KHR_mesh_quantization" && ext != "KHR_texture_transform" && ext != "KHR_materials_sheen" && ext != "KHR_materials_ior" && ext != "KHR_materials_specular" && ext != "KHR_materials_clearcoat" && ext != "KHR_materials_transmission" && ext != "KHR_materials_volume" && ext != "KHR_materials_anisotropy" && ext != "KHR_materials_iridescence" && ext != "KHR_lights_punctual" && ext != "EXT_meshopt_compression" && ext != "KHR_meshopt_compression" {
 			return fail(str("gltf: required extension ", ext, " is not supported"));
 		}
 	}
@@ -475,7 +476,9 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		} else if k == 0 && bin_at >= 0 {
 			blob.append(data[bin_at..bin_at + bin_len]);
 		} else {
-			return fail(str("gltf: buffer ", k, " has no data"));
+			buf_at.push(-1);
+			buf_len.push(whole(d, b, "byteLength", 0));
+			continue;
 		}
 		let n = blob.len - at;
 		if n < whole(d, b, "byteLength", 0) { return fail(str("gltf: buffer ", k, " is shorter than its byteLength")); }
@@ -490,6 +493,27 @@ fn load_bytes(data const byte[:], dir const byte[:]) int {
 		let off = whole(d, v, "byteOffset", 0);
 		let len = whole(d, v, "byteLength", 0);
 		if off < 0 || len < 0 || off + len > buf_len[b] { return fail(str("gltf: bufferView ", k, " runs past its buffer")); }
+		let vx = get(d, v, "extensions");
+		let mx = if get(d, vx, "EXT_meshopt_compression") >= 0 { get(d, vx, "EXT_meshopt_compression") } else { get(d, vx, "KHR_meshopt_compression") };
+		if mx >= 0 {
+			let cb = whole(d, mx, "buffer", -1);
+			let co = whole(d, mx, "byteOffset", 0);
+			let cl = whole(d, mx, "byteLength", -1);
+			let cs = whole(d, mx, "byteStride", 0);
+			let cn = whole(d, mx, "count", -1);
+			let mode = meshopt::mode_of(word(d, mx, "mode"));
+			let filter = meshopt::filter_of(word(d, mx, "filter"));
+			if cb < 0 || cb >= buf_at.len || buf_at[cb] < 0 || co < 0 || cl < 0 || co + cl > buf_len[cb] || cn < 0 || cs <= 0 || cn * cs != len || mode < 0 || filter < 0 { return fail(str("gltf: bufferView ", k, " has a bad meshopt block")); }
+			var plain byte[>..] = [];
+			if !meshopt::decode(blob[buf_at[cb] + co..buf_at[cb] + co + cl], cn, cs, mode, filter, plain) { return fail(str("gltf: bufferView ", k, " meshopt data does not decode")); }
+			view_at.push(blob.len);
+			blob.append(plain[..]);
+			while blob.len % 4 != 0 { blob.push(0); }
+			view_len.push(len);
+			view_stride.push(whole(d, v, "byteStride", 0));
+			continue;
+		}
+		if buf_at[b] < 0 { return fail(str("gltf: bufferView ", k, " reads buffer ", b, ", which has no data")); }
 		view_at.push(buf_at[b] + off);
 		view_len.push(len);
 		view_stride.push(whole(d, v, "byteStride", 0));

@@ -21,6 +21,7 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `envmap` | image and physical-sky environment lighting: equirect to cube, GGX prefilter, Hillaire 2020 multi-scatter sky, cloud layer, `sun_color` |
 | `clusters` | clustered forward light grid, 16 x 9 x 24 cells, with the light and cell records the surface shader reads |
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
+| `meshopt` | decoder for glTF buffer views compressed with `EXT_meshopt_compression` or `KHR_meshopt_compression`: vertex streams (versions 0 and 1), triangle and index streams, and the octahedral, quaternion, exponential and color filters; `gltf` calls it while loading, so compressed files need no extra step |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
 | `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
@@ -4421,6 +4422,29 @@ Every control fails on both furnaces. The bars (1.5 % mean, 2.5 % pixel) sit jus
 above the measured worst case, which is the one grazing tile the sweep still
 undersamples; every other resolved sphere and tile is under 0.5 %. The ambient
 pass-through mean error is 0.0106 % (max 0.0488 %).
+
+### Compressed meshes (meshopt)
+
+`meshopt_check` (built from `meshopt_check.gold`, run by `gfxtest.sh`, CPU only) checks the decoder against
+261 streams made by the meshoptimizer 1.2.0 encoder, whose expected output is the meshoptimizer reference
+decoder's (`hc/test/gfx/fixtures/meshopt_cases.bin`: every stride from 4 to 256, counts that end inside a
+group and across blocks, smooth, random and all-zero data, both vertex stream versions, all four filters,
+16- and 32-bit triangle and index streams). Bars:
+
+- M1, M2: every stream decodes to exactly the reference bytes, counted per kind (each kind must have cases).
+- M3: 1,044 damaged streams (cut short, wrong header, a flipped byte, a run of 0xff) never crash; a decode
+  either fails and adds nothing or adds exactly count times stride bytes; cut-short and bad-header streams fail.
+- M4: decode speed above 70 MB/s (about 600 MB/s on the PC).
+- M5: `scene.glb` and its meshopt copies (`scene_meshopt.glb`, version 0, `EXT_`; `scene_meshopt1.glb`,
+  version 1, `KHR_`; vertex, index and animation views compressed, the original views pointing at a fallback
+  buffer with no data) load to the same vertex and index lists.
+- M6 (optional, arguments 2 and 3): a big plain `.glb` and its meshopt copy load to the same vertices and the
+  same triangles. The meshopt index encoder may rotate a triangle's corners (same winding), so triangles are
+  compared up to rotation. A 13.9 MB character loads equally fast either way; the size gain on real assets
+  comes with quantized attributes (`KHR_mesh_quantization`), which the loader already reads.
+
+The meshopt reference decoder and the encoder both treat a triangle's corner order as free; nothing in the
+renderer depends on which corner comes first.
 
 ## Provenance
 
