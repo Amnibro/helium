@@ -4032,6 +4032,10 @@ largest coordinate, because the intersection is only as precise as the triangle'
 | P9 control, time + 0.01 s | 7552 um: fails | 7551 um: fails |
 | P10 engine sky: worst channel difference | 550 ppm | 550 ppm |
 | P10 controls, x 1.01 / x mirrored | 7453 / 639932 ppm: fail | same |
+| P11 cloud layer: worst channel difference | 617 ppm | 617 ppm |
+| P11 layer controls, no alpha / flipped | 683892 / 194046 ppm: fail | same |
+| P11 cloud shadow: total / worst pixel | -176 / 4901 ppm | -175 / 4901 ppm |
+| P11 shadow controls, no factor / mirrored (worst pixel) | 475328 / 436923 ppm: fail | same |
 
 The CPU and GPU results agree to the printed digit because both use the same seeds and
 the same shader; only rounding in the last place differs. The furnace error grows with
@@ -4988,7 +4992,7 @@ frames per second (1,061 KB for 30 frames).
   renderer stays on the software BVH until Helium has its own Vulkan backend. One TLAS a
   device. `gfx.pathtrace` does not yet read spot and rect lights, instanced sets, second UV
   sets, texture transforms, morph targets, transmission or subsurface scattering, and it
-  traces opaque-only scenes faster than scenes with alpha mask or blend. Its sky is the environment cube, so cloud detail the sky pass draws on screen on top of that cube is not in the traced image. Its sea has no foam,
+  traces opaque-only scenes faster than scenes with alpha mask or blend. Camera rays see the sky pass's own cloud layer; reflected and refracted rays see the clouds baked into the environment cube, as the realtime reflections do. Its sea has no foam,
   no wake and no seabed caustics beyond what the path tracer finds by itself, and the camera
   must start above the water unless `UNDER` is set.
 

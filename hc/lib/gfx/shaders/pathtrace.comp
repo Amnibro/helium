@@ -9,10 +9,38 @@ layout(std430, set = 0, binding = 4) buffer Acc { vec4 acc[]; };
 layout(std430, set = 0, binding = 5) readonly buffer Par { vec4 par[]; };
 layout(std430, set = 0, binding = 6) readonly buffer Lit { vec4 lit[]; };
 layout(std430, set = 0, binding = 7) readonly buffer Sky { vec4 skyc[]; };
+layout(std430, set = 0, binding = 8) readonly buffer Cld { uint cld[]; };
 #include "lighting.glsl"
 #include "ms.glsl"
 #include "water.glsl"
 uint rs;
+vec2 suv;
+vec4 cl_tx(int x, int y) { int w = int(par[18].x); uint i = uint(clamp(y, 0, int(par[18].y) - 1) * w + clamp(x, 0, w - 1)) * 2u; return vec4(unpackHalf2x16(cld[i]), unpackHalf2x16(cld[i + 1u])); }
+vec4 cl_bl(vec2 uv) { vec2 f = uv * par[18].xy - 0.5; ivec2 i = ivec2(floor(f)); vec2 t = f - vec2(i); return mix(mix(cl_tx(i.x, i.y), cl_tx(i.x + 1, i.y), t.x), mix(cl_tx(i.x, i.y + 1), cl_tx(i.x + 1, i.y + 1), t.x), t.y); }
+vec4 cloud_up(vec2 uv) {
+	if (par[18].x < 0.5) return vec4(0.0, 0.0, 0.0, 1.0);
+	vec2 sz = par[18].xy;
+	vec2 c = floor(uv * sz - 0.5) + 0.5;
+	vec2 f = uv * sz - c;
+	vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+	vec2 w3 = f * f * (-0.5 + 0.5 * f);
+	vec2 wm = 1.0 - w0 - w3;
+	vec2 t0 = (c - 1.0) / sz;
+	vec2 t3 = (c + 2.0) / sz;
+	vec2 tm = (c + f * (0.5 + f * (2.0 - 1.5 * f)) / wm) / sz;
+	vec4 r = (cl_bl(vec2(t0.x, t0.y)) * w0.x + cl_bl(vec2(tm.x, t0.y)) * wm.x + cl_bl(vec2(t3.x, t0.y)) * w3.x) * w0.y + (cl_bl(vec2(t0.x, tm.y)) * w0.x + cl_bl(vec2(tm.x, tm.y)) * wm.x + cl_bl(vec2(t3.x, tm.y)) * w3.x) * wm.y + (cl_bl(vec2(t0.x, t3.y)) * w0.x + cl_bl(vec2(tm.x, t3.y)) * wm.x + cl_bl(vec2(t3.x, t3.y)) * w3.x) * w3.y;
+	return vec4(max(r.rgb, vec3(0.0)), clamp(r.a, 0.0, 1.0));
+}
+float cs_tx(int x, int y) { int n = int(par[18].z); int i = clamp(y, 0, n - 1) * n + clamp(x, 0, n - 1); return unpackHalf2x16(cld[uint(par[18].x * par[18].y) * 2u + uint(i >> 1)])[i & 1]; }
+float cloud_t(vec3 p) {
+	if (par[18].z < 0.5) return 1.0;
+	vec2 uv = vec2(dot(par[19].xyz, p) + par[19].w, dot(par[20].xyz, p) + par[20].w);
+	vec2 e = smoothstep(vec2(0.5), vec2(0.45), abs(uv - 0.5));
+	vec2 f = uv * par[18].z - 0.5;
+	ivec2 i = ivec2(floor(f));
+	vec2 t = f - vec2(i);
+	return mix(1.0, mix(mix(cs_tx(i.x, i.y), cs_tx(i.x + 1, i.y), t.x), mix(cs_tx(i.x, i.y + 1), cs_tx(i.x + 1, i.y + 1), t.x), t.y), par[18].w * e.x * e.y);
+}
 int hit_p;
 vec2 hit_b;
 uint hash(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }
@@ -116,7 +144,7 @@ vec3 sunw(vec3 p, vec3 st, out vec3 wl) {
 	float ct = -dot(rt, nw);
 	wl = -rt;
 	if (ci <= 0.0 || ct <= 0.0 || trace(offs(s, dot(gn, ts) > 0.0 ? gn : -gn, tri[q + 5].w), ts, 1e30, true) >= 0.0) return vec3(0.0);
-	return par[7].rgb * ((1.0 - fdiel(ci, e)) * ci / ct) * exp(-st * t1);
+	return par[7].rgb * (cloud_t(s) * (1.0 - fdiel(ci, e)) * ci / ct) * exp(-st * t1);
 }
 vec4 cube_tx(int f, int x, int y, int n) { return skyc[(f * n + clamp(y, 0, n - 1)) * n + clamp(x, 0, n - 1)]; }
 vec3 cube(vec3 d) {
@@ -171,7 +199,7 @@ vec3 radiance(vec3 o, vec3 d) {
 				tp *= tr / pf;
 			} else tp *= exp(-sa * tt);
 		}
-		if (t < 0.0) { L += tp * (env(d) + (dl && dot(d, ts) >= par[6].w ? par[7].rgb * sd : vec3(0.0))); break; }
+		if (t < 0.0) { vec4 k = depth == 0 ? cloud_up(suv) : vec4(0.0, 0.0, 0.0, 1.0); L += tp * ((env(d) + (dl && dot(d, ts) >= par[6].w ? par[7].rgb * (sd * (depth == 0 ? 1.0 : cloud_t(o))) : vec3(0.0))) * k.a + k.rgb); break; }
 		vec3 p = o + d * t;
 		int q = hit_p * 7;
 		vec2 hb = hit_b;
@@ -233,7 +261,7 @@ vec3 radiance(vec3 o, vec3 d) {
 			float st = sqrt(max(0.0, 1.0 - ct * ct));
 			float ph = 6.28318530717959 * rnd();
 			vec3 l = sb1 * (st * cos(ph)) + sb2 * (st * sin(ph)) + ts * ct;
-			if (dot(gn, l) > 0.0 && trace(po, l, 1e30, true) < 0.0) L += tp * bsdf(n, v, l, alb, f0, f90, rough, ms, kd) * par[7].rgb;
+			if (dot(gn, l) > 0.0 && trace(po, l, 1e30, true) < 0.0) L += tp * bsdf(n, v, l, alb, f0, f90, rough, ms, kd) * par[7].rgb * cloud_t(p);
 		}
 		for (int i = 0; i < nli; i++) {
 			vec3 dl = lit[i * 2].xyz - p;
@@ -284,8 +312,10 @@ void main() {
 	vec4 s2 = base == 0u ? vec4(0.0) : acc[pi * 2u + 1u];
 	for (int k = 0; k < n; k++) {
 		rs = hash(pi * 0x9E3779B9u ^ hash(base + uint(k)));
-		float u = ((float(px.x) + rnd()) / wh.x * 2.0 - 1.0) * th * par[3].w;
-		float v = (1.0 - (float(px.y) + rnd()) / wh.y * 2.0) * th;
+		suv.x = (float(px.x) + rnd()) / wh.x;
+		suv.y = (float(px.y) + rnd()) / wh.y;
+		float u = (suv.x * 2.0 - 1.0) * th * par[3].w;
+		float v = (1.0 - suv.y * 2.0) * th;
 		vec3 L = radiance(par[2].xyz, normalize(par[3].xyz * u + par[4].xyz * v + par[5].xyz));
 		float y = dot(L, vec3(0.2126, 0.7152, 0.0722));
 		bool ok = y >= 0.0 && y < 1e30;

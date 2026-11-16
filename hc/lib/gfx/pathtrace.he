@@ -44,9 +44,16 @@ var SKYC f32[>..]
 var SKYN = 0
 var SKYI = 1.0
 var SKYR = 0.0
+var CLD u32[>..]
+var CW = 0
+var CH = 0
+var CSN = 0
+var CSK = 0.0
+var CLU = [0.0, 0.0, 0.0, 0.0]
+var CLV = [0.0, 0.0, 0.0, 0.0]
 struct CubeU { p float4 }
 struct Mat { base real[4] = [1.0, 1.0, 1.0, 1.0], glow real[3] = [0.0, 0.0, 0.0], metal real = 0.0, rough real = 1.0, spec real = 1.0, ior real = 1.5, tb int = -1, tmr int = -1, tn int = -1, te int = -1, ns real = 1.0, mode int = 0, cut real = 0.5, unlit bool = false, water bool = false }
-clear(): TRI.clear(); POS.clear(); MAT.clear(); TXH.clear(); TXP.clear(); LIT.clear(); IMG.clear(); PMAT.clear(); MASK = false; SKIPPED = 0; SKYC.clear(); SKYN = 0
+clear(): TRI.clear(); POS.clear(); MAT.clear(); TXH.clear(); TXP.clear(); LIT.clear(); IMG.clear(); PMAT.clear(); MASK = false; SKIPPED = 0; SKYC.clear(); SKYN = 0; CLD.clear(); CW = 0; CH = 0; CSN = 0; CSK = 0.0
 mat(m Mat) int:
 	for x [m.base[0], m.base[1], m.base[2], m.base[3], m.glow[0], m.glow[1], m.glow[2], m.metal, m.rough, m.ns, m.cut, m.mode as real, m.tb as real, m.tmr as real, m.tn as real, m.te as real, m.spec, if m.water { 1.0 } else { 0.0 }, if m.unlit { 1.0 } else { 0.0 }, m.ior]: MAT.push(x as f32)
 	MAT.len / 20 - 1
@@ -110,6 +117,11 @@ sky_cube(n int) bool:
 		gfx::bind(envmap::pipe_copy); gfx::bind_texture(gfx::FRAGMENT, 0, envmap::texture(), envmap::smp); gfx::uniforms(gfx::FRAGMENT, 0, CubeU{p: float4{f as f32, 0.0, 0.0, 0.0}}); gfx::draw(3); gfx::end_pass()
 		if !gfx::read_texture(t, SKYC): gfx::release(t); SKYC.clear(); return false
 	gfx::release(t); SKYN = n; SKYI = envmap::intensity as real; SKYR = envmap::rotation as real; true
+clouds_of():
+	if s3d::clouds_live() && s3d::cloud_tex.id != 0: i := gfx::texture_info(s3d::cloud_tex); if gfx::read_texture(s3d::cloud_tex, CLD) { CW = i.width as int; CH = i.height as int } else { CLD.clear(); SKIPPED++ }
+	if s3d::cloud_shadow_on() && s3d::cloud_shadow_tex.id != 0:
+		i := gfx::texture_info(s3d::cloud_shadow_tex); n := CLD.len; u := s3d::cloud_cu; v := s3d::cloud_cv
+		if gfx::read_texture(s3d::cloud_shadow_tex, CLD) { CSN = i.width as int; CSK = s3d::clouds.shadow as real; CLU = [u.x as real, u.y as real, u.z as real, u.w as real]; CLV = [v.x as real, v.y as real, v.z as real, v.w as real] } else { CLD.resize(n, 0 as u32); SKIPPED++ }
 texof(r gltf::TexRef) int:
 	if r.texture < 0 || gltf::textures[r.texture].image < 0: return -1
 	im := gltf::textures[r.texture].image
@@ -124,7 +136,7 @@ matof(prim int) int:
 	PMAT[prim]
 from_scene():
 	clear(); c := s3d::view; EYE = v3(c.eye); TGT = v3(c.target); UP = v3(c.up); FOV = c.fov_y as real
-	s := s3d::sun; TO_SUN = v3(s.to_sun); SUN = v3(s.rgb); SUN_COS = cos(s.angle as real); k := s3d::sky; ZEN = v3(k.zenith); HOR = v3(k.horizon); GND = v3(k.ground); UNDER = s3d::sea_wet(); if envmap::on && !sky_cube(envmap::cube_n) { SKIPPED++ }
+	s := s3d::sun; TO_SUN = v3(s.to_sun); SUN = v3(s.rgb); SUN_COS = cos(s.angle as real); k := s3d::sky; ZEN = v3(k.zenith); HOR = v3(k.horizon); GND = v3(k.ground); UNDER = s3d::sea_wet(); if envmap::on && !sky_cube(envmap::cube_n) { SKIPPED++ } clouds_of()
 	for l s3d::lights: if l.kind == 0 && l.width == 0.0 && l.radius == 0.0 && l.length == 0.0 { light(l.pos.x as real, l.pos.y as real, l.pos.z as real, l.rgb.x as real, l.rgb.y as real, l.rgb.z as real, l.range as real) } else { SKIPPED++ }
 	p real[>..] ~= []; n real[>..] ~= []; uv real[>..] ~= []; cs real[>..] ~= []; sp real[>..] ~= []; sn real[>..] ~= []; su real[>..] ~= []; sc real[>..] ~= []; sm int[>..] ~= []
 	for b s3d::batch:
@@ -151,10 +163,10 @@ render(w int, h int, spp int) f32[>..]:
 	tx.append(TXP[..]); lt f32[>..] ~= []; lt.append(LIT[..])
 	while tx.len < 4: tx.push(0 as u32)
 	while lt.len < 8: lt.push(0.0)
-	tb := hwrt::buf(TRI.len * 4, 0x20, false); mb := hwrt::buf(MAT.len * 4, 0x20, false); xb := hwrt::buf(tx.len * 4, 0x20, false); ab := hwrt::buf(w * h * 32, 0x20, false); pb := hwrt::buf(288, 0x20, false); lb := hwrt::buf(lt.len * 4, 0x20, false); kb := hwrt::buf(max(SKYC.len, 4) * 4, 0x20, false)
-	bs := [tb, mb, xb, ab, pb, lb, kb]; pp := hwrt::pipe(embed_shader("shaders/pathtrace.comp"), 7)
-	if pp < 0 || tb < 0 || mb < 0 || xb < 0 || ab < 0 || pb < 0 || lb < 0 || kb < 0: return out
-	hwrt::put(tb, TRI[..]); hwrt::put(mb, MAT[..]); hwrt::put(xb, tx[..]); hwrt::put(lb, lt[..]); if SKYN > 0 { hwrt::put(kb, SKYC[..]) } else { z4 := [0.0 as f32, 0.0 as f32, 0.0 as f32, 0.0 as f32]; hwrt::put(kb, z4[..]) }
+	tb := hwrt::buf(TRI.len * 4, 0x20, false); mb := hwrt::buf(MAT.len * 4, 0x20, false); xb := hwrt::buf(tx.len * 4, 0x20, false); ab := hwrt::buf(w * h * 32, 0x20, false); pb := hwrt::buf(336, 0x20, false); lb := hwrt::buf(lt.len * 4, 0x20, false); kb := hwrt::buf(max(SKYC.len, 4) * 4, 0x20, false); cb := hwrt::buf(max(CLD.len, 4) * 4, 0x20, false)
+	bs := [tb, mb, xb, ab, pb, lb, kb, cb]; pp := hwrt::pipe(embed_shader("shaders/pathtrace.comp"), 8)
+	if pp < 0 || tb < 0 || mb < 0 || xb < 0 || ab < 0 || pb < 0 || lb < 0 || kb < 0 || cb < 0: return out
+	hwrt::put(tb, TRI[..]); hwrt::put(mb, MAT[..]); hwrt::put(xb, tx[..]); hwrt::put(lb, lt[..]); if SKYN > 0 { hwrt::put(kb, SKYC[..]) } else { z4 := [0.0 as f32, 0.0 as f32, 0.0 as f32, 0.0 as f32]; hwrt::put(kb, z4[..]) } c4 u32[>..] ~= []; c4.append(CLD[..]); while c4.len < 4 { c4.push(0 as u32) } hwrt::put(cb, c4[..])
 	fx ~= TGT[0] - EYE[0]; fy ~= TGT[1] - EYE[1]; fz ~= TGT[2] - EYE[2]; fl := sqrt(fx * fx + fy * fy + fz * fz); fx /= fl; fy /= fl; fz /= fl
 	rx ~= fy * UP[2] - fz * UP[1]; ry ~= fz * UP[0] - fx * UP[2]; rz ~= fx * UP[1] - fy * UP[0]; rl := sqrt(rx * rx + ry * ry + rz * rz); rx /= rl; ry /= rl; rz /= rl
 	ux := ry * fz - rz * fy; uy := rz * fx - rx * fz; uz := rx * fy - ry * fx
@@ -165,7 +177,7 @@ render(w int, h int, spp int) f32[>..]:
 			base ~= 0
 			while base < spp:
 				kk := min(k, spp - base); pr.clear()
-				for x [w as real, h as real, kk as real, base as real, (tc * 256) as real, (ty * 256) as real, DEPTH as real, (LIT.len / 8) as real, EYE[0], EYE[1], EYE[2], tan(FOV * 0.5), rx, ry, rz, w as real / h as real, ux, uy, uz, 0.0, fx, fy, fz, 0.0, TO_SUN[0] / sl, TO_SUN[1] / sl, TO_SUN[2] / sl, SUN_COS, SUN[0], SUN[1], SUN[2], son, ZEN[0], ZEN[1], ZEN[2], SKY, HOR[0], HOR[1], HOR[2], 0.0, GND[0], GND[1], GND[2], 0.0, if FURN >= 0.0 { 1.0 } else { 0.0 }, FURN, 0.0, if MS { 1.0 } else { 0.0 }, PDFK, 0.0, 256.0, 256.0, WAVES[0], WAVES[1], WAVES[2], WAVES[3], ABSORB[0], ABSORB[1], ABSORB[2], 0.0, SCATTER[0], SCATTER[1], SCATTER[2], PHASE_G, ETA, TK, 0.0, if UNDER { 1.0 } else { 0.0 }, SKYN as real, SKYI, cos(SKYR), sin(SKYR)]: pr.push(x as f32)
+				for x [w as real, h as real, kk as real, base as real, (tc * 256) as real, (ty * 256) as real, DEPTH as real, (LIT.len / 8) as real, EYE[0], EYE[1], EYE[2], tan(FOV * 0.5), rx, ry, rz, w as real / h as real, ux, uy, uz, 0.0, fx, fy, fz, 0.0, TO_SUN[0] / sl, TO_SUN[1] / sl, TO_SUN[2] / sl, SUN_COS, SUN[0], SUN[1], SUN[2], son, ZEN[0], ZEN[1], ZEN[2], SKY, HOR[0], HOR[1], HOR[2], 0.0, GND[0], GND[1], GND[2], 0.0, if FURN >= 0.0 { 1.0 } else { 0.0 }, FURN, 0.0, if MS { 1.0 } else { 0.0 }, PDFK, 0.0, 256.0, 256.0, WAVES[0], WAVES[1], WAVES[2], WAVES[3], ABSORB[0], ABSORB[1], ABSORB[2], 0.0, SCATTER[0], SCATTER[1], SCATTER[2], PHASE_G, ETA, TK, 0.0, if UNDER { 1.0 } else { 0.0 }, SKYN as real, SKYI, cos(SKYR), sin(SKYR), CW as real, CH as real, CSN as real, CSK, CLU[0], CLU[1], CLU[2], CLU[3], CLV[0], CLV[1], CLV[2], CLV[3]]: pr.push(x as f32)
 				hwrt::put(pb, pr[..]); t0 := clock()
 				if !hwrt::run(pp, bs[..], 32, 32, 1): out.clear(); return out
 				ms := (clock() - t0) * 1000.0; MAXMS = max(MAXMS, ms); base += kk; k = if ms < 150.0 { min(k * 2, 256) } else if ms > 500.0 { max(k / 2, 1) } else { k }
