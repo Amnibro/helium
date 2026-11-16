@@ -3759,6 +3759,36 @@ the CPU in double precision.
   `gfxtest`, `wgsltest` and `webgputest` pass; the caustics bars K1 to K9 and the
   goldens do not move.
 
+### Hardware ray tracing bars (reference mode, registered before the first GPU run)
+
+`gfx.hwrt` runs Vulkan ray queries (`VK_KHR_acceleration_structure`, `VK_KHR_ray_query`)
+on a Vulkan device of its own. SDL's GPU API has no acceleration structures, so the
+realtime renderer keeps the software BVH (`gfx.rt`, `shaders/gi.glsl`) and this module
+renders offline references. `shaderc` compiles `GL_EXT_ray_query` shaders to SPIR-V only
+(no HLSL, MSL, WGSL or GLSL ES output for them).
+
+* **R1 ray query.** `hc/test/gfx/rt/rq_check.he`: 64 rays against 3 triangles; the
+  committed hit distance, primitive index and barycentrics match an f64 Moller-Trumbore
+  within 1e-4, 0 mismatches. Control: the same rays with one triangle moved 0.05 along z
+  must give at least 1 mismatch.
+* **R2 Cornell.** `hc/test/gfx/gi/cornell_hw.he` path-traces the GI part 1 Cornell scene
+  with `cornell_pt`'s estimator (next-event estimation to the point light, cosine-weighted
+  bounces, Russian roulette from bounce 3; PCG random numbers) at 1024 spp, 64 spp a
+  dispatch. Per lit pixel z = (Y - Y_ref) / sqrt(s^2 / n + SE_ref^2), with SE_ref the
+  reference's standard error and s = 256 SE_ref its per-sample deviation:
+  |mean z| < **0.05**, mean z^2 in **[0.85, 1.15]**, |z| > 4 in under **0.1 %** of lit
+  pixels, total luminance within **0.3 %**. Controls that must fail: the light x 1.01, and
+  the red wall's albedo x 1.03.
+* **R3 software agreement.** The same estimator through `gi.glsl`'s software BVH walk
+  passes R2.
+* **R4 speed** (gated on a real GPU, reported on lavapipe). Heavy scene: the Cornell box
+  plus an 81920-triangle icosphere above the short block, 256 spp. Hardware ray query is
+  at least **2x** the software walk in paths per second, and the two images' total
+  luminance agrees within **0.3 %**. Control: the software walk timed in both slots must
+  fail the 2x bar.
+* **R5 job length.** No dispatch runs longer than **1 s** on the RX 9060 XT (amdgpu's
+  job limit is 2 s).
+
 ### Water results (2026-11-10, RX 9060 XT, RADV; another program using the whole card; full gate run)
 
 W4 has a black floor 3 m down in both frames, and its reference frame sets the sky's
