@@ -3942,6 +3942,8 @@ Skin materials (`sss_skin`: shading 1, opaque, not `ext`) carry their scatter di
 `Mat.sss`, and the diffuse share of their light takes a random walk under the surface (P12).
 The walk samples one color channel's free flight for its whole length and weights the path by
 the balance of all three channels at the end, so a long walk's weight stays below 3.
+Hair grooms become fibers (P13): capped cylinders the ray query finds through boxes along each
+strand segment, shaded with the realtime hair's Chiang model.
 
 * **P1 furnace.** A sphere (81920 triangles, smooth normals) under a uniform white sky, 1024
   spp, 128 x 128, four materials: white dielectric at roughness 0.2 and 0.7, white metal at 0.3,
@@ -4027,6 +4029,27 @@ the balance of all three channels at the end, so a long walk's weight stays belo
   white sky returns all its light. Control that must fail: skin base 0.9 against the 1.0
   expectation (a 1 m sphere is far from a half-space: its walks leave long before a base of
   0.99 would absorb its 1 %).
+* **P13 hair.** A strand segment is a capped cylinder that the ray query finds through `KB`
+  boxes along its axis; each box accepts only hits whose entry point lies in its share of the
+  axis, and a ray leaving a fiber skips its own segment and the two next to it on the same
+  strand. Fibers shade with the realtime hair's Chiang model (gfx.hair, after pbrt-v3: lobes R,
+  TT, TRT and the rest with scales tilted by alpha, exact longitudinal and trimmed-logistic
+  azimuthal sampling, lobes picked by the luminance of their attenuation): sun and point
+  lights at every bounce, then one sampled direction. Grooms come from `hair::export`, the
+  raster pass's own strand generator run once at full detail. Test fiber: one cylinder of
+  radius 0.1 from (0.1, -0.75, -0.3) to (-0.1, 0.75, 0.3), absorption 0.2, 0.5, 1.2 per unit
+  radius, beta_m = beta_n = 0.3, alpha 2 degrees, seen from (0, 0, 2) toward the origin (field
+  of view 0.9, 128 x 128, 2048 samples). Expected values come from an f64 port of the model,
+  with the exact ray-cylinder hit and h, over a 16 x 16 grid of rays per pixel. Furnace (white
+  sky 1, one box per segment): a pixel on the fiber loses exactly what the fiber absorbs, 1
+  minus the sum of the four attenuations at that h and view angle. Bar: each channel's total
+  loss within 0.2 %. Controls that must fail: the sampling pdf x 1.02 and the absorption x
+  1.02 (red loss off by about 4.4 % and 1.6 %). Sun (a delta sun of 3, 2.85, 2.6 at 110
+  degrees of azimuth from the view and 5 degrees past the mirror of its inclination, black sky,
+  three boxes per segment): the image is split along the fiber's projected axis. Bar: each
+  half's total in each channel within 0.3 %. Controls that must fail: the sun mirrored across
+  the plane of the fiber and the view (the halves swap), and the fiber drawn from tip to root
+  (one half's red off by about 2.9 %).
 
 ### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
