@@ -3946,6 +3946,27 @@ lights of the last `scene3d` frame. Tests: `hc/test/gfx/pt/pt_check.he`, and P3 
   variance is lower (mean z^2 0.855 on lavapipe). Control that must fail: the light x 1.01.
 * **P4 safety.** No dispatch over 1 s on the RX 9060 XT (the tracer halves its samples per
   dispatch above 500 ms), and no NaN or infinite sample in any render.
+* **P5 water furnace.** Water (`Mat.water`, IOR 1.33) with waves (0.35, 0.045) over a white
+  Lambertian floor 2 m down, no absorption, scattering (0.8, 1.0, 1.2) per m with phase g 0.7,
+  under a uniform white sky: nothing is lost, so every pixel must be 1. Bars: total within
+  0.2 %, each of 8 row bands within 0.5 %. Controls that must fail: absorption 0.01 per m, and
+  the refraction weight x 1.02.
+* **P6 water Beer-Lambert.** Flat water with absorption (0.3, 0.06, 0.045) per m over a black
+  floor glowing 1 at 2 m depth, sky 0.5. Each pixel must equal F 0.5 + (1 - F) exp(-2 sigma /
+  cos t) / 1.33^2 (exact Fresnel; radiance leaving the denser medium drops by 1 / n^2), averaged
+  over 4 x 4 sub-pixel rays. Bars: total within 0.1 %, every pixel within 2 %. Controls that
+  must fail: absorption x 1.05, the floor glow x 1.01.
+* **P7 sunlight in water.** Flat, bottomless water with P6's absorption and scattering (0.02,
+  0.04, 0.06) per m, phase g 0.5, a delta sun 30 degrees up ahead of the camera, black sky, one
+  scattering event only. Each pixel must equal the closed-form single-scattering integral
+  (refracted sun with Fresnel in and out, 1 / 1.33^2 on the way out). Bars: total within
+  0.3 %, each of 8 row bands within 1 %. Controls that must fail: the sun x 1.01, absorption
+  x 1.05.
+* **P8 sunlit floor under water.** Flat water with P6's absorption over a white Lambertian
+  floor 2 m down, the P7 sun, black sky, one bounce: each pixel must equal (1 - F) exp(-2 sigma
+  (1 / cos t + 1 / cos ts)) S (1 - Fs) cos s / (pi 1.33^2), where s and ts are the sun's angle
+  in air and in water. Bars: total within 0.1 %, every pixel within 2 %. Controls that must
+  fail: the sun x 1.01, absorption x 1.05.
 
 ### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
