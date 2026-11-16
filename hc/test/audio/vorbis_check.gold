@@ -1,0 +1,31 @@
+use std
+into vorbis_check.amni
+
+Imports: os, binary and codec_vorbis. A standalone program that checks the Ogg Vorbis decoder on the CPU and prints one line per check, then "vorbis: ok" when every check passed or "vorbis: FAILED" otherwise. A check line is "PASS " or "FAIL ", its name, a space and its detail; a module bool `bad` records any failure. The fixtures folder is the first program argument when one is given (`os::arg_count()` above 1, read with `os::arg(1, out)`), otherwise "hc/test/audio/fixtures". Files are read with `os::read_file(path, out)` (it gives a bool). `ns()` gives `os::clock_ns()`.
+
+These already exist in namespace codec_vorbis and must not be defined here: `codec_vorbis::decode(data, pcm)` gives channels, rate and a bool and fills the f32 list pcm with interleaved samples; `codec_vorbis::error()` gives the last failure reason; `codec_vorbis::imdct_into(x, out)` writes the inverse MDCT of the f32 list x (n halved coefficients) into the f32 list out as n values.
+
+A `Case` holds a name (text), channels (int) and rate (int); `cases()` gives the list below.
+
+```table cases Case
+v_mono8k|1|8000
+v_st44|2|44100
+v_st48hi|2|48000
+v_st48lo|2|48000
+v_51|6|48000
+v_silence|2|44100
+v_short|1|22050
+v_clicks|2|48000
+```
+
+`refs(name, out)` reads the file name plus ".f32" in the fixtures folder and gives a bool; out gets one f32 per 4 bytes, each read with `binary::read_f32le(bytes, at)` (import binary; it gives the f32 stored little-endian at byte at), not from_bytes.
+
+V1: every case matches libvorbisfile. For each case decode name plus ".ogg"; it passes when decode gives true, channels and rate equal the case's, pcm has as many values as the reference and every value is within 0.0001 of the reference value. One check line per case whose detail is the frame count, " frames, max diff " and the largest difference in scientific notation with 2 decimals (or the decoder error when decode fails, or the two lengths when they differ).
+
+V2: the fast inverse MDCT equals its definition. For n of 64, 512 and 4096: x holds n halved values from a module LCG (state starts at 7; next state is state times 6364136223846793005 plus 1442695040888963407 kept to 64 bits; a value is the top 24 bits of the state divided by 2 to the 23 minus 1); the definition gives output i below n as the sum over j of x at j times the cosine of pi over 2n times (2i plus 1 plus n halved) times (2j plus 1), worked out in reals. It passes when every output of imdct_into is within 0.00001 times the largest absolute definition value plus 0.000001. One line per size with the largest difference.
+
+V3: damaged files never crash and never give a broken result. For every case, decode: the file cut to half its length, the file cut to its first 40 bytes, a copy with its first byte set to 0x55, a copy with the middle byte bitwise-xored with 0x5a, a copy with every 97th byte (from 50) bitwise-xored with 0xff, and an empty file. A result is fine when decode gives false, or gives true with channels from 1 to 255, a pcm length that is a multiple of channels and every value from minus 1 to 1. The empty file must give false. One line with the count of fine results out of the total.
+
+V4: decoding is fast. Decode "v_st48hi.ogg" 7 times timing each with ns(); the speed is the audio seconds (48000 frames make one second) divided by the fastest decode's seconds. It passes when the speed is at least 200. The detail is the fastest decode in milliseconds with 2 decimals and the speed with no decimals followed by "x realtime".
+
+`main` reads every case file first (a missing file fails with its name), runs V1 to V4 and finally prints "vorbis: ok" or "vorbis: FAILED".
