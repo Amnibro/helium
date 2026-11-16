@@ -3926,6 +3926,18 @@ surfaces. It reads base, metal-rough, normal and emissive textures, and alpha ma
 lights of the last `scene3d` frame. Tests: `hc/test/gfx/pt/pt_check.he`, and P3 in
 `hc/test/gfx/gi/cornell_hw.he`.
 
+The sea is a real medium. A water material (`Mat.water`; `from_scene()` sets it for the
+scene's sea material) is a smooth dielectric at IOR 1.33 whose normal follows the same
+`water_wave` sum as the realtime shader, and `from_scene()` lifts its vertices by the same
+waves at the frame's `world_time`. Rays pick reflection or refraction by exact Fresnel,
+radiance crossing the surface scales by 1 / n^2, and below it light is absorbed and scattered
+(the sea's absorb and scatter colors, Henyey-Greenstein phase) with spectral free-flight
+sampling. The sun is sampled through the waves both for the water itself and for anything
+under it, and the sun disc shows in reflections and refractions of the surface. Every ray
+leaving a surface starts off it by 256 ulps of the hit point plus 2^-18 of the triangle's
+largest coordinate, because the intersection is only as precise as the triangle's vertices
+(a 400 m sea triangle needs 1.5 mm; P6 lost 6 % of its samples to re-hits before this).
+
 * **P1 furnace.** A sphere (81920 triangles, smooth normals) under a uniform white sky, 1024
   spp, 128 x 128, four materials: white dielectric at roughness 0.2 and 0.7, white metal at 0.3,
   gold metal at 0.5. Each pixel's expected radiance is the material's directional albedo at that
@@ -3982,11 +3994,22 @@ lights of the last `scene3d` frame. Tests: `hc/test/gfx/pt/pt_check.he`, and P3 
 | P2 controls, sun x 1.01 / point x 1.01 | 8592 / 1405 ppm: fail | same |
 | P3 Cornell: mean z, mean z^2, \|z\| > 4, total | 0.0055, 0.855, 2, 72 ppm (98 ms) | same (5.4 s) |
 | P3 control, light x 1.01 | mean z 0.391: fails | same |
-| P4 longest dispatch, bad samples | 13 ms, 0 | 400 ms (reported), 0 |
+| P4 longest dispatch, bad samples | 62 ms, 0 | 699 ms (reported), 0 |
+| P5 water furnace: total, worst band | -521 ppm, 2367 ppm | -558 ppm, 2383 ppm |
+| P5 controls, absorption 0.01 / refraction x 1.02 | -123910 / 36450 ppm: fail | same to 0.1 % |
+| P6 Beer-Lambert: total, worst pixel | 169 ppm, 7395 ppm | same |
+| P6 controls, absorption x 1.05 / glow x 1.01 | -9991 / 9279 ppm: fail | same |
+| P7 sunlight in water: total, worst band | -310 ppm, 923 ppm | -310 ppm, 922 ppm |
+| P7 controls, sun x 1.01 / absorption x 1.05 | 9686 / -29173 ppm: fail | same |
+| P8 sunlit floor (32768 spp): total, worst pixel | 293 ppm, 9948 ppm | 293 ppm, 9947 ppm |
+| P8 controls, sun x 1.01 / absorption x 1.05 | 10296 / -19239 ppm: fail | same |
 
 The CPU and GPU results agree to the printed digit because both use the same seeds and
 the same shader; only rounding in the last place differs. The furnace error grows with
-the specular share (metals) but stays under a third of the bar.
+the specular share (metals) but stays under a third of the bar. P5-P7 render 1024 spp; P8
+renders 32768 because at the top of its frame the view meets the water at 11 degrees, where
+Fresnel reflects 36 % of the rays into its black sky, and at 1024 spp that noise alone is
+2.3 % a pixel. The whole suite takes 8 s on the RX 9060 XT and 106 s on lavapipe.
 
 ### Hardware ray tracing results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
@@ -4936,7 +4959,9 @@ frames per second (1,061 KB for 30 frames).
   renderer stays on the software BVH until Helium has its own Vulkan backend. One TLAS a
   device. `gfx.pathtrace` does not yet read spot and rect lights, instanced sets, second UV
   sets, texture transforms, morph targets, transmission or subsurface scattering, and it
-  traces opaque-only scenes faster than scenes with alpha mask or blend.
+  traces opaque-only scenes faster than scenes with alpha mask or blend. Its sea has no foam,
+  no wake and no seabed caustics beyond what the path tracer finds by itself, and the camera
+  must start above the water unless `UNDER` is set.
 
 * Skin scattering gathers light from what the camera sees: light that enters on a side
   facing away from the camera (an ear lit from behind) is not gathered, and blended or

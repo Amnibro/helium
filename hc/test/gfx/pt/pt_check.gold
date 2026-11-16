@@ -78,10 +78,40 @@ furnace(name const byte[:], m pathtrace::Mat, mx pathtrace::Mat, want bool) bool
 	print(str(name, ": ", np, " pixels, total ", (d * 1e6) as! int, " ppm, worst bin ", (wb * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
 	pass == want
 var BAD = 0
+plane(y real, r real, m int):
+	z := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
+	pathtrace::tri([-r, y, -r, -r, y, r, r, y, r][..], z[..], uv[..], cl[..], m); pathtrace::tri([-r, y, -r, r, y, r, r, y, -r][..], z[..], uv[..], cl[..], m)
+fd(ci real, e real) real:
+	s2 := e * e * (1.0 - ci * ci)
+	if s2 >= 1.0: return 1.0
+	ct := sqrt(1.0 - s2); rs := (e * ci - ct) / (e * ci + ct); rp := (ci - e * ct) / (ci + e * ct)
+	0.5 * (rs * rs + rp * rp)
+water(name const byte[:], kind int, sk real, ak real, tk real, want bool) bool:
+	san := [0.3, 0.06, 0.045]; ss := [0.02, 0.04, 0.06]; srn := [3.0, 2.85, 2.6]; ts := [0.0, 0.5, -sqrt(0.75)]; g := 0.5; e := 1.0 / 1.33
+	pathtrace::clear(); plane(0.0, 400.0, pathtrace::mat(pathtrace::Mat { water: true })); pathtrace::EYE = [0.0, 3.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::TK = tk; pathtrace::ETA = 1.33; pathtrace::UNDER = false; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
+	pathtrace::WAVES = [0.35, if kind == 0 { 0.045 } else { 0.0 }, 1.0, 0.0]; pathtrace::PHASE_G = if kind == 0 { 0.7 } else { g }; pathtrace::ABSORB = if kind == 0 { [0.01 * ak, 0.01 * ak, 0.01 * ak] } else { [san[0] * ak, san[1] * ak, san[2] * ak] }
+	if kind == 0: plane(-2.0, 400.0, pathtrace::mat(pathtrace::Mat { spec: 0.0 })); pathtrace::SCATTER = [0.8, 1.0, 1.2]; pathtrace::FURN = 1.0; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::DEPTH = 256
+	else if kind == 1: plane(-2.0, 400.0, pathtrace::mat(pathtrace::Mat { base: [0.0, 0.0, 0.0, 1.0], glow: [sk, sk, sk], spec: 0.0 })); pathtrace::SCATTER = [0.0, 0.0, 0.0]; pathtrace::FURN = 0.5; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::DEPTH = 32
+	else if kind == 3: plane(-2.0, 400.0, pathtrace::mat(pathtrace::Mat { spec: 0.0 })); pathtrace::SCATTER = [0.0, 0.0, 0.0]; pathtrace::FURN = 0.0; pathtrace::SUN = [srn[0] * sk, srn[1] * sk, srn[2] * sk]; pathtrace::DEPTH = 2
+	else: pathtrace::SCATTER = ss; pathtrace::FURN = 0.0; pathtrace::SUN = [srn[0] * sk, srn[1] * sk, srn[2] * sk]; pathtrace::DEPTH = 2
+	acc := pathtrace::render(W, H, if kind == 3 { 32768 } else { 1024 }); pathtrace::DEPTH = 32; pathtrace::TK = 1.0; pathtrace::ABSORB = [0.0, 0.0, 0.0]; pathtrace::SCATTER = [0.0, 0.0, 0.0]; pathtrace::WAVES = [0.35, 0.0, 1.0, 0.0]; pathtrace::PHASE_G = 0.0
+	if acc.len == 0: print(str(name, ": render failed")); return false
+	gs ~= 0.0; es ~= 0.0; wp ~= 0.0; np ~= 0; wl := [0.2126, 0.7152, 0.0722]; bg real[>..] ~= []; be real[>..] ~= []; bg.resize(8, 0.0); be.resize(8, 0.0); BAD += pathtrace::bad(acc[..]); MX = max(MX, pathtrace::MAXMS)
+	cis := ts[1]; fs := fd(cis, e); cts := sqrt(1.0 - (1.0 - cis * cis) * e * e)
+	for y H:
+		for x W:
+			ey ~= 0.0
+			for s 16:
+				dx, dy, dz := ray(x, y, s % 4, s / 4); ci := -dy; f := fd(ci, e); ct := sqrt(1.0 - (1.0 - ci * ci) * e * e); mu := e * e * (ts[0] * dx + ts[2] * dz) - cts * ct; hd := 1.0 + g * g - 2.0 * g * mu; ph := (1.0 - g * g) / (12.566370614359172 * hd * sqrt(hd))
+				for c 3: ey += wl[c] / 16.0 * (if kind == 0 { 1.0 } else if kind == 1 { f * 0.5 + (1.0 - f) * exp(-san[c] * 2.0 / ct) * e * e } else if kind == 3 { (1.0 - f) * e * e * exp(-san[c] * 2.0 * (1.0 / ct + 1.0 / cts)) * srn[c] * (1.0 - fs) * cis / 3.141592653589793 } else { (1.0 - f) * e * e * ss[c] * ph * srn[c] * (1.0 - fs) * cis / cts / ((san[c] + ss[c]) * (1.0 + ct / cts)) })
+			i := y * W + x; gy := acc[i * 8 + 3] as real / acc[i * 8 + 5] as real; gs += gy; es += ey; wp = max(wp, abs(gy / ey - 1.0)); bg[y * 8 / H] += gy; be[y * 8 / H] += ey; np++
+	wb ~= 0.0; for k 8 { wb = max(wb, abs(bg[k] / be[k] - 1.0)) }
+	d := gs / es - 1.0; pass := abs(d) < (if kind == 0 { 0.002 } else if kind == 2 { 0.003 } else { 0.001 }) && (if kind == 1 || kind == 3 { wp < 0.02 } else { wb < (if kind == 0 { 0.005 } else { 0.01 }) })
+	print(str(name, ": ", np, " pixels, total ", (d * 1e6) as! int, " ppm, worst band ", (wb * 1e6) as! int, " ppm, worst pixel ", (wp * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
 var MX = 0.0
 direct(name const byte[:], sk real, pk real, want bool) bool:
-	m := pathtrace::Mat { base: [0.6, 0.5, 0.4, 1.0], rough: 0.5 }; z := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
-	pathtrace::clear(); mi := pathtrace::mat(m); pathtrace::tri([-10.0, 0.0, -10.0, -10.0, 0.0, 10.0, 10.0, 0.0, 10.0][..], z[..], uv[..], cl[..], mi); pathtrace::tri([-10.0, 0.0, -10.0, 10.0, 0.0, 10.0, 10.0, 0.0, -10.0][..], z[..], uv[..], cl[..], mi)
+	m := pathtrace::Mat { base: [0.6, 0.5, 0.4, 1.0], rough: 0.5 }; pathtrace::clear(); plane(0.0, 10.0, pathtrace::mat(m))
 	sr := [3.0, 2.85, 2.6]; ts := [0.3, 0.8, 0.2]; tl := sqrt(0.77); lp := [0.5, 1.2, -0.3]
 	pathtrace::light(lp[0], lp[1], lp[2], 5.0 * pk, 5.0 * pk, 5.0 * pk, 10.0); pathtrace::EYE = [0.0, 2.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::FURN = 0.0; pathtrace::SUN = [sr[0] * sk, sr[1] * sk, sr[2] * sk]; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
 	acc := pathtrace::render(W, H, 64)
@@ -116,6 +146,18 @@ main():
 	ok = direct("P2 sun and point light", 1.0, 1.0, true) && ok
 	ok = direct("P2 control, sun x 1.01", 1.01, 1.0, false) && ok
 	ok = direct("P2 control, point light x 1.01", 1.0, 1.01, false) && ok
+	ok = water("P5 water furnace", 0, 1.0, 0.0, 1.0, true) && ok
+	ok = water("P5 control, absorption 0.01 per m", 0, 1.0, 1.0, 1.0, false) && ok
+	ok = water("P5 control, refraction weight x 1.02", 0, 1.0, 0.0, 1.02, false) && ok
+	ok = water("P6 water Beer-Lambert", 1, 1.0, 1.0, 1.0, true) && ok
+	ok = water("P6 control, absorption x 1.05", 1, 1.0, 1.05, 1.0, false) && ok
+	ok = water("P6 control, floor glow x 1.01", 1, 1.01, 1.0, 1.0, false) && ok
+	ok = water("P7 sunlight scattered in water", 2, 1.0, 1.0, 1.0, true) && ok
+	ok = water("P7 control, sun x 1.01", 2, 1.01, 1.0, 1.0, false) && ok
+	ok = water("P7 control, absorption x 1.05", 2, 1.0, 1.05, 1.0, false) && ok
+	ok = water("P8 sunlit floor under water", 3, 1.0, 1.0, 1.0, true) && ok
+	ok = water("P8 control, sun x 1.01", 3, 1.01, 1.0, 1.0, false) && ok
+	ok = water("P8 control, absorption x 1.05", 3, 1.0, 1.05, 1.0, false) && ok
 	print(str("P4 longest dispatch ", MX as! int, " ms (bar 1000), bad samples ", BAD, " (bar 0): ", if MX < 1000.0 && BAD == 0 { "PASS" } else { "FAIL" }, if cpu { " (dispatch time reported)" } else { "" }))
 	ok = ok && BAD == 0 && (cpu || MX < 1000.0)
 	print(if ok { "pathtrace: ok" } else { "pathtrace: FAILED" })

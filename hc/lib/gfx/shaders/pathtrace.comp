@@ -10,6 +10,7 @@ layout(std430, set = 0, binding = 5) readonly buffer Par { vec4 par[]; };
 layout(std430, set = 0, binding = 6) readonly buffer Lit { vec4 lit[]; };
 #include "lighting.glsl"
 #include "ms.glsl"
+#include "water.glsl"
 uint rs;
 int hit_p;
 vec2 hit_b;
@@ -51,7 +52,7 @@ float trace(vec3 o, vec3 d, float tmax, bool any) {
 	return rayQueryGetIntersectionTEXT(q, true);
 }
 float offc(float p, float n) { int oi = int(256.0 * n); float pi = intBitsToFloat(floatBitsToInt(p) + (p < 0.0 ? -oi : oi)); return abs(p) < 0.03125 ? p + 0.0000152587890625 * n : pi; }
-vec3 offs(vec3 p, vec3 n) { return vec3(offc(p.x, n.x), offc(p.y, n.y), offc(p.z, n.z)); }
+vec3 offs(vec3 p, vec3 n, float s) { return vec3(offc(p.x, n.x), offc(p.y, n.y), offc(p.z, n.z)) + n * (s * 3.814697265625e-6); }
 void onb(vec3 n, out vec3 b1, out vec3 b2) {
 	float s = n.z >= 0.0 ? 1.0 : -1.0;
 	float a = -1.0 / (s + n.z);
@@ -83,6 +84,39 @@ vec3 vndf(vec3 ve, float a, float u1, float u2) {
 	vec3 nh = t1 * p1 + t2 * p2 + vh * sqrt(max(0.0, 1.0 - p1 * p1 - p2 * p2));
 	return normalize(vec3(a * nh.x, a * nh.y, max(0.0, nh.z)));
 }
+float fdiel(float ci, float eta) { float s2 = eta * eta * (1.0 - ci * ci); if (s2 >= 1.0) return 1.0; float ct = sqrt(1.0 - s2); float rs = (eta * ci - ct) / (eta * ci + ct); float rp = (ci - eta * ct) / (ci + eta * ct); return 0.5 * (rs * rs + rp * rp); }
+float hg(float c, float g) { float d = 1.0 + g * g - 2.0 * g * c; return (1.0 - g * g) / (12.5663706143592 * d * sqrt(d)); }
+vec3 hgs(vec3 w, float g) {
+	float u = rnd();
+	float c = abs(g) < 1e-3 ? 1.0 - 2.0 * u : (1.0 + g * g - pow((1.0 - g * g) / (1.0 - g + 2.0 * g * u), 2.0)) / (2.0 * g);
+	float s = sqrt(max(0.0, 1.0 - c * c));
+	float ph = 6.28318530717959 * rnd();
+	vec3 b1;
+	vec3 b2;
+	onb(w, b1, b2);
+	return b1 * (s * cos(ph)) + b2 * (s * sin(ph)) + w * c;
+}
+bool rr(int depth, inout vec3 tp) { if (depth < 3) return true; float pq = min(max(tp.x, max(tp.y, tp.z)), 0.95); if (rnd() >= pq) return false; tp /= pq; return true; }
+vec3 wnorm(int q, vec2 hb, vec3 p) { vec3 n = normalize(tri[q].xyz * (1.0 - hb.x - hb.y) + tri[q + 1].xyz * hb.x + tri[q + 2].xyz * hb.y); vec3 ww = water_wave(p.xz, par[13].w, par[13].xyz, int(par[16].z)); return normalize(n + vec3(-ww.x, 0.0, -ww.y)); }
+vec3 sunw(vec3 p, vec3 st, out vec3 wl) {
+	vec3 ts = normalize(par[6].xyz);
+	float e = 1.0 / par[16].x;
+	vec3 l = -refract(-ts, vec3(0.0, 1.0, 0.0), e);
+	wl = l;
+	float t1 = trace(p, l, 1e30, false);
+	if (t1 < 0.0) return vec3(0.0);
+	int q = hit_p * 7;
+	if (mat[int(tri[q + 3].w) * 5 + 4].y < 0.5) return vec3(0.0);
+	vec3 s = p + l * t1;
+	vec3 nw = wnorm(q, hit_b, s);
+	vec3 gn = tri[q + 5].xyz;
+	float ci = dot(ts, nw);
+	vec3 rt = refract(-ts, nw, e);
+	float ct = -dot(rt, nw);
+	wl = -rt;
+	if (ci <= 0.0 || ct <= 0.0 || trace(offs(s, dot(gn, ts) > 0.0 ? gn : -gn, tri[q + 5].w), ts, 1e30, true) >= 0.0) return vec3(0.0);
+	return par[7].rgb * ((1.0 - fdiel(ci, e)) * ci / ct) * exp(-st * t1);
+}
 vec3 env(vec3 d) { return par[11].x > 0.5 ? vec3(par[11].y) : sky_color(d, normalize(par[6].xyz), par[8].rgb, par[9].rgb, par[10].rgb, par[7].rgb) * par[8].w; }
 vec3 radiance(vec3 o, vec3 d) {
 	vec3 L = vec3(0.0);
@@ -93,9 +127,38 @@ vec3 radiance(vec3 o, vec3 d) {
 	vec3 sb1;
 	vec3 sb2;
 	onb(ts, sb1, sb2);
+	bool inw = par[16].w > 0.5;
+	bool dl = true;
+	vec3 sa = par[14].rgb;
+	vec3 ss = par[15].rgb;
+	vec3 st = sa + ss;
+	bool scat = ss.x + ss.y + ss.z > 0.0;
+	float sd = par[7].w > 0.5 && par[6].w < 1.0 ? 1.0 / (6.28318530717959 * (1.0 - par[6].w)) : 0.0;
 	for (int depth = 0; depth < maxd; depth++) {
 		float t = trace(o, d, 1e30, false);
-		if (t < 0.0) { L += tp * env(d); break; }
+		if (inw) {
+			float tt = t < 0.0 ? 1e30 : t;
+			if (scat) {
+				float sc = st[min(int(rnd() * 3.0), 2)];
+				float tf = sc > 0.0 ? -log(1.0 - rnd()) / sc : 1e30;
+				if (tf < tt) {
+					vec3 tr = exp(-st * tf);
+					tp *= ss * tr / dot(st * tr, vec3(1.0 / 3.0));
+					o += d * tf;
+					vec3 wl;
+					if (par[7].w > 0.5) { vec3 ew = sunw(o, st, wl); L += tp * ew * hg(dot(wl, d), par[15].w); }
+					d = hgs(d, par[15].w);
+					dl = false;
+					if (!rr(depth, tp)) break;
+					continue;
+				}
+				vec3 tr = exp(-st * tt);
+				float pf = dot(tr, vec3(1.0 / 3.0));
+				if (pf <= 0.0) break;
+				tp *= tr / pf;
+			} else tp *= exp(-sa * tt);
+		}
+		if (t < 0.0) { L += tp * (env(d) + (dl && dot(d, ts) >= par[6].w ? par[7].rgb * sd : vec3(0.0))); break; }
 		vec3 p = o + d * t;
 		int q = hit_p * 7;
 		vec2 hb = hit_b;
@@ -109,6 +172,20 @@ vec3 radiance(vec3 o, vec3 d) {
 		vec4 m3 = mat[mb + 3];
 		vec4 m4 = mat[mb + 4];
 		vec3 gn = tri[q + 5].xyz;
+		if (m4.y > 0.5) {
+			vec3 nw = wnorm(q, hb, p);
+			bool ent = dot(d, gn) < 0.0;
+			vec3 sg = ent ? gn : -gn;
+			vec3 nn = ent ? nw : -nw;
+			if (dot(nn, d) >= 0.0) nn = sg;
+			float e = ent ? 1.0 / par[16].x : par[16].x;
+			vec3 rt = refract(d, nn, e);
+			if (dot(rt, rt) == 0.0 || rnd() < fdiel(-dot(d, nn), e)) { d = reflect(d, nn); o = offs(p, sg, tri[q + 5].w); }
+			else { d = rt; o = offs(p, -sg, tri[q + 5].w); inw = ent; tp *= par[16].y * e * e; }
+			dl = true;
+			if (!rr(depth, tp)) break;
+			continue;
+		}
 		vec4 bc = m0 * tri[q + 6] * tsamp(m3.x, uv, true);
 		L += tp * m1.rgb * tsamp(m3.w, uv, true).rgb;
 		if (m4.z > 0.5) { L += tp * bc.rgb; break; }
@@ -133,8 +210,12 @@ vec3 radiance(vec3 o, vec3 d) {
 		vec3 ms = ms_factor(f0, ms_e(nv, rough, eb.x), par[11].w > 0.5);
 		vec3 ef = ms * (f0 * (eb.x - eb.y) + vec3(f90 * eb.y));
 		vec3 kd = max(1.0 - ef, vec3(0.0));
-		vec3 po = offs(p, gn);
-		if (par[7].w > 0.5) {
+		vec3 po = offs(p, gn, tri[q + 5].w);
+		if (par[7].w > 0.5 && inw) {
+			vec3 wl;
+			vec3 ew = sunw(po, st, wl);
+			if (dot(gn, wl) > 0.0) L += tp * bsdf(n, v, wl, alb, f0, f90, rough, ms, kd) * ew;
+		} else if (par[7].w > 0.5) {
 			float ct = 1.0 - rnd() * (1.0 - par[6].w);
 			float st = sqrt(max(0.0, 1.0 - ct * ct));
 			float ph = 6.28318530717959 * rnd();
@@ -170,7 +251,8 @@ vec3 radiance(vec3 o, vec3 d) {
 		float pdf = ps * par[12].x * ggx_d(max(dot(n, hh), 0.0), a) * g1x(nv, a) / (4.0 * nv) + (1.0 - ps) * nl / PI_F;
 		if (pdf <= 0.0) break;
 		tp *= bsdf(n, v, l, alb, f0, f90, rough, ms, kd) / pdf;
-		if (depth >= 3) { float pq = min(max(tp.x, max(tp.y, tp.z)), 0.95); if (rnd() >= pq) break; tp /= pq; }
+		if (!rr(depth, tp)) break;
+		dl = false;
 		o = po;
 		d = l;
 	}
