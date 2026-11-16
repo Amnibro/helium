@@ -4020,8 +4020,9 @@ largest coordinate, because the intersection is only as precise as the triangle'
   fail: the sun x 1.01, and the reference with the plain base color (1 % off in blue).
   Furnace: the P1 sphere in white skin (roughness 0.7, d 0.2, 0.1, 0.05) must pass P1's bars
   against P1's expectation for the white dielectric at roughness 0.7, since every walk under a
-  white sky returns all its light. Control that must fail: skin base 0.99 against the 1.0
-  expectation.
+  white sky returns all its light. Control that must fail: skin base 0.9 against the 1.0
+  expectation (a 1 m sphere is far from a half-space: its walks leave long before a base of
+  0.99 would absorb its 1 %).
 
 ### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
