@@ -3789,6 +3789,38 @@ renders offline references. `shaderc` compiles `GL_EXT_ray_query` shaders to SPI
 * **R5 job length.** No dispatch runs longer than **1 s** on the RX 9060 XT (amdgpu's
   job limit is 2 s).
 
+### Path tracer bars (gfx.pathtrace, registered before its first GPU run)
+
+`gfx.pathtrace` path traces a scene on `gfx.hwrt` with the engine's own material model:
+lighting.glsl's GGX and Smith terms, Schlick Fresnel with f90 (`spec` 0 turns the specular
+lobe off), and the multiple-scattering factor and diffuse weight from ms_lut.glsl. Light comes
+from the analytic sky, the sun as a disc, point lights with the engine's falloff and emissive
+surfaces. It reads base, metal-rough, normal and emissive textures, and alpha mask and blend
+(blend is stochastic). `from_scene()` takes the triangles, materials, camera, sun, sky and point
+lights of the last `scene3d` frame. Tests: `hc/test/gfx/pt/pt_check.he`, and P3 in
+`hc/test/gfx/gi/cornell_hw.he`.
+
+* **P1 furnace.** A sphere (81920 triangles, smooth normals) under a uniform white sky, 1024
+  spp, 128 x 128, four materials: white dielectric at roughness 0.2 and 0.7, white metal at 0.3,
+  gold metal at 0.5. Each pixel's expected radiance is the material's directional albedo at that
+  pixel's n.v (4 x 4 sub-pixel rays on the exact sphere), computed on the CPU in f64: the diffuse
+  weight and multiple-scattering factor from the same table, the specular lobe integrated over
+  half vectors (128 n.v values, 400 x 400 midpoint grid). Pixels with n.v below 0.1 are left
+  out. Bars: total luminance within 0.2 %, each of 8 n.v bins within 0.5 %. Controls that must
+  fail: the white metal with its specular pdf scaled by 1.02, and the rough white dielectric
+  rendered with base 1.01 against the base 1.0 expectation.
+* **P2 direct light.** A plane lit by a delta sun (rgb 3, 2.85, 2.6) and a point light (5, range
+  10) under a black sky, 64 spp. Expected: the BRDF times each light's irradiance (the engine's
+  range falloff for the point light), averaged over 4 x 4 sub-pixel rays. Bars: total luminance
+  within 0.1 %, every pixel within 2 %. Controls that must fail: the sun x 1.01, the point light
+  x 1.01.
+* **P3 Cornell.** The Cornell box through `gfx.pathtrace` (Lambertian: `spec` 0) against
+  `cornell_ref.txt.gz` at 1024 spp, with R2's bars except that mean z^2 has only its upper bound
+  1.15. This tracer starts Russian roulette one bounce later than the reference estimator, so its
+  variance is lower (mean z^2 0.855 on lavapipe). Control that must fail: the light x 1.01.
+* **P4 safety.** No dispatch over 1 s on the RX 9060 XT (the tracer halves its samples per
+  dispatch above 500 ms), and no NaN or infinite sample in any render.
+
 ### Hardware ray tracing results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
 | Bar | RX 9060 XT | lavapipe (CPU) |
