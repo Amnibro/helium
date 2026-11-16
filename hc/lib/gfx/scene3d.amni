@@ -756,7 +756,7 @@ fn add_probe(pos float3, lo float3, hi float3, fade f32) {
 fn clear_probes() { probes.clear(); probes_dirty = true; }
 fn add_decal(d Decal) int { decals.push(d); decals.len - 1 }
 fn clear_decals() { decals.clear(); }
-fn clear_scene() { items.clear(); batch.clear(); lights.clear(); quads.clear(); decals.clear(); node_ov.clear(); weight_ov.clear(); clear_probes(); clear_instances(); temporal_reset = true; }
+fn clear_scene() { items.clear(); item_remap.clear(); batch.clear(); lights.clear(); quads.clear(); decals.clear(); node_ov.clear(); weight_ov.clear(); clear_probes(); clear_instances(); temporal_reset = true; }
 fn recapture() { probes_dirty = true; }
 fn probe_vol(p Probe) f32 { (p.hi.x - p.lo.x) * (p.hi.y - p.lo.y) * (p.hi.z - p.lo.z) }
 fn add_light(pos float3, rgb float3, range f32) { lights.push(Light { pos, range, rgb, 0, .. }); }
@@ -1634,6 +1634,8 @@ fn bind_slot(slot int, r gltf::TexRef, srgb bool, fallback gfx::Texture) {
 var item_remap int[>..] = [];
 fn remap_new(asset int) int { let r = item_remap.len; let ms = gltf::assets[asset].materials; for k in ms.count { item_remap.push(ms.first + k); } r }
 fn item_mat(ii int, prim int) int { let m = gltf::prims[prim].material; if ii < 0 || m < 0 || items[ii].remap < 0 { return m; } let ms = gltf::assets[items[ii].asset].materials; if m >= ms.first && m < ms.first + ms.count { item_remap[items[ii].remap + m - ms.first] } else { m } }
+fn item_material(item int, k int) gltf::Material { let ms = gltf::assets[items[item].asset].materials; let m = if items[item].remap < 0 { ms.first + k } else { item_remap[items[item].remap + k] }; gltf::materials[m] }
+fn recolor(item int, k int, m gltf::Material) { let ms = gltf::assets[items[item].asset].materials; if k < 0 || k >= ms.count { return; } if items[item].remap < 0 { items[item].remap = remap_new(items[item].asset); } let at = items[item].remap + k; if item_remap[at] == ms.first + k { gltf::materials.push(m); item_remap[at] = gltf::materials.len - 1; } else { gltf::materials[item_remap[at]] = m; } }
 fn bmat(b const Batch&) gltf::Material { let m = item_mat(b.item, b.prim); if m >= 0 { gltf::materials[m] } else { gltf::default_material() } }
 fn material_of(prim int) gltf::Material {
 	let m = gltf::prims[prim].material;

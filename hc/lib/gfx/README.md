@@ -49,6 +49,11 @@ s3d::render(target);                 // RGBA8 target; s3d::hdr_target() is the l
 The scene is plain data (`view`, `sun`, `sky`, `look`, `lights`, `items`) that the
 caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
 
+One item can wear its own materials while other items of the same asset keep theirs:
+`s3d::item_material(it, k)` is the material the item draws in slot `k` of its asset's
+material list, and `s3d::recolor(it, k, m)` swaps in `m` for that item only (a slot out of
+range is ignored). `clear_scene` drops every swap.
+
 `s3d::render` records a frame into the current command buffer. The GPU starts on it at
 the next `gfx::frame()`, `gfx::flush()`, `gfx::submit()` or pixel readback. A windowed
 app calls `gfx::frame()` once per frame. A headless loop that renders many frames calls
