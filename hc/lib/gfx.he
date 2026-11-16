@@ -675,6 +675,7 @@ read_buffer<T>(b Buffer, out T[>..]&, count int) bool: raw byte[>..] ~= []; raw.
 buffer_size(b Buffer) int: i := bslot(b); if i < 0 { 0 } else { BUFS[i].size }
 release(b Buffer):
 	if !need("release_buffer"): return
+	if b.id == 0: return
 	i := bslot(b)
 	if i < 0: return
 	s_rmbuf(DEV, BUFS[i].buf); trem(TBUF, b.id)
@@ -820,6 +821,7 @@ format_supported(format i32) bool: need("format_supported") && texfmt(format as 
 texture_info(t Texture) TextureDesc: i := tfind(TTEX, t.id); if i < 0 { TextureDesc{width: 0, height: 0} } else { TEXS[i].d }
 release(t Texture):
 	if !need("release_texture"): return
+	if t.id == 0: return
 	if t.id == SCR.id || t.id == SCRD.id: misuse("release_texture: the screen belongs to gfx"); return
 	i := tslot(t)
 	if i < 0: return
