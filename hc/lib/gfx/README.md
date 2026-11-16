@@ -210,6 +210,49 @@ Bloom and the tone curve run at the output size after it. Shadow cascades are fi
 to the unjittered view (`setup_cascades` uses only `view` and the render size), so
 they do not move with the jitter; the look+taa test checks that.
 
+### See-through output
+
+```
+s3d::see_through = true;             // the backdrop turns clear instead of sky or backdrop colour
+s3d::matte_layer = hair::hairt;      // optional, each frame: a picture whose alpha also counts as covered
+s3d::temporal_reset = true;          // when switching it on or off
+```
+
+For a frame drawn over something else (a web page's camera picture behind the canvas).
+The colour and sky passes draw black where nothing is, `shaders/matte.frag` writes a
+coverage picture (1 where the motion target holds scene depth, joined with the alpha of
+`matte_layer` for layers composited after the depth pass, such as strand hair), and with
+temporal on that picture is resolved by the same shader, motion and jitter as the colour,
+so edges of the two agree. The grade pass divides the colour by the coverage before the
+tone curve and writes premultiplied `rgb * coverage, coverage` to the target. Blended
+items that write no depth (ground rings, shadow catchers) are not covered and disappear.
+`matte_layer` is cleared every frame. Until `see_through` is first set nothing is allocated; with it off nothing is drawn
+and the output alpha stays 1.
+
+On the web target a canvas with `data-alpha="premultiplied"` is configured with
+premultiplied alpha, so the page shows through where the coverage is below 1; any other
+canvas stays opaque.
+
+While it is on the motion target is drawn even without temporal. Edges are antialiased
+only with temporal on: without it the coverage is 0 or 1 per pixel, and a silhouette pixel
+keeps the colour pass's antialiasing against black at full alpha.
+
+Checks (`GFX_ONLY=through`, 480x360 sphere grid; bars registered before the first GPU
+run, except that X2's colour comparison was restated after it from all covered pixels to
+those with no clear neighbour: silhouette pixels blend toward black instead of the sky by
+design and measured 33.61 dB):
+
+| Check | Measured | Bar | Result |
+| --- | --- | --- | --- |
+| X1 off: pixels with alpha 255 | 172,800 of 172,800 | all | PASS |
+| X2 on, no temporal: pixels with in-between alpha; clear pixels with colour | 0; 0 | 0; 0 | PASS |
+| X2 covered share of the frame | 0.407 | 0.1 to 0.9 | PASS |
+| X2 covered pixels away from an edge against the default frame | 99 dB (identical) | > 40 dB | PASS |
+| X3 on, temporal: corner alpha; clear pixels with colour | 0; 0 | 0; 0 | PASS |
+| X3 edge pixels with in-between alpha | 4,766 | more than 0, under a fifth of the 70,336 covered | PASS |
+| X3 no-temporal covered count between fully covered and touched | 67,965 <= 70,336 <= 72,731 | inside | PASS |
+| X4 off again: pixels with alpha 255 | 172,800 of 172,800 | all | PASS |
+
 ### Soft, contact and local-light shadows (E3)
 
 All off by default. With them off the frame is the earlier one except that the sun's
