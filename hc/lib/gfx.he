@@ -593,6 +593,7 @@ fingers() Finger[>..]: o Finger[>..] ~= []; o.append(FINGERS[..]); o
 events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
 display_scale() f32: if WIN == 0 { 1.0 } else { k := s_dscale(WIN); if k > 0.0 { k } else { 1.0 } }
 touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS"
+platform() byte[>..]: ffi::cstr(s_platform())
 text_input(on bool):
 	if !need("text_input") || WIN == 0: return
 	if on { s_tstart(WIN) } else { s_tstop(WIN) }
