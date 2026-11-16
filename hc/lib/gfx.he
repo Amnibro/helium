@@ -209,6 +209,8 @@ var IXB = false
 var CRT = 0
 var CRB = 0
 var QUIT = false
+var BGF = false
+var FGF = false
 var KEYS bool[>..] = []
 var PK bool[>..] = []
 var PADX f32[>..] = []
@@ -478,10 +480,12 @@ frame_raw() bool:
 	if !need("frame"): return false
 	if PASS != 0 || CPASS != 0: misuse(str("frame() inside a ", pname(), " pass: end the pass first")); return false
 	if WIN != 0 && FRAMES > 0: present()
-	if WIN != 0 { submit() } else { submit_paced() } for k 512 { PK[k] = false; RK[k] = false } for k 16 { PADP[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
+	if WIN != 0 { submit() } else { submit_paced() } for k 512 { PK[k] = false; RK[k] = false } for k 16 { PADP[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; BGF = false; FGF = false; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
 	while s_poll(ep):
 		t := u32at(EVB[..], 0)
 		if t == 256 || t == 528: QUIT = true; continue
+		if t == 259 || t == 260: BGF = true; continue
+		if t == 261 || t == 262: FGF = true; continue
 		if t == 1619: s_opengp(u32at(EVB[..], 16) as u32); continue
 		if t == 1616: if FOC { a := u8at(EVB[..], 20); v ~= u16at(EVB[..], 24); if v >= 32768 { v -= 65536 } if a < 6 { PADX[a] = clamp(v as f32 / 32767.0, -1.0, 1.0) } } continue
 		if t == 1617 || t == 1618: if FOC { b := u8at(EVB[..], 20); if b < 16 { if t == 1617 && !PADB[b] { PADP[b] = true } PADB[b] = t == 1617 } } continue
@@ -594,6 +598,8 @@ events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
 display_scale() f32: if WIN == 0 { 1.0 } else { k := s_dscale(WIN); if k > 0.0 { k } else { 1.0 } }
 touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS"
 platform() byte[>..]: ffi::cstr(s_platform())
+backgrounded() bool: BGF
+foregrounded() bool: FGF
 text_input(on bool):
 	if !need("text_input") || WIN == 0: return
 	if on { s_tstart(WIN) } else { s_tstop(WIN) }
