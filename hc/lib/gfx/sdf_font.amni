@@ -49,6 +49,9 @@ var SDF_COUNT int[95];
 var SDF_ADV f32[95];
 // Pen-relative x shift (font units) that centres each glyph's ink inside its advance.
 var SDF_OFF f32[95];
+var SDF_TTF_PIX byte[>..] = [];
+var SDF_KERN f32[>..] = [];
+fn sdf_kern(t const byte[:], i int) f32 { if SDF_KERN.len == 0 || i + 1 >= t.len { return 0.0; } let a = t[i] as int - 32; let b = t[i + 1] as int - 32; if a < 0 || a >= 95 || b < 0 || b >= 95 { 0.0 } else { SDF_KERN[a * 95 + b] } }
 
 fn sdf_seg(x0 f32, y0 f32, x1 f32, y1 f32) {
 	SDF_STROKES.push(SdfStroke { kind: 0, x0: x0, y0: y0, x1: x1, y1: y1, r: 0.0, a0: 0.0, a1: 0.0 });
@@ -130,7 +133,7 @@ fn sdf_fit_bearings() {
 }
 
 fn sdf_build_glyphs() {
-	if SDF_STROKES.len > 0 { return; }
+	if SDF_STROKES.len > 0 || SDF_TTF_PIX.len > 0 { return; }
 	for i in 95 {
 		SDF_FIRST[i] = 0;
 		SDF_COUNT[i] = 0;
@@ -963,7 +966,7 @@ fn sdf_init() {
 	d.formats[2] = gfx::VERTEX_UBYTE4_NORM;
 	SDF_PIPE = gfx::pipeline(embed_shader("shaders/sdf_text.vert"), embed_shader("shaders/sdf_text.frag"), d);
 	var pix byte[>..] = [];
-	sdf_bake(pix);
+	if SDF_TTF_PIX.len > 0 { pix.append(SDF_TTF_PIX[..]); } else { sdf_bake(pix); }
 	SDF_TEX = gfx::texture2d(SDF_ATLAS_W, SDF_ATLAS_H, gfx::RGBA8, gfx::SAMPLED);
 	gfx::update_texture(SDF_TEX, pix[..]);
 	SDF_SMP = gfx::sampler(gfx::LINEAR, gfx::CLAMP);
@@ -980,7 +983,7 @@ fn sdf_text_w(t const byte[:], px f32) f32 {
 	for i in t.len {
 		var k = t[i] as int - 32;
 		if k < 0 || k >= 95 { k = 0; }
-		w += SDF_ADV[k] * s;
+		w += (SDF_ADV[k] + sdf_kern(t, i)) * s;
 	}
 	w
 }
@@ -1044,7 +1047,7 @@ fn sdf_text(vs TextVtx[>..]&, x f32, y f32, px f32, t const byte[:], c byte[4], 
 				TextVtx { pos: float2 { qx, qy + qh }, uv: float2 { u0, v1 }, col: col }
 			]);
 
-			cur_x += adv;
+			cur_x += adv + sdf_kern(t, i) * s;
 		}
 	}
 }
