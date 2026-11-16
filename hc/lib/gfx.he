@@ -190,6 +190,7 @@ var WIN uint = 0
 var VIDI = false
 var SHF u32 = 0
 var FLAGS = 0
+var MEMLOG = false
 var SCR = Texture{0}
 var SCRD = Texture{0}
 var SW = 0
@@ -415,6 +416,7 @@ start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 		s_hint(ffi::ptr("SDL_VIDEO_DRIVER\0"), ffi::ptr("offscreen\0")); ok := s_init(32); s_rhint(ffi::ptr("SDL_VIDEO_DRIVER\0"))
 		if !ok: return sdl_fail("initializing SDL video")
 	VIDI = true; s_init(0x2000); debug ~= flags & 32 != 0; dv byte[>..] ~= []
+	ml byte[>..] ~= []; MEMLOG = env("HELIUM_GFX_MEMLOG", ml)
 	if env("HELIUM_GFX_DEBUG", dv) || env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
 	DEV = s_mkdev(18, debug, 0)
 	if DEV == 0: fail(str("no GPU device: ", sdlerr())); close_raw(); return false
@@ -651,6 +653,7 @@ buffer(usage int, size int, data const byte[:]) Buffer:
 	ci ~= CInfo3{usage as u32, sz as u32, 0}; b := s_mkbuf(DEV, pp(ci))
 	if b == 0: sdl_fail("creating a buffer"); return h
 	if !upload_buffer(b, 0, data, sz - data.len, true, false, "buffer"): s_rmbuf(DEV, b); return h
+	if MEMLOG: print("GFXMEM buf ", sz)
 	h.id = tadd(TBUF); put(BUFS, ix(h.id), BufS{b, sz, usage}); h
 buffer(usage int, data const byte[:]) Buffer: buffer(usage, data.len, data)
 vertex_buffer(data const byte[:]) Buffer: buffer(1, data.len, data)
@@ -708,6 +711,7 @@ create_texture(desc TextureDesc) Texture:
 	dep := isdepth(fmt)
 	if dep != (usage & 4 != 0): misuse(if dep { "a depth format needs DEPTH_TARGET usage" } else { "DEPTH_TARGET usage needs a depth format" }); return h
 	if sm > 1 && (kind != 0 || mips != 1 || usage & ~6 != 0): misuse("a multisampled texture is a 2D target with one mip, drawn into and resolved, not sampled or stored to"); return h
+	if MEMLOG: print("GFXMEM tex ", desc.format, " ", w, " ", ht, " ", dp, " ", sm, " ", mips, " ", kind)
 	blk := isblock(fmt)
 	if blk && (kind == 2 || sm > 1 || usage != 1 || w % 4 != 0 || ht % 4 != 0): misuse("a block-compressed texture is sampled only, not 3D or multisampled, with a width and height that are multiples of 4"); return h
 	if mips > 1 && usage & 1 != 0 && !dep && !blk: usage |= 2
