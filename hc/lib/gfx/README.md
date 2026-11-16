@@ -3986,6 +3986,13 @@ largest coordinate, because the intersection is only as precise as the triangle'
   waves (0.35, 0.045, 1.0) at time 17.3: every lifted height must be within 0.1 mm of a
   double-precision sum of the same waves, and x and z must not move. Control that must fail:
   the reference at time + 0.01 s.
+* **P10 engine sky.** When the scene's environment map is on, the tracer's sky is that cube,
+  read back from the GPU, scaled by `envmap::intensity` and turned by `envmap::rotation`
+  exactly as the sky pass does. An analytic sky (each color channel one axis of the
+  direction) goes in through `envmap::set_equirect`; with intensity 0.8 and rotation 0.7 rad,
+  six 64 x 64 renders at 1024 samples, one down each axis, must match the analytic value at
+  every pixel's center within 0.002 in every channel. Controls that must fail: the reference
+  x 1.01, and the reference with the x axis mirrored.
 
 ### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
