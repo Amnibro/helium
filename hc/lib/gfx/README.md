@@ -3789,6 +3789,35 @@ renders offline references. `shaderc` compiles `GL_EXT_ray_query` shaders to SPI
 * **R5 job length.** No dispatch runs longer than **1 s** on the RX 9060 XT (amdgpu's
   job limit is 2 s).
 
+### Hardware ray tracing results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
+
+| Bar | RX 9060 XT | lavapipe (CPU) |
+| --- | --- | --- |
+| R1 rays (0 mismatches) | 64 of 64, 0 mismatches; control 26 | same |
+| R2 hardware, 1024 spp | 179 ms; mean z -0.0042, mean z^2 1.0028, 5 pixels over 4, -136 ppm: pass | 3033 ms, pass |
+| R2 control, light x 1.01 | mean z 0.381: fails | fails |
+| R2 control, red wall x 1.03 | mean z 0.243: fails | fails |
+| R3 software walk, 1024 spp | 392 ms; mean z -0.0044: pass | 5742 ms, pass |
+| R4 speed, 81950 triangles, 256 spp | hardware 47 ms (87 M paths/s), software 274 ms: **5.73x**; images 7 ppm apart: pass | 1.59x (reported) |
+| R4 control, software in both slots | 1.02x: fails | not run |
+| R5 longest dispatch | 62 ms: pass | 736 ms (reported) |
+
+Use (`tris` holds 9 floats a triangle; binding 0 of every pipeline is the TLAS, bindings 1
+to n the storage buffers given to `run`):
+
+```
+if hwrt::scene(tris[..]) {
+    p := hwrt::pipe(embed_shader("pt.comp"), 3)
+    b := hwrt::buf(bytes, 0x20, false)
+    hwrt::put(b, data[..]); hwrt::run(p, [b, c, d], gx, gy, 1); hwrt::get(b, out[..])
+}
+```
+
+`hwrt::init()` picks a device with ray queries, preferring a discrete GPU
+(`HELIUM_GPU=integrated` prefers the integrated one; `off` turns it off). A shader that
+declares a `rayQueryEXT` or `accelerationStructureEXT` is SPIR-V only and is not held to
+SDL's descriptor-set rules.
+
 ### Water results (2026-11-10, RX 9060 XT, RADV; another program using the whole card; full gate run)
 
 W4 has a black floor 3 m down in both frames, and its reference frame sets the sky's
@@ -4525,6 +4554,11 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   (MIT; `hash12` in `ssao.frag`).
 
 ## Known gaps
+
+* Hardware ray tracing (`gfx.hwrt`) runs on its own Vulkan device for offline reference
+  renders only: SDL's GPU API cannot hold acceleration structures, so the realtime
+  renderer stays on the software BVH until Helium has its own Vulkan backend. Its path
+  tracer is Lambertian with a point light (the Cornell estimator); one TLAS a device.
 
 * Skin scattering gathers light from what the camera sees: light that enters on a side
   facing away from the camera (an ear lit from behind) is not gathered, and blended or

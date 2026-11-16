@@ -1,0 +1,26 @@
+#version 460
+#extension GL_EXT_ray_query : require
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+layout(set = 0, binding = 1) buffer Tri { vec4 tri[]; };
+layout(set = 0, binding = 2) buffer Acc { vec4 acc[]; };
+layout(set = 0, binding = 3) buffer Par { vec4 par[]; };
+float trace(vec3 o, vec3 d, float tmax, out int prim)
+{
+	rayQueryEXT q;
+	rayQueryInitializeEXT(q, tlas, gl_RayFlagsOpaqueEXT, 0xFFu, o, par[3].y, d, tmax);
+	while (rayQueryProceedEXT(q)) { }
+	prim = -1;
+	if (rayQueryGetIntersectionTypeEXT(q, true) == gl_RayQueryCommittedIntersectionTriangleEXT) { prim = rayQueryGetIntersectionPrimitiveIndexEXT(q, true); return rayQueryGetIntersectionTEXT(q, true); }
+	return tmax;
+}
+bool vis(vec3 o, vec3 d, float tmax)
+{
+	rayQueryEXT q;
+	rayQueryInitializeEXT(q, tlas, gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT, 0xFFu, o, par[3].y, d, tmax);
+	while (rayQueryProceedEXT(q)) { }
+	return rayQueryGetIntersectionTypeEXT(q, true) == gl_RayQueryCommittedIntersectionNoneEXT;
+}
+vec3 tri_n(int p) { return tri[p * 2].xyz; }
+vec3 tri_al(int p) { return tri[p * 2 + 1].xyz; }
+#include "cornell_pt.glsl"

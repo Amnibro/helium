@@ -1,0 +1,22 @@
+#version 460
+#extension GL_EXT_ray_query : require
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+layout(set = 0, binding = 1) buffer Out { vec4 res[]; };
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	rayQueryEXT rq;
+	rayQueryInitializeEXT(rq, tlas, gl_RayFlagsOpaqueEXT, 0xFFu, vec3(float(i) * 0.01, 0.0, -1.0), 0.0, vec3(0.0, 0.0, 1.0), 100.0);
+	while (rayQueryProceedEXT(rq)) { }
+	float t = -1.0;
+	int p = -1;
+	vec2 b = vec2(0.0);
+	if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
+	{
+		t = rayQueryGetIntersectionTEXT(rq, true);
+		p = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
+		b = rayQueryGetIntersectionBarycentricsEXT(rq, true);
+	}
+	res[i] = vec4(t, float(p), b);
+}

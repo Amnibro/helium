@@ -81,6 +81,14 @@ grep -q "^soak look: \(ok\|skipped\)$" "$O/soak_look.txt" || { say "gfxtest: FAI
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/locks_look.amni" -o "$T/ll" > "$T/ll_build.txt" 2>&1 || { echo "gfxtest: locks_look build failed"; grep -av "W[0-9]" "$T/ll_build.txt" | tail -n 5; exit 1; }
 "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$T/ll" > "$O/locks_look.txt" 2>&1; cat "$O/locks_look.txt"; cat "$O/locks_look.txt" >> "$RES"
 grep -q "^locks look: \(ok\|skipped\)$" "$O/locks_look.txt" || { say "gfxtest: FAILED: card lock look (L5, L6)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/rt/rq_check.he" -o "$T/rq" > "$T/rq_build.txt" 2>&1 || { echo "gfxtest: rq_check build failed"; grep -av "W[0-9]" "$T/rq_build.txt" | tail -n 5; exit 1; }
+"${L[@]}" "$T/rq" > "$O/rq_check.txt" 2>&1; cat "$O/rq_check.txt"; cat "$O/rq_check.txt" >> "$RES"
+grep -q "^rq: \(ok\|skipped\)" "$O/rq_check.txt" || { say "gfxtest: FAILED: hardware ray query (R1)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gi/cornell_hw.he" -o "$T/chw" > "$T/chw_build.txt" 2>&1 || { echo "gfxtest: cornell_hw build failed"; grep -av "W[0-9]" "$T/chw_build.txt" | tail -n 5; exit 1; }
+zcat "$R/hc/test/gfx/gi/cornell_ref.txt.gz" > "$T/cornell_ref.txt"
+"${L[@]}" "$T/chw" "$T/cornell_ref.txt" > "$O/cornell_hw.txt" 2>&1; cat "$O/cornell_hw.txt"; cat "$O/cornell_hw.txt" >> "$RES"
+grep -q "^hwrt cornell: \(ok\|skipped\)" "$O/cornell_hw.txt" || { say "gfxtest: FAILED: hardware ray tracing reference (R2-R5)"; exit 1; }
+if [ "${GFX_REQUIRE_GPU:-0}" = 1 ] && grep -q "skipped" "$O/rq_check.txt" "$O/cornell_hw.txt"; then say "gfxtest: FAILED: no ray-query device (GFX_REQUIRE_GPU=1)"; exit 1; fi
 grep -a "^gpu:" "$T/all.txt"; g=$(grep -a "^gpu: \(ok\|skipped\|FAILED\)" "$T/all.txt")
 case "$g" in
 	"gpu: ok"*) say "gfxtest: ok";;

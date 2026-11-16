@@ -579,7 +579,7 @@ recursive ppfile(raw const byte[:], fi int):
 				if CONDS.len <= cb: pperr("#endif without #if")
 				CONDS.pop()
 			else if d == "version" || d == "extension" || d == "pragma" || d == "line":
-				d.len
+				t := "GL_EXT_ray_query"; k ~= 0; while act && d == "extension" && k + t.len <= rest.len && rest[k..k + t.len] != t { k += 1 } if act && d == "extension" && k + t.len <= rest.len && mac(sid("gl_RayFlagsNoneEXT")) < 0 { for dd ["gl_RayFlagsNoneEXT 0u", "gl_RayFlagsOpaqueEXT 1u", "gl_RayFlagsNoOpaqueEXT 2u", "gl_RayFlagsTerminateOnFirstHitEXT 4u", "gl_RayFlagsSkipClosestHitShaderEXT 8u", "gl_RayFlagsCullBackFacingTrianglesEXT 16u", "gl_RayFlagsCullFrontFacingTrianglesEXT 32u", "gl_RayFlagsCullOpaqueEXT 64u", "gl_RayFlagsCullNoOpaqueEXT 128u", "gl_RayQueryCommittedIntersectionNoneEXT 0u", "gl_RayQueryCommittedIntersectionTriangleEXT 1u", "gl_RayQueryCommittedIntersectionGeneratedEXT 2u", "gl_RayQueryCandidateIntersectionTriangleEXT 0u", "gl_RayQueryCandidateIntersectionAABBEXT 1u"] { ppdefine(dd) } }
 			else if act:
 				pperr(str("unknown preprocessor directive '#", d, "'"))
 			if !spl: PPO.push('\n')
@@ -620,6 +620,8 @@ T_SAMP := 7
 T_ARR := 8
 T_STRUCT := 9
 T_IMG := 10
+T_ACC := 11
+T_RQ := 12
 SD_2D := 0
 SD_CUBE := 1
 SD_3D := 2
@@ -703,6 +705,7 @@ var TS2DS = 0
 var TSCUBES = 0
 var TSCUBEA = 0
 var NEEDCA = false
+var NEEDRQ = false
 var TS2DAS = 0
 var TYNAMES = dictionary<int, int>{..}
 var ARRTY = dictionary<u64, int>{..}
@@ -760,6 +763,7 @@ recursive tyid(t int) int:
 	f := dgi(TYIDS, t); if f >= 0: return f
 	id := nid(); y := TY[t]
 	if y.k == T_VOID { emit1(SGLOB, SOP_TYPEVOID, id) } else if y.k == T_BOOL { emit1(SGLOB, SOP_TYPEBOOL, id) } else if y.k == T_INT || y.k == T_UINT { if y.rows == 64 { NEEDI64 = true } emit3(SGLOB, SOP_TYPEINT, id, if y.rows == 64 { 64 } else { 32 }, if y.k == T_INT { 1 } else { 0 }) } else if y.k == T_FLOAT { emit2(SGLOB, SOP_TYPEFLOAT, id, 32) }
+	if y.k == T_ACC || y.k == T_RQ: NEEDRQ = true; emit1(SGLOB, if y.k == T_ACC { 5341 } else { 4472 }, id)
 	if y.k == T_VEC:
 		e := tyid(y.el); emit3(SGLOB, SOP_TYPEVECTOR, id, e, y.cols)
 	else if y.k == T_ARR && y.cols == -1:
@@ -1035,6 +1039,7 @@ tyname(t int) const byte[:]:
 	if k == T_ARR: return "array"
 	if k == T_STRUCT: return snm(y.name)
 	if k == T_IMG: return "image2D"
+	if k == T_ACC || k == T_RQ: return if k == T_ACC { "accelerationStructureEXT" } else { "rayQueryEXT" }
 	if k == T_MAT: return if c == 2 { "mat2" } else if c == 3 { "mat3" } else { "mat4" }
 	if k == T_VEC:
 		ek := TY[y.el].k
@@ -1193,6 +1198,7 @@ I_MAT := 16
 I_BARRIER := 17
 I_ATOMIC := 18
 I_IMAGE := 19
+I_RQ := 20
 PK_V4U := 0
 PK_V2U := 1
 PK_UV4 := 2
@@ -1226,6 +1232,7 @@ initins():
 	for n, i ["barrier", "memoryBarrier", "memoryBarrierShared", "memoryBarrierBuffer", "groupMemoryBarrier"]: addin(n, I_BARRIER, i, 0, 0, 0, 0)
 	addin("atomicAdd", I_ATOMIC, SOP_ATOMICIADD, 0, 0, 2, 0); addin("atomicMin", I_ATOMIC, 0, SOP_ATOMICSMIN, SOP_ATOMICUMIN, 2, 0); addin("atomicMax", I_ATOMIC, 0, SOP_ATOMICSMAX, SOP_ATOMICUMAX, 2, 0)
 	addin("atomicAnd", I_ATOMIC, SOP_ATOMICAND, 0, 0, 2, 0); addin("atomicOr", I_ATOMIC, SOP_ATOMICOR, 0, 0, 2, 0); addin("atomicXor", I_ATOMIC, SOP_ATOMICXOR, 0, 0, 2, 0); addin("atomicExchange", I_ATOMIC, SOP_ATOMICEXCHANGE, 0, 0, 2, 0); addin("atomicCompSwap", I_ATOMIC, SOP_ATOMICCOMPAREEXCHANGE, 0, 0, 3, 1)
+	for n, i ["rayQueryInitializeEXT", "rayQueryProceedEXT", "rayQueryTerminateEXT", "rayQueryConfirmIntersectionEXT", "rayQueryGetRayTMinEXT", "rayQueryGetRayFlagsEXT", "rayQueryGetWorldRayDirectionEXT", "rayQueryGetWorldRayOriginEXT", "rayQueryGetIntersectionTypeEXT", "rayQueryGetIntersectionTEXT", "rayQueryGetIntersectionInstanceCustomIndexEXT", "rayQueryGetIntersectionInstanceIdEXT", "rayQueryGetIntersectionGeometryIndexEXT", "rayQueryGetIntersectionPrimitiveIndexEXT", "rayQueryGetIntersectionBarycentricsEXT", "rayQueryGetIntersectionFrontFaceEXT"]: addin(n, I_RQ, [4473, 4477, 4474, 4476, 6016, 6017, 6029, 6030, 4479, 6018, 6019, 6020, 6022, 6023, 6024, 6025][i], 0, 0, if i == 0 { 8 } else if i < 8 { 1 } else { 2 }, 0)
 	addin("imageLoad", I_IMAGE, 0, 0, 0, 2, 0); addin("imageStore", I_IMAGE, 1, 0, 0, 3, 0); addin("imageSize", I_IMAGE, 2, 0, 0, 1, 0)
 extinst(rt int, inst int, args const int[:]) int:
 	r := nid(); w int[>..] ~= [tyid(rt)]; w.push(r); w.push(GLSLEXT); w.push(inst); w.append(args); emitw(SBODY, SOP_EXTINST, w[..]); r
@@ -1293,6 +1300,19 @@ genintrin(e int, ii int) Val:
 		else:
 			val := rvalas(a[1], m.ty); emitw(SBODY, oc, [tid, r, m.id, sc, sm, val])
 		return rv(m.ty, r)
+	if k == I_RQ:
+		q := genexpr(a[0]); op := f.op
+		if q.k != V_PTR || TY[q.ty].k != T_RQ: serr(line, str("'", fnn, "' requires a rayQueryEXT variable"))
+		NEEDRQ = true
+		if op == 4473:
+			acc, at := rvalue(a[1])
+			if TY[at].k != T_ACC: serr(line, str("'", fnn, "' requires an accelerationStructureEXT"))
+			emitw(SBODY, op, [q.id, acc, rvalas(a[2], TUINT), rvalas(a[3], TUINT), rvalas(a[4], TVEC[1]), rvalas(a[5], TFLOAT), rvalas(a[6], TVEC[1]), rvalas(a[7], TFLOAT)]); return rv(TVOID, 0)
+		if op == 4474 || op == 4476: emit1(SBODY, op, q.id); return rv(TVOID, 0)
+		rt := if op == 4477 || op == 6025 { TBOOL } else if op == 6016 || op == 6018 { TFLOAT } else if op == 6017 || op == 4479 { TUINT } else if op == 6024 { TVEC[0] } else if op == 6029 || op == 6030 { TVEC[1] } else { TINT }
+		r := nid(); w int[>..] ~= [tyid(rt), r, q.id]
+		if f.na == 2: if EX[a[1]].k != E_BOOL { serr(line, str("'", fnn, "' takes a constant true (committed) or false (candidate)")) } w.push(cint(if EX[a[1]].bv { 1 } else { 0 }))
+		emitw(SBODY, op, w[..]); return rv(rt, r)
 	if k == I_IMAGE:
 		img, it := rvalue(a[0])
 		if TY[it].k != T_IMG: serr(line, str("'", fnn, "' requires an image2D"))
@@ -1636,7 +1656,7 @@ var RBLK RBlk[>..]
 var RMEM RMem[>..]
 var RINP RIn[>..]
 recdecl(k int, line int) int: DC.push(Dc{k, line}); DECLS.push(DC.len - 1); DC.len - 1
-opq(t int) bool: TY[t].k == T_SAMP || TY[t].k == T_IMG
+opq(t int) bool: TY[t].k == T_SAMP || TY[t].k == T_IMG || TY[t].k == T_ACC
 fntyid(ret int, pty const int[:], pq const int[:]) int:
 	rt := tyid(ret); pt int[>..] ~= []
 	for t, i pty: pt.push(if pq[i] != 0 { ptrid(t, SC_FUNCTION) } else if opq(t) { ptrid(t, SC_UNIFORMCONSTANT) } else { tyid(t) })
@@ -1786,15 +1806,15 @@ genopaque(l Lay, t0 int, name int, ro bool, wo bool, line int):
 		f ~= dgi(IMGTY, l.fmt)
 		if f < 0: f = nty(Ty{T_IMG, -1, l.fmt}); insert(IMGTY, l.fmt, f)
 		t = f
-	else if TY[t].k != T_SAMP:
-		serr(line, str("uniforms outside blocks must be opaque types (sampler2D, image2D); put '", snm(name), "' in a uniform block"))
+	else if TY[t].k != T_SAMP && TY[t].k != T_ACC:
+		serr(line, str("uniforms outside blocks must be opaque types (sampler2D, image2D, accelerationStructureEXT); put '", snm(name), "' in a uniform block"))
 	if l.set < 0 || l.bind < 0: serr(line, str("'", snm(name), "' requires layout(set = N, binding = M)"))
 	vr := nid(); pt := ptrid(t, SC_UNIFORMCONSTANT); emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_UNIFORMCONSTANT)
 	emit3(SDECOS, SOP_DECORATE, vr, DEC_DESCRIPTORSET, l.set); emit3(SDECOS, SOP_DECORATE, vr, DEC_BINDING, l.bind)
 	if ro: emit2(SDECOS, SOP_DECORATE, vr, DEC_NONWRITABLE)
 	if wo: emit2(SDECOS, SOP_DECORATE, vr, DEC_NONREADABLE)
 	nameid(vr, snm(name)); addsym(name, SY_VAR, t, vr, SC_UNIFORMCONSTANT, line)
-	if TY[t].k == T_SAMP { RSAMP.push(RRes{name, l.set, l.bind, ro}) } else { RIMG.push(RRes{name, l.set, l.bind, ro}) }
+	if TY[t].k == T_SAMP { RSAMP.push(RRes{name, l.set, l.bind, ro}) } else if TY[t].k == T_IMG { RIMG.push(RRes{name, l.set, l.bind, ro}) }
 	d := recdecl(D_OPAQUE, line); DC[d].ty = t; DC[d].name = name; DC[d].set = l.set; DC[d].bind = l.bind; DC[d].ro = ro
 fbits(f f32) u32: binary::f32_bits(f)
 bitsf(b u32) f32: binary::f32_from_bits(b)
@@ -1926,7 +1946,7 @@ inittypes():
 	TI64 = nty(Ty{T_INT, -1, 0, 64}); TU64 = nty(Ty{T_UINT, -1, 0, 64}); regty("bool", TBOOL); regty("int", TINT); regty("uint", TUINT); regty("float", TFLOAT); regty("int64_t", TI64); regty("uint64_t", TU64)
 	for p, i ["vec", "ivec", "uvec", "bvec"]: for j 3 { n byte[>..] ~= []; n.append(p); n.push(('2' + j) as byte); regty(n[..], [TVEC[j], TIVEC[j], TUVEC[j], TBVEC[j]][i]) }
 	regty("sampler2D", TSAMP); regty("usampler2D", TUSAMP); regty("samplerCube", TSCUBE); regty("sampler3D", TS3D); regty("sampler2DArray", TS2DA); regty("sampler2DShadow", TS2DS); regty("samplerCubeShadow", TSCUBES); regty("sampler2DArrayShadow", TS2DAS); regty("samplerCubeArray", TSCUBEA)
-	regty("mat2", TMAT[0]); regty("mat3", TMAT[1]); regty("mat4", TMAT[2]); regty("image2D", nty(Ty{T_IMG, -1, -1}))
+	regty("mat2", TMAT[0]); regty("mat3", TMAT[1]); regty("mat4", TMAT[2]); regty("image2D", nty(Ty{T_IMG, -1, -1})); regty("accelerationStructureEXT", nty(Ty{T_ACC})); regty("rayQueryEXT", nty(Ty{T_RQ}))
 builtin(n const byte[:], t int, b int):
 	pt := ptrid(t, SC_INPUT); vr := nid(); emit3(SGLOB, SOP_VARIABLE, pt, vr, SC_INPUT); emit3(SDECOS, SOP_DECORATE, vr, DEC_BUILTIN, b); nameid(vr, n); addsym(sid(n), SY_VAR, t, vr, SC_INPUT, 0); SIFACE.push(vr as! u32)
 pervertex():
@@ -1939,6 +1959,7 @@ assemble() u32[>..]:
 	if NEEDEF: emit1(m, SOP_CAPABILITY, 49)
 	if NEEDCA: emit1(m, SOP_CAPABILITY, 45)
 	if NEEDI64: emit1(m, SOP_CAPABILITY, 11)
+	if NEEDRQ: emit1(m, SOP_CAPABILITY, 4472); emitstr(m, 10, [], "SPV_KHR_ray_query")
 	emitstr(m, SOP_EXTINSTIMPORT, [GLSLEXT], "GLSL.std.450"); emit2(m, SOP_MEMORYMODEL, 0, 1)
 	w u32[>..] ~= [(if STAGE == ST_FRAG { 4 } else if STAGE == ST_COMP { 5 } else { 0 }) as! u32, ENTRYF as! u32]; pushstr(w, "main"); w.append(SIFACE[..])
 	m.push(((w.len + 1) << 16 | SOP_ENTRYPOINT) as! u32); m.append(w[..])
@@ -1950,7 +1971,7 @@ reset():
 	LAIDS = dictionary<int, int>{..}; LAIDA = dictionary<int, int>{..}; LAIDE = dictionary<int, int>{..}; SAMPIMG = dictionary<int, int>{..}; SCD = dictionary<u64, int>{..}; FNS = dictionary<int, int>{..}
 	SNAMES.clear(); SDECOS.clear(); SGLOB.clear(); SFUNCS.clear(); SBODY.clear(); SLOCALS.clear(); SIFACE.clear(); SCN.clear(); SCM.clear(); SFILES.clear(); AHEAD.clear()
 	RSAMP.clear(); RIMG.clear(); RBUF.clear(); RBLK.clear(); RMEM.clear(); RINP.clear(); ERRM.clear(); MSLO.clear(); HLSLO.clear(); WGSLO.clear(); WGERR.clear(); GLESO.clear(); GLERR.clear(); WB.clear(); TPW = false; TPG = false
-	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; NEEDCA = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
+	NEXTID = 1; GLSLEXT = 0; NEEDIQ = false; NEEDEF = false; NEEDCA = false; NEEDRQ = false; CURRT = -1; FHASRET = false; BTERM = false; BRKT = 0; CONTT = 0; ENTRYF = 0; PVVAR = 0; LSIZE[0] = 0; LSIZE[1] = 0; LSIZE[2] = 0; FIDX = 0; LP = 0; LLINE = 1
 cspv(src const byte[:], stage int, spv u32[>..]&) bool:
 	reset(); STAGE = stage; initins(); ok ~= true
 	body():
@@ -1965,7 +1986,9 @@ cspv(src const byte[:], stage int, spv u32[>..]&) bool:
 		adv(); gentop()
 		if ENTRYF == 0: serr(0, "no 'void main()' entry point defined")
 		if stage == ST_COMP && LSIZE[0] == 0: serr(0, "compute shaders must declare layout(local_size_x = ..., ...) in;")
-		emithlsl(); HLSLO.clear(); HLSLO.append(TPO[..]); emitmsl(); MSLO.clear(); MSLO.append(TPO[..]); wgslout(); glout(); spv.append(assemble()[..])
+		HLSLO.clear(); MSLO.clear()
+		if !NEEDRQ: emithlsl(); HLSLO.append(TPO[..]); emitmsl(); MSLO.append(TPO[..]); wgslout(); glout()
+		spv.append(assemble()[..])
 	exception::try<int>(body) { e => ok = false }
 	ok
 var MSLO byte[>..]
@@ -3059,7 +3082,7 @@ emsg(path const byte[:], m const byte[:], err byte[>..]&): if m.len >= 7 && m[..
 compile_blob(stage int, path const byte[:], src const byte[:], out byte[>..]&, err byte[>..]&) bool:
 	spv u32[>..] ~= []
 	if !cfile(stage, path, src, spv, err): return false
-	if !chkbind(path, stage, err) || stage == ST_VERT && !chkin(path, err): return false
+	if !NEEDRQ && !chkbind(path, stage, err) || stage == ST_VERT && !chkin(path, err): return false
 	blob(stage, spv[..], out); true
 wgsl_file(stage int, path const byte[:], src const byte[:], out byte[>..]&, err byte[>..]&, gl bool) bool:
 	spv u32[>..] ~= []
