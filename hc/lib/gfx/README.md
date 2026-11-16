@@ -4004,6 +4004,24 @@ largest coordinate, because the intersection is only as precise as the triangle'
   that is linear in x at strength 0.8 must pass P2's bar against the analytic sun times the
   cloud factor; controls that must fail: the reference without the cloud factor, and the
   reference with the map mirrored in x.
+* **P12 skin.** A material with `Mat.sss` set (the realtime skin's scatter distances d per
+  channel) is a random walk under its surface: the diffuse share of the light enters with a
+  cosine-weighted direction, flies freely with the spectral sampling the sea uses (extinction
+  1 / (d s(A)), Burley's diffuse-transmission s(A) = 1.9 - A + 3.5 (A - 0.8)^2), scatters
+  isotropically with the van de Hulst scatter albedo of the base color A, and leaves through
+  whatever surface it reaches as a white Lambertian surface (sun, point lights, a cosine
+  bounce). Slab: the P2 plane as a half-space of skin (base 0.8, 0.5, 0.2, d 20, 10, 5 mm,
+  roughness 0.5) under the P2 sun with no point light, 256 samples. Expected: P2's
+  expectation for the same material with its base replaced by the exact diffuse albedo of a
+  half-space with that scatter albedo, 1 - 2 sqrt(1 - a) times the first moment of
+  Chandrasekhar's H function, computed in f64 from H's closed-form integral (128 x 512
+  midpoint grid; it agrees with the H iteration and with a brute-force walk to 2 ppm). Bars:
+  total luminance within 0.2 %, each color channel's total within 0.4 %. Controls that must
+  fail: the sun x 1.01, and the reference with the plain base color (1 % off in blue).
+  Furnace: the P1 sphere in white skin (roughness 0.7, d 0.2, 0.1, 0.05) must pass P1's bars
+  against P1's expectation for the white dielectric at roughness 0.7, since every walk under a
+  white sky returns all its light. Control that must fail: skin base 0.99 against the 1.0
+  expectation.
 
 ### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
