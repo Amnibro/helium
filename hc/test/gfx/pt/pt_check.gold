@@ -86,6 +86,20 @@ fd(ci real, e real) real:
 	if s2 >= 1.0: return 1.0
 	ct := sqrt(1.0 - s2); rs := (e * ci - ct) / (e * ci + ct); rp := (ci - e * ct) / (ci + e * ct)
 	0.5 * (rs * rs + rp * rp)
+wave(x real, z real, t real) real:
+	qx ~= x; qz ~= z; h ~= 0.0; f ~= 0.35; a ~= 0.045; an ~= 0.7
+	for i 11: dx := cos(an); dz := sin(an); sv := sin((qx * dx + qz * dz) * f + t * sqrt(9.81 * f)) * a / f; h += sv; qx += dx * sv * 0.5; qz += dz * sv * 0.5; f *= 1.31; a *= 0.87; an += 2.4
+	h
+sea(name const byte[:], dt real, want bool) bool:
+	pathtrace::WAVES = [0.35, 0.045, 1.0, 17.3]; p real[>..] ~= []
+	for k 4096: p.append([(k % 64) as real * 200.0 / 63.0 - 63.0, 0.0, (k / 64) as real * 200.0 / 63.0 - 151.0])
+	q real[>..] ~= []; q.append(p[..]); good := pathtrace::lift(q); pathtrace::WAVES = [0.35, 0.0, 1.0, 0.0]
+	if !good: print(str(name, ": lift failed")); return false
+	wd ~= 0.0; mv ~= 0.0
+	for k 4096: wd = max(wd, abs(q[k * 3 + 1] - wave(p[k * 3], p[k * 3 + 2], 17.3 + dt))); mv = max(mv, abs(q[k * 3] - p[k * 3]) + abs(q[k * 3 + 2] - p[k * 3 + 2]))
+	pass := wd <= 0.0001 && mv == 0.0
+	print(str(name, ": 4096 points, worst height difference ", (wd * 1e6) as! int, " um (bar 100), x and z moved ", mv, ": ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
 water(name const byte[:], kind int, sk real, ak real, tk real, want bool) bool:
 	san := [0.3, 0.06, 0.045]; ss := [0.02, 0.04, 0.06]; srn := [3.0, 2.85, 2.6]; ts := [0.0, 0.5, -sqrt(0.75)]; g := 0.5; e := 1.0 / 1.33
 	pathtrace::clear(); plane(0.0, 400.0, pathtrace::mat(pathtrace::Mat { water: true })); pathtrace::EYE = [0.0, 3.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::TK = tk; pathtrace::ETA = 1.33; pathtrace::UNDER = false; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
@@ -158,6 +172,8 @@ main():
 	ok = water("P8 sunlit floor under water", 3, 1.0, 1.0, 1.0, true) && ok
 	ok = water("P8 control, sun x 1.01", 3, 1.01, 1.0, 1.0, false) && ok
 	ok = water("P8 control, absorption x 1.05", 3, 1.0, 1.05, 1.0, false) && ok
+	ok = sea("P9 sea lift", 0.0, true) && ok
+	ok = sea("P9 control, reference at time + 0.01 s", 0.01, false) && ok
 	print(str("P4 longest dispatch ", MX as! int, " ms (bar 1000), bad samples ", BAD, " (bar 0): ", if MX < 1000.0 && BAD == 0 { "PASS" } else { "FAIL" }, if cpu { " (dispatch time reported)" } else { "" }))
 	ok = ok && BAD == 0 && (cpu || MX < 1000.0)
 	print(if ok { "pathtrace: ok" } else { "pathtrace: FAILED" })

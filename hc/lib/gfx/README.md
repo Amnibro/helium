@@ -3928,8 +3928,9 @@ lights of the last `scene3d` frame. Tests: `hc/test/gfx/pt/pt_check.he`, and P3 
 
 The sea is a real medium. A water material (`Mat.water`; `from_scene()` sets it for the
 scene's sea material) is a smooth dielectric at IOR 1.33 whose normal follows the same
-`water_wave` sum as the realtime shader, and `from_scene()` lifts its vertices by the same
-waves at the frame's `world_time`. Rays pick reflection or refraction by exact Fresnel,
+`sea_wave()` (water.glsl) as the realtime shader, and `from_scene()` lifts its vertices on
+the GPU with that same function at the frame's `world_time`, so an engine copy with its own
+waves only redefines `sea_wave()`. Rays pick reflection or refraction by exact Fresnel,
 radiance crossing the surface scales by 1 / n^2, and below it light is absorbed and scattered
 (the sea's absorb and scatter colors, Henyey-Greenstein phase) with spectral free-flight
 sampling. The sun is sampled through the waves both for the water itself and for anything
@@ -4009,6 +4010,8 @@ largest coordinate, because the intersection is only as precise as the triangle'
 | P7 controls, sun x 1.01 / absorption x 1.05 | 9686 / -29173 ppm: fail | same |
 | P8 sunlit floor (32768 spp): total, worst pixel | 293 ppm, 9948 ppm | 293 ppm, 9947 ppm |
 | P8 controls, sun x 1.01 / absorption x 1.05 | 10296 / -19239 ppm: fail | same |
+| P9 sea lift: worst height difference | 12 um | 12 um |
+| P9 control, time + 0.01 s | 7552 um: fails | 7551 um: fails |
 
 The CPU and GPU results agree to the printed digit because both use the same seeds and
 the same shader; only rounding in the last place differs. The furnace error grows with

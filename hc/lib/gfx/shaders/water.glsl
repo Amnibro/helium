@@ -18,3 +18,4 @@ vec3 water_wave(vec2 p, float tm, vec3 wb, int n) {
 	}
 	return vec3(g, h);
 }
+vec3 sea_wave(vec2 p, float tm, vec3 wb) { return water_wave(p, tm, wb, 11); }

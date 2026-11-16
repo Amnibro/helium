@@ -37,7 +37,6 @@ var SCATTER = [0.0, 0.0, 0.0]
 var PHASE_G = 0.0
 var ETA = 1.33
 var TK = 1.0
-var NWAVE = 11
 var UNDER = false
 struct Mat { base real[4] = [1.0, 1.0, 1.0, 1.0], glow real[3] = [0.0, 0.0, 0.0], metal real = 0.0, rough real = 1.0, spec real = 1.0, ior real = 1.5, tb int = -1, tmr int = -1, tn int = -1, te int = -1, ns real = 1.0, mode int = 0, cut real = 0.5, unlit bool = false, water bool = false }
 clear(): TRI.clear(); POS.clear(); MAT.clear(); TXH.clear(); TXP.clear(); LIT.clear(); IMG.clear(); PMAT.clear(); MASK = false; SKIPPED = 0
@@ -82,10 +81,19 @@ sphere(cx real, cy real, cz real, r real, levels int, m int):
 	s := ico(levels); ce := [cx, cy, cz]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
 	for k s.len / 9: p real[>..] ~= []; for c 9 { p.push(ce[c % 3] + r * s[k * 9 + c]) } tri(p[..], s[k * 9..k * 9 + 9], uv[..], cl[..], m)
 v3(a float3) real[>..]: [a.x as real, a.y as real, a.z as real]
-wave(x real, z real) real:
-	qx ~= x; qz ~= z; h ~= 0.0; f ~= WAVES[0]; a ~= WAVES[1]; an ~= 0.7
-	for i NWAVE: dx := cos(an); dz := sin(an); sv := sin((qx * dx + qz * dz) * f + WAVES[3] * sqrt(9.81 * f) * WAVES[2]) * a / f; h += sv; qx += dx * sv * 0.5; qz += dz * sv * 0.5; f *= 1.31; a *= 0.87; an += 2.4
-	h
+lift(p real[>..]&) bool:
+	n := p.len / 3
+	if n == 0: return true
+	z f32[>..] ~= []; for v [0.0, -1000.0, 0.0, 0.001, -1000.0, 0.0, 0.0, -1000.0, 0.001] { z.push(v as f32) }
+	if !hwrt::init() || !hwrt::scene(z[..], true): return false
+	f f32[>..] ~= []; for v p { f.push(v as f32) }
+	q f32[>..] ~= []; for v [WAVES[0], WAVES[1], WAVES[2], WAVES[3], n as real, 0.0, 0.0, 0.0] { q.push(v as f32) }
+	pb := hwrt::buf(f.len * 4, 0x20, false); qb := hwrt::buf(32, 0x20, false)
+	if pb < 0 || qb < 0: return false
+	hwrt::put(pb, f[..]); hwrt::put(qb, q[..]); pp := hwrt::pipe(embed_shader("shaders/pathtrace_sea.comp"), 2)
+	ok := pp >= 0 && hwrt::run(pp, [pb, qb][..], 4096, 1, 1)
+	if ok: hwrt::get(pb, f[..]); for i n { p[i * 3 + 1] = f[i * 3 + 1] as real }
+	hwrt::drop(pb); hwrt::drop(qb); ok
 texof(r gltf::TexRef) int:
 	if r.texture < 0 || gltf::textures[r.texture].image < 0: return -1
 	im := gltf::textures[r.texture].image
@@ -102,7 +110,7 @@ from_scene():
 	clear(); c := s3d::view; EYE = v3(c.eye); TGT = v3(c.target); UP = v3(c.up); FOV = c.fov_y as real
 	s := s3d::sun; TO_SUN = v3(s.to_sun); SUN = v3(s.rgb); SUN_COS = cos(s.angle as real); k := s3d::sky; ZEN = v3(k.zenith); HOR = v3(k.horizon); GND = v3(k.ground); UNDER = s3d::sea_wet()
 	for l s3d::lights: if l.kind == 0 && l.width == 0.0 && l.radius == 0.0 && l.length == 0.0 { light(l.pos.x as real, l.pos.y as real, l.pos.z as real, l.rgb.x as real, l.rgb.y as real, l.rgb.z as real, l.range as real) } else { SKIPPED++ }
-	p real[>..] ~= []; n real[>..] ~= []; uv real[>..] ~= []; cs real[>..] ~= []
+	p real[>..] ~= []; n real[>..] ~= []; uv real[>..] ~= []; cs real[>..] ~= []; sp real[>..] ~= []; sn real[>..] ~= []; su real[>..] ~= []; sc real[>..] ~= []; sm int[>..] ~= []
 	for b s3d::batch:
 		if b.inst >= 0: SKIPPED++; continue
 		pr := gltf::prims[b.prim]; m := matof(b.prim); g := s3d::material_of(b.prim); wt := g.shading == 4 && g.shade_a.w > 0.5
@@ -115,10 +123,10 @@ from_scene():
 				wp ~= float3 { 0.0, 0.0, 0.0 }; wn ~= float3 { 0.0, 0.0, 0.0 }
 				if b.joint_base < 0: wp = linalg::point(b.model, q); wn = linalg::point(b.model, qn) - wp
 				else: for j 4 { w := gltf::verts[vb + gltf::AT_WEIGHT + j]; if w > 0.0 { mj := s3d::joints[b.joint_base + gltf::verts[vb + gltf::AT_JOINT + j] as! int]; a := linalg::point(mj, q); wp = wp + a * w; wn = wn + (linalg::point(mj, qn) - a) * w } }
-				if wt: wp = float3 { wp.x, (wp.y as real + wave(wp.x as real, wp.z as real)) as f32, wp.z }
 				p.append(v3(wp)[..]); n.append(v3(wn)[..]); uv.append([gltf::verts[vb + gltf::AT_UV0] as real, gltf::verts[vb + gltf::AT_UV0 + 1] as real])
 				for j 4: cs[j] += gltf::verts[vb + gltf::AT_COL + j] as real / 3.0
-			tri(p[..], n[..], uv[..], cs[..], m)
+			if wt { sp.append(p[..]); sn.append(n[..]); su.append(uv[..]); sc.append(cs[..]); sm.push(m) } else { tri(p[..], n[..], uv[..], cs[..], m) }
+	if sm.len > 0 { if !lift(sp) { SKIPPED++ } for k sm.len { tri(sp[k * 9..k * 9 + 9], sn[k * 9..k * 9 + 9], su[k * 6..k * 6 + 6], sc[k * 4..k * 4 + 4], sm[k]) } }
 render(w int, h int, spp int) f32[>..]:
 	out f32[>..] ~= []
 	if POS.len == 0 || !hwrt::scene(POS[..], !MASK): return out
@@ -141,7 +149,7 @@ render(w int, h int, spp int) f32[>..]:
 			base ~= 0
 			while base < spp:
 				kk := min(k, spp - base); pr.clear()
-				for x [w as real, h as real, kk as real, base as real, (tc * 256) as real, (ty * 256) as real, DEPTH as real, (LIT.len / 8) as real, EYE[0], EYE[1], EYE[2], tan(FOV * 0.5), rx, ry, rz, w as real / h as real, ux, uy, uz, 0.0, fx, fy, fz, 0.0, TO_SUN[0] / sl, TO_SUN[1] / sl, TO_SUN[2] / sl, SUN_COS, SUN[0], SUN[1], SUN[2], son, ZEN[0], ZEN[1], ZEN[2], SKY, HOR[0], HOR[1], HOR[2], 0.0, GND[0], GND[1], GND[2], 0.0, if FURN >= 0.0 { 1.0 } else { 0.0 }, FURN, 0.0, if MS { 1.0 } else { 0.0 }, PDFK, 0.0, 256.0, 256.0, WAVES[0], WAVES[1], WAVES[2], WAVES[3], ABSORB[0], ABSORB[1], ABSORB[2], 0.0, SCATTER[0], SCATTER[1], SCATTER[2], PHASE_G, ETA, TK, NWAVE as real, if UNDER { 1.0 } else { 0.0 }]: pr.push(x as f32)
+				for x [w as real, h as real, kk as real, base as real, (tc * 256) as real, (ty * 256) as real, DEPTH as real, (LIT.len / 8) as real, EYE[0], EYE[1], EYE[2], tan(FOV * 0.5), rx, ry, rz, w as real / h as real, ux, uy, uz, 0.0, fx, fy, fz, 0.0, TO_SUN[0] / sl, TO_SUN[1] / sl, TO_SUN[2] / sl, SUN_COS, SUN[0], SUN[1], SUN[2], son, ZEN[0], ZEN[1], ZEN[2], SKY, HOR[0], HOR[1], HOR[2], 0.0, GND[0], GND[1], GND[2], 0.0, if FURN >= 0.0 { 1.0 } else { 0.0 }, FURN, 0.0, if MS { 1.0 } else { 0.0 }, PDFK, 0.0, 256.0, 256.0, WAVES[0], WAVES[1], WAVES[2], WAVES[3], ABSORB[0], ABSORB[1], ABSORB[2], 0.0, SCATTER[0], SCATTER[1], SCATTER[2], PHASE_G, ETA, TK, 0.0, if UNDER { 1.0 } else { 0.0 }]: pr.push(x as f32)
 				hwrt::put(pb, pr[..]); t0 := clock()
 				if !hwrt::run(pp, bs[..], 32, 32, 1): out.clear(); return out
 				ms := (clock() - t0) * 1000.0; MAXMS = max(MAXMS, ms); base += kk; k = if ms < 150.0 { min(k * 2, 256) } else if ms > 500.0 { max(k / 2, 1) } else { k }

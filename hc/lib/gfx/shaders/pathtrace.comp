@@ -97,7 +97,7 @@ vec3 hgs(vec3 w, float g) {
 	return b1 * (s * cos(ph)) + b2 * (s * sin(ph)) + w * c;
 }
 bool rr(int depth, inout vec3 tp) { if (depth < 3) return true; float pq = min(max(tp.x, max(tp.y, tp.z)), 0.95); if (rnd() >= pq) return false; tp /= pq; return true; }
-vec3 wnorm(int q, vec2 hb, vec3 p) { vec3 n = normalize(tri[q].xyz * (1.0 - hb.x - hb.y) + tri[q + 1].xyz * hb.x + tri[q + 2].xyz * hb.y); vec3 ww = water_wave(p.xz, par[13].w, par[13].xyz, int(par[16].z)); return normalize(n + vec3(-ww.x, 0.0, -ww.y)); }
+vec3 wnorm(int q, vec2 hb, vec3 p) { vec3 n = normalize(tri[q].xyz * (1.0 - hb.x - hb.y) + tri[q + 1].xyz * hb.x + tri[q + 2].xyz * hb.y); vec3 ww = sea_wave(p.xz, par[13].w, par[13].xyz); return normalize(n + vec3(-ww.x, 0.0, -ww.y)); }
 vec3 sunw(vec3 p, vec3 st, out vec3 wl) {
 	vec3 ts = normalize(par[6].xyz);
 	float e = 1.0 / par[16].x;

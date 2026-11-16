@@ -139,8 +139,8 @@ void main() {
 		pw = vec4(bend(pw.xyz, so, sh, inst.z, true), 1.0);
 	}
 	if (water.w > 0.5) {
-		w.y += water_wave(w.xz, water_t.x, water.xyz, 11).z;
-		pw.y += water_wave(pw.xz, water_t.y, water.xyz, 11).z;
+		w.y += sea_wave(w.xz, water_t.x, water.xyz).z;
+		pw.y += sea_wave(pw.xz, water_t.y, water.xyz).z;
 	}
 	out_world = w.xyz;
 	out_nrm = wn;

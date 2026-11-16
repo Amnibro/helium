@@ -1055,7 +1055,7 @@ void main() {
 		b = cross(n, t) * (dot(cross(n, t), -bv) < 0.0 ? -1.0 : 1.0);
 	}
 	if (is_water) {
-		vec3 ww = water_wave(in_world.xz, cluster.w, shade_b.xyz, 11);
+		vec3 ww = sea_wave(in_world.xz, cluster.w, shade_b.xyz);
 		sea_h = ww.z;
 		float wst = wfall_st();
 		vec3 ws = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-5, 0.0, 0.0));

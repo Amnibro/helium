@@ -1,0 +1,11 @@
+#version 460
+#extension GL_EXT_ray_query : require
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+layout(std430, set = 0, binding = 1) buffer Pos { float pos[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Par { vec4 par[]; };
+#include "water.glsl"
+void main() {
+	int n = int(par[1].x);
+	for (int i = int(gl_GlobalInvocationID.x); i < n; i += 262144) pos[i * 3 + 1] += sea_wave(vec2(pos[i * 3], pos[i * 3 + 2]), par[0].w, par[0].xyz).z;
+}
