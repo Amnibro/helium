@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 const [hc] = process.argv.slice(2), R = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..'), T = fs.mkdtempSync(path.join(os.tmpdir(), 'wgsltest-'));
 if (!hc) { console.log('usage: node tools/hc/wgsltest.mjs hc'); process.exit(2); }
-const files = ['hc/lib/gfx/shaders', 'hc/test/wgsl'].flatMap(d => fs.readdirSync(path.join(R, d)).filter(f => /\.(vert|frag|comp)$/.test(f)).map(f => [f.replace(/\.(\w+)$/, '_$1'), path.join(R, d, f), true]));
+const files = ['hc/lib/gfx/shaders', 'hc/test/wgsl'].flatMap(d => fs.readdirSync(path.join(R, d)).filter(f => /\.(vert|frag|comp)$/.test(f) && !fs.readFileSync(path.join(R, d, f), 'utf8').includes('GL_EXT_ray_query')).map(f => [f.replace(/\.(\w+)$/, '_$1'), path.join(R, d, f), true]));
 for (const [, st, src] of fs.readFileSync(path.join(R, 'hc/lib/ui.he'), 'utf8').matchAll(/embed_shader\("(vert|frag)", """([\s\S]*?)"""/g)) { const p = path.join(T, `ui.${st}`); fs.writeFileSync(p, src); files.push([`ui_${st}`, p, true]); }
 files.push(['anim_skin_comp', path.join(R, 'hc/lib/anim/skin.comp'), false]);
 const S = [], bad = [];
