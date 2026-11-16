@@ -1,6 +1,6 @@
 // Colour pass for glTF metallic-roughness materials.
 #include "lighting.glsl"
-#include "ms_lut.glsl"
+#include "ms.glsl"
 #include "skin_lut.glsl"
 
 layout(location = 0) in vec3 in_world;
@@ -283,51 +283,6 @@ float eye_ring(vec2 uv) {
 	vec2 c = distance(uv, shade_a.xy) < distance(uv, shade_a.zw) ? shade_a.xy : shade_a.zw;
 	float r = distance(uv, c) / max(shade_c.x, 1e-4);
 	return 1.0 - shade_c.z * smoothstep(0.72, 0.98, r) * (1.0 - smoothstep(0.98, 1.18, r));
-}
-
-// Single-scatter directional albedo of the specular lobe from ms_lut.glsl (16-bit
-// unorm pairs), bilinear (columns are sqrt(n.v), rows roughness): x = E(n.v, rough)
-// with Fresnel = 1, y = B, the part of E carried by Schlick's (1 - v.h)^5 term.
-vec2 ms_lut(float n_v, float rough) {
-	float x = sqrt(clamp(n_v, 0.0, 1.0)) * float(MS_N - 1);
-	float y = clamp(rough, 0.0, 1.0) * float(MS_N - 1);
-	int x0 = min(int(x), MS_N - 2);
-	int y0 = min(int(y), MS_N - 2);
-	float fx = x - float(x0);
-	float fy = y - float(y0);
-	int i = y0 * MS_N + x0;
-	vec2 a = mix(unpackUnorm2x16(MS_EB[i]), unpackUnorm2x16(MS_EB[i + 1]), fx);
-	vec2 b = mix(unpackUnorm2x16(MS_EB[i + MS_N]), unpackUnorm2x16(MS_EB[i + MS_N + 1]), fx);
-	return mix(a, b, fy);
-}
-
-// E for the compensation only, with a silhouette cap: where sqrt(n.v) (MS_N - 1) < 3 (n.v
-// below about 0.0094) E falls steeply toward grazing and bilinear interpolation between
-// nodes undershoots it, so 1 / E would overshoot (white metals gained up to 5.4 %); there
-// the largest E of the four corners is used, which can only lower the gain. The diffuse
-// weight keeps the bilinear (E, B). make_ms_lut's check 2 replays this exactly.
-float ms_e(float n_v, float rough, float e) {
-	float x = sqrt(clamp(n_v, 0.0, 1.0)) * float(MS_N - 1);
-	if (x >= 3.0) return e;
-	float y = clamp(rough, 0.0, 1.0) * float(MS_N - 1);
-	int x0 = min(int(x), MS_N - 2);
-	int y0 = min(int(y), MS_N - 2);
-	int i = y0 * MS_N + x0;
-	float a = max(unpackUnorm2x16(MS_EB[i]).x, unpackUnorm2x16(MS_EB[i + 1]).x);
-	float b = max(unpackUnorm2x16(MS_EB[i + MS_N]).x, unpackUnorm2x16(MS_EB[i + MS_N + 1]).x);
-	return max(a, b);
-}
-
-// Multiple-scattering compensation for the specular lobe. A white (F = 1) lobe reflects
-// E of the incoming energy after one bounce; the rest would leave after further bounces
-// between microfacets, so the lobe is scaled by 1 + F0 (1 / E - 1), which brings a white
-// conductor back to 1 and leaves a low-F0 dielectric almost unchanged. E is floored at
-// 0.25, which caps the factor at 1 + 3 F0 where the table's E is tiny: the floor limits
-// how much lost energy is put back (a loss), it does not bound a gain. The gain is
-// bounded by make_ms_lut's check 2 with the cap in ms_e(): below 3 % at every n.v.
-vec3 ms_factor(vec3 f0, float e, bool on) {
-	if (!on) return vec3(1.0);
-	return 1.0 + f0 * (1.0 / max(e, 0.25) - 1.0);
 }
 
 // Diffuse weight per view direction: the energy the (compensated) specular lobe does not

@@ -87,8 +87,11 @@ grep -q "^rq: \(ok\|skipped\)" "$O/rq_check.txt" || { say "gfxtest: FAILED: hard
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gi/cornell_hw.he" -o "$T/chw" > "$T/chw_build.txt" 2>&1 || { echo "gfxtest: cornell_hw build failed"; grep -av "W[0-9]" "$T/chw_build.txt" | tail -n 5; exit 1; }
 zcat "$R/hc/test/gfx/gi/cornell_ref.txt.gz" > "$T/cornell_ref.txt"
 "${L[@]}" "$T/chw" "$T/cornell_ref.txt" > "$O/cornell_hw.txt" 2>&1; cat "$O/cornell_hw.txt"; cat "$O/cornell_hw.txt" >> "$RES"
-grep -q "^hwrt cornell: \(ok\|skipped\)" "$O/cornell_hw.txt" || { say "gfxtest: FAILED: hardware ray tracing reference (R2-R5)"; exit 1; }
-if [ "${GFX_REQUIRE_GPU:-0}" = 1 ] && grep -q "skipped" "$O/rq_check.txt" "$O/cornell_hw.txt"; then say "gfxtest: FAILED: no ray-query device (GFX_REQUIRE_GPU=1)"; exit 1; fi
+grep -q "^hwrt cornell: \(ok\|skipped\)" "$O/cornell_hw.txt" || { say "gfxtest: FAILED: hardware ray tracing reference (R2-R5, P3)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/pt/pt_check.he" -o "$T/ptc" > "$T/ptc_build.txt" 2>&1 || { echo "gfxtest: pt_check build failed"; grep -av "W[0-9]" "$T/ptc_build.txt" | tail -n 5; exit 1; }
+"${L[@]}" "$T/ptc" "$R/hc/lib/gfx/shaders/ms_lut.glsl" > "$O/pt_check.txt" 2>&1; cat "$O/pt_check.txt"; cat "$O/pt_check.txt" >> "$RES"
+grep -q "^pathtrace: \(ok\|skipped\)" "$O/pt_check.txt" || { say "gfxtest: FAILED: path tracer (P1, P2, P4)"; exit 1; }
+if [ "${GFX_REQUIRE_GPU:-0}" = 1 ] && grep -q "skipped" "$O/rq_check.txt" "$O/cornell_hw.txt" "$O/pt_check.txt"; then say "gfxtest: FAILED: no ray-query device (GFX_REQUIRE_GPU=1)"; exit 1; fi
 grep -a "^gpu:" "$T/all.txt"; g=$(grep -a "^gpu: \(ok\|skipped\|FAILED\)" "$T/all.txt")
 case "$g" in
 	"gpu: ok"*) say "gfxtest: ok";;

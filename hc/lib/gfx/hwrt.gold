@@ -146,15 +146,15 @@ asbuild(ty int, geo const byte[:], count int) uint:
 	if !begin(): return 0
 	cc4(FN[2], CB as! int, 1, pt(gi[..]) as! int, pt(rp[..]) as! int); bar(0x2000000, 0x2000800, 0x400000, 0x200020)
 	good := submit(); drop(sc); if good { a } else { 0 }
-scene(tris const f32[:]) bool:
+scene(tris const f32[:], opaque bool) bool:
 	if !init(): return false
 	n := tris.len / 9; vb := buf(tris.len * 4, 0x80020, false); if vb < 0 { return false } put(vb, tris)
-	g := lutgpu::zb(96); lutgpu::p32(g, 0, 1000150006); lutgpu::p32(g, 24, 1000150005); lutgpu::p32(g, 40, 106); lutgpu::p64(g, 48, ADR[vb]); lutgpu::p64(g, 56, 12); lutgpu::p32(g, 64, n * 3 - 1); lutgpu::p32(g, 68, 1000165000); lutgpu::p32(g, 88, 1)
+	g := lutgpu::zb(96); lutgpu::p32(g, 0, 1000150006); lutgpu::p32(g, 24, 1000150005); lutgpu::p32(g, 40, 106); lutgpu::p64(g, 48, ADR[vb]); lutgpu::p64(g, 56, 12); lutgpu::p32(g, 64, n * 3 - 1); lutgpu::p32(g, 68, 1000165000); lutgpu::p32(g, 88, if opaque { 1 } else { 0 })
 	bl := asbuild(1, g[..], n); drop(vb); if bl == 0 { return false }
 	ai := lutgpu::zb(24); lutgpu::p32(ai, 0, 1000150002); lutgpu::p64(ai, 16, bl)
 	ins := lutgpu::zb(64); lutgpu::p32(ins, 0, 0x3F800000); lutgpu::p32(ins, 20, 0x3F800000); lutgpu::p32(ins, 40, 0x3F800000); lutgpu::p32(ins, 48, 0xFF << 24); lutgpu::p32(ins, 52, 1 << 24); lutgpu::p64(ins, 56, cc3(FN[3], DEV as! int, pt(ai[..]) as! int, 0) as! uint)
 	ib := buf(64, 0x80000, false); if ib < 0 { return false } put(ib, ins[..])
-	g2 := lutgpu::zb(96); lutgpu::p32(g2, 0, 1000150006); lutgpu::p32(g2, 16, 2); lutgpu::p32(g2, 24, 1000150004); lutgpu::p64(g2, 48, ADR[ib]); lutgpu::p32(g2, 88, 1)
+	g2 := lutgpu::zb(96); lutgpu::p32(g2, 0, 1000150006); lutgpu::p32(g2, 16, 2); lutgpu::p32(g2, 24, 1000150004); lutgpu::p64(g2, 48, ADR[ib]); lutgpu::p32(g2, 88, if opaque { 1 } else { 0 })
 	tl := asbuild(0, g2[..], 1); drop(ib); tl != 0
 pipe(blob const byte[:], nb int) int:
 	if !init(): return -1

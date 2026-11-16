@@ -3821,6 +3821,26 @@ lights of the last `scene3d` frame. Tests: `hc/test/gfx/pt/pt_check.he`, and P3 
 * **P4 safety.** No dispatch over 1 s on the RX 9060 XT (the tracer halves its samples per
   dispatch above 500 ms), and no NaN or infinite sample in any render.
 
+### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
+
+| Bar | RX 9060 XT | lavapipe |
+|---|---|---|
+| P1 white dielectric rough 0.2: total, worst bin | -21 ppm, 83 ppm | same |
+| P1 white dielectric rough 0.7 | -1 ppm, 209 ppm | -1 ppm, 208 ppm |
+| P1 white metal rough 0.3 | -286 ppm, 1001 ppm | same |
+| P1 gold metal rough 0.5 | -197 ppm, 1550 ppm | same |
+| P1 control, specular pdf x 1.02 | -19888 ppm: fails | same |
+| P1 control, base x 1.01 | 9677 ppm: fails | same |
+| P2 sun and point light: total, worst pixel | -1 ppm, 3730 ppm | same |
+| P2 controls, sun x 1.01 / point x 1.01 | 8592 / 1405 ppm: fail | same |
+| P3 Cornell: mean z, mean z^2, \|z\| > 4, total | 0.0055, 0.855, 2, 72 ppm (98 ms) | same (5.4 s) |
+| P3 control, light x 1.01 | mean z 0.391: fails | same |
+| P4 longest dispatch, bad samples | 13 ms, 0 | 400 ms (reported), 0 |
+
+The CPU and GPU results agree to the printed digit because both use the same seeds and
+the same shader; only rounding in the last place differs. The furnace error grows with
+the specular share (metals) but stays under a third of the bar.
+
 ### Hardware ray tracing results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
 | Bar | RX 9060 XT | lavapipe (CPU) |
@@ -3838,7 +3858,7 @@ Use (`tris` holds 9 floats a triangle; binding 0 of every pipeline is the TLAS, 
 to n the storage buffers given to `run`):
 
 ```
-if hwrt::scene(tris[..]) {
+if hwrt::scene(tris[..], true) {
     p := hwrt::pipe(embed_shader("pt.comp"), 3)
     b := hwrt::buf(bytes, 0x20, false)
     hwrt::put(b, data[..]); hwrt::run(p, [b, c, d], gx, gy, 1); hwrt::get(b, out[..])
@@ -4589,8 +4609,10 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
 
 * Hardware ray tracing (`gfx.hwrt`) runs on its own Vulkan device for offline reference
   renders only: SDL's GPU API cannot hold acceleration structures, so the realtime
-  renderer stays on the software BVH until Helium has its own Vulkan backend. Its path
-  tracer is Lambertian with a point light (the Cornell estimator); one TLAS a device.
+  renderer stays on the software BVH until Helium has its own Vulkan backend. One TLAS a
+  device. `gfx.pathtrace` does not yet read spot and rect lights, instanced sets, second UV
+  sets, texture transforms, morph targets, transmission or subsurface scattering, and it
+  traces opaque-only scenes faster than scenes with alpha mask or blend.
 
 * Skin scattering gathers light from what the camera sees: light that enters on a side
   facing away from the camera (an ear lit from behind) is not gathered, and blended or
