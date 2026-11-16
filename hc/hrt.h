@@ -87,13 +87,31 @@ static inline int64_t hr_ix(int64_t i, int64_t n, const char *loc) { if (HR_UNLI
 #if HR_ALIAS
 static pthread_mutex_t hr_smu = PTHREAD_MUTEX_INITIALIZER;
 static int64_t hr_rcap(const uint8_t *b) { return ((const int64_t *)b)[-1]; }
-static uint8_t *hr_map(int64_t s) { s = (s + 16383) & ~(int64_t)16383; void *p = mmap(NULL, (size_t)(16384 + s + HR_GRD), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); if (p == MAP_FAILED) { fprintf(stderr, "helium runtime error: out of address space\n"); exit(1); } uint8_t *b = (uint8_t *)p + 16384; mprotect(b + s, HR_GRD, PROT_NONE); ((int64_t *)b)[-1] = s; return b; }
+#ifdef __APPLE__
+#define HR_MFD 0
+#define HR_MADV MADV_DONTNEED
+#else
+#define HR_MFD 1
+#define HR_MADV MADV_REMOVE
+#include <sys/syscall.h>
+#include <sys/resource.h>
+static int hr_mfd(void) { static int up; if (!__atomic_exchange_n(&up, 1, __ATOMIC_RELAXED)) { struct rlimit r; if (!getrlimit(RLIMIT_NOFILE, &r) && r.rlim_cur < r.rlim_max) { r.rlim_cur = r.rlim_max; setrlimit(RLIMIT_NOFILE, &r); } } int fd = (int)syscall(SYS_memfd_create, "hr", 1u); if (fd < 0) { fprintf(stderr, "helium runtime error: could not make array storage (%s)\n", strerror(errno)); exit(1); } return fd; }
+#endif
+static uint8_t *hr_mapf(int64_t s, int64_t fd) { s = (s + 16383) & ~(int64_t)16383; void *p = mmap(NULL, (size_t)(16384 + s + HR_GRD), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); if (p == MAP_FAILED) { fprintf(stderr, "helium runtime error: out of address space\n"); exit(1); } uint8_t *b = (uint8_t *)p + 16384; mprotect(b + s, HR_GRD, PROT_NONE);
+#if HR_MFD
+	fd = fd < 0 ? hr_mfd() : fd; if (ftruncate((int)fd, (off_t)s) || mmap(b, (size_t)s, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, (int)fd, 0) == MAP_FAILED) { fprintf(stderr, "helium runtime error: out of memory for an array (%s)\n", strerror(errno)); exit(1); } ((int64_t *)b)[-3] = fd;
+#endif
+	((int64_t *)b)[-1] = s; return b; }
+#define hr_map(s) hr_mapf((s), -1)
 static void hr_rtedit(const uint8_t *s, int64_t c, hr_ch *ch) { pthread_mutex_lock(&hr_smu); hr_rtab *o = hr_rt; int64_t n = o ? o->n : 0, k = 0, put = s != NULL; hr_rtab *t = malloc(sizeof *t + (size_t)(n + 1) * sizeof(hr_ret)); for (int64_t i = 0; i <= n; i++) { if (put && (i == n || o->e[i].s > s)) { t->e[k++] = (hr_ret){ s, s + c, ch }; put = 0; } if (i < n && (s || o->e[i].ch != ch)) t->e[k++] = o->e[i]; } t->n = k; if (!k) { free(t); t = NULL; } __atomic_store_n(&hr_rt, t, __ATOMIC_RELEASE); if (o) { free(hr_rold[hr_roldn & 63]); hr_rold[hr_roldn++ & 63] = o; } pthread_mutex_unlock(&hr_smu); }
-static void hr_unmap(uint8_t *b) { hr_ch *ch = ((hr_ch **)b)[-2]; int64_t c = hr_rcap(b); if (ch) hr_rtedit(NULL, 0, ch); munmap(b - 16384, (size_t)(16384 + c + HR_GRD)); if (ch) { for (int64_t i = 0; i < ch->n; i++) munmap(ch->mb[i] - 16384, (size_t)(16384 + ch->mc[i] + HR_GRD)); free(ch->mb); free(ch->mc); free(ch); } }
+static void hr_unmap(uint8_t *b) { hr_ch *ch = ((hr_ch **)b)[-2]; int64_t c = hr_rcap(b), fd = HR_MFD ? ((int64_t *)b)[-3] : -1; if (ch) hr_rtedit(NULL, 0, ch); munmap(b - 16384, (size_t)(16384 + c + HR_GRD)); if (ch) { for (int64_t i = 0; i < ch->n; i++) munmap(ch->mb[i] - 16384, (size_t)(16384 + ch->mc[i] + HR_GRD)); free(ch->mb); free(ch->mc); free(ch); } if (fd >= 0) close((int)fd); }
 static __attribute__((noinline, cold, pure)) uint8_t *hr_regrow(uint8_t *b, int64_t x, const char *loc) {
 	int64_t c = hr_rcap(b), s = c; if (x > HR_RSZ) hr_die("array grew past its reservation; build with -DGS_STACK_RESERVE=<bytes> to raise it", loc); while (s < x) s *= 4; s = s < HR_RSZ ? s : HR_RSZ;
-	uint8_t *nb = hr_map(s); vm_address_t a = (vm_address_t)nb; vm_prot_t cp, mp;
+	uint8_t *nb = hr_mapf(s, HR_MFD ? ((int64_t *)b)[-3] : -1);
+#if !HR_MFD
+	vm_address_t a = (vm_address_t)nb; vm_prot_t cp, mp;
 	if (vm_remap(mach_task_self(), &a, (vm_size_t)c, 0, VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE, mach_task_self(), (vm_address_t)b, FALSE, &cp, &mp, VM_INHERIT_NONE) != KERN_SUCCESS || a != (vm_address_t)nb) hr_die("could not grow an array's storage", loc);
+#endif
 	hr_ch *ch = ((hr_ch **)b)[-2]; if (!ch) ch = calloc(1, sizeof *ch);
 	ch->mb = realloc(ch->mb, (size_t)(ch->n + 1) * sizeof *ch->mb); ch->mc = realloc(ch->mc, (size_t)(ch->n + 1) * sizeof *ch->mc); ch->mb[ch->n] = b; ch->mc[ch->n++] = c;
 	__atomic_store_n(&ch->head, nb, __ATOMIC_RELEASE); ((hr_ch **)nb)[-2] = ch; hr_rtedit(b, c, ch);
@@ -104,6 +122,8 @@ static __attribute__((noinline, cold, pure)) uint8_t *hr_regrow(uint8_t *b, int6
 static uint8_t *hr_take(void) { return hr_nfree ? hr_free[--hr_nfree] : hr_map(HR_ASZ < HR_RSZ ? HR_ASZ : HR_RSZ); }
 #else
 #define HR_CHAINED(b) 0
+#define HR_MFD 0
+#define HR_MADV MADV_DONTNEED
 static int64_t hr_rmin = HR_RSZ; static uint8_t **hr_sb; static int64_t *hr_ss, hr_sn, hr_sc; static pthread_mutex_t hr_smu = PTHREAD_MUTEX_INITIALIZER;
 static int64_t hr_rcap(const uint8_t *b) { int64_t c = HR_RSZ; pthread_mutex_lock(&hr_smu); for (int64_t i = 0; i < hr_sn; i++) if (hr_sb[i] == b) { c = hr_ss[i]; break; } pthread_mutex_unlock(&hr_smu); return c; }
 static void hr_unmap(uint8_t *b) { int64_t c = HR_RSZ; pthread_mutex_lock(&hr_smu); for (int64_t i = 0; i < hr_sn; i++) if (hr_sb[i] == b) { c = hr_ss[i]; hr_sb[i] = hr_sb[--hr_sn]; hr_ss[i] = hr_ss[hr_sn]; break; } pthread_mutex_unlock(&hr_smu); munmap(b, (size_t)c + 65536); }
@@ -125,7 +145,7 @@ static void hr_give(uint8_t *b, int64_t used) {
 	for (int64_t i = 0; i < hr_nfree; i++) if (hr_free[i] == b) hr_die("a resizable array's storage was released twice", "release");
 #endif
 	if (hr_nfree >= 64 || HR_CHAINED(b)) { hr_unmap(b); return; }
-	if (used > (1 << 20)) madvise(b + 65536, (size_t)(used - 65536 + 4095) & ~(size_t)4095, MADV_DONTNEED);
+	if (used > (1 << 20)) madvise(b + 65536, (size_t)(used - 65536 + 4095) & ~(size_t)4095, HR_MADV);
 	if (hr_nfree == hr_cfree) { hr_cfree = hr_cfree ? hr_cfree * 2 : 64; hr_free = realloc(hr_free, (size_t)hr_cfree * sizeof *hr_free); }
 	hr_free[hr_nfree++] = b;
 }
@@ -318,7 +338,14 @@ static inline int hr_strcmp(hsl a, hsl b) { int64_t n = a.n < b.n ? a.n : b.n; i
 static inline hsl hr_str(const char *s, int64_t n) { return (hsl){ (uint8_t *)s, n }; }
 static inline void hr_ob_put(const void *p, int64_t n) { hr_append(&hr_ob, p, n, 1); if (hr_ob.n > 65536) hr_flush(); }
 static pthread_mutex_t hr_omu = PTHREAD_MUTEX_INITIALIZER;
-static void hr_flush(void) { if (!hr_ob.n) return; if (hr_mt) pthread_mutex_lock(&hr_omu); int64_t o = 0; while (o < hr_ob.n) { ssize_t w = write(1, hr_ob.b + o, (size_t)(hr_ob.n - o)); if (w <= 0) break; o += w; } hr_ob.n = 0; if (hr_mt) pthread_mutex_unlock(&hr_omu); }
+#if defined(__ANDROID__) && defined(HR_LOGCAT)
+#include <android/log.h>
+#endif
+static void hr_flush(void) { if (!hr_ob.n) return; if (hr_mt) pthread_mutex_lock(&hr_omu);
+#if defined(__ANDROID__) && defined(HR_LOGCAT)
+	{ char *z = malloc((size_t)hr_ob.n + 1); memcpy(z, hr_ob.b, (size_t)hr_ob.n); z[hr_ob.n] = 0; __android_log_write(ANDROID_LOG_INFO, "helium", z); free(z); }
+#endif
+	 int64_t o = 0; while (o < hr_ob.n) { ssize_t w = write(1, hr_ob.b + o, (size_t)(hr_ob.n - o)); if (w <= 0) break; o += w; } hr_ob.n = 0; if (hr_mt) pthread_mutex_unlock(&hr_omu); }
 static inline void hr_fb(hrv *o, uint8_t c) { *hr_grow(o, 1, 1) = c; }
 static inline void hr_fs(hrv *o, hsl s) { hr_append(o, s.p, s.n, 1); }
 static inline void hr_fc(hrv *o, const char *s) { hr_append(o, s, (int64_t)strlen(s), 1); }
@@ -451,17 +478,46 @@ static void hr_os_arg(int64_t i, hrv *out) { if (i >= 0 && i < hr_argc) hr_appen
 static char *hr_cstr(hsl s, char *buf, int64_t cap) { char *c = s.n < cap ? buf : malloc((size_t)s.n + 1); memcpy(c, s.p, (size_t)s.n); c[s.n] = 0; if (s.n >= 4095 || memchr(s.p, 0, (size_t)s.n)) c[0] = 0; return c; }
 #define HR_CS(name, s) char name##_b[512]; char *name = hr_cstr(s, name##_b, 512)
 #define HR_CSF(name) if (name != name##_b) free(name)
+#ifdef __ANDROID__
+#include <jni.h>
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
+__attribute__((weak)) void *SDL_GetAndroidJNIEnv(void);
+__attribute__((weak)) void *SDL_GetAndroidActivity(void);
+static AAssetManager *hr_am;
+static AAssetManager *hr_assets(void) {
+	if (hr_am || !SDL_GetAndroidJNIEnv || !SDL_GetAndroidActivity) return hr_am;
+	JNIEnv *e = (JNIEnv *)SDL_GetAndroidJNIEnv(); jobject a = (jobject)SDL_GetAndroidActivity(); if (!e || !a) return 0;
+	jclass k = (*e)->GetObjectClass(e, a); jmethodID m = (*e)->GetMethodID(e, k, "getAssets", "()Landroid/content/res/AssetManager;"); jobject o = (*e)->CallObjectMethod(e, a, m);
+	jobject g = (*e)->NewGlobalRef(e, o); hr_am = AAssetManager_fromJava(e, g); (*e)->DeleteLocalRef(e, o); (*e)->DeleteLocalRef(e, k); (*e)->DeleteLocalRef(e, a); return hr_am;
+}
+static AAsset *hr_asset(hsl p) {
+	HR_CS(c, p); const char *s = c; while (!strncmp(s, "./", 2) || !strncmp(s, "../", 3)) s += s[1] == '/' ? 2 : 3;
+	AAssetManager *m = c[0] == '/' || !c[0] ? 0 : hr_assets(); AAsset *a = m ? AAssetManager_open(m, s, AASSET_MODE_RANDOM) : 0; HR_CSF(c); return a;
+}
+static bool hr_asset_read(hsl p, int64_t off, int64_t n, hrv *out) {
+	AAsset *a = hr_asset(p); if (!a) return false;
+	int64_t len = AAsset_getLength64(a); n = n < 0 || off + n > len ? len - off : n;
+	if (off < 0 || n < 0 || AAsset_seek64(a, off, SEEK_SET) < 0) { AAsset_close(a); return false; }
+	while (n > 0) { int64_t k = n < (1 << 20) ? n : (1 << 20); hr_rinit(out); HR_OVER(out->b, out->n + k, "read"); int r = AAsset_read(a, out->b + out->n, (size_t)k); if (r <= 0) break; out->n += r; n -= r; }
+	AAsset_close(a); return true;
+}
+static bool hr_asset_exists(hsl p) { AAsset *a = hr_asset(p); if (a) AAsset_close(a); return a != 0; }
+#else
+static bool hr_asset_read(hsl p, int64_t off, int64_t n, hrv *out) { (void)p; (void)off; (void)n; (void)out; return false; }
+static bool hr_asset_exists(hsl p) { (void)p; return false; }
+#endif
 static bool hr_os_getenv(hsl n, hrv *out) { HR_CS(c, n); char *v = getenv(c); HR_CSF(c); if (!v) return false; hr_append(out, v, (int64_t)strlen(v), 1); return true; }
 static bool hr_os_read_file(hsl path, hrv *out) {
 	HR_CS(c, path); int fd = open(c, O_RDONLY); HR_CSF(c);
-	if (fd < 0) return false;
+	if (fd < 0) return hr_asset_read(path, 0, -1, out);
 	struct stat st; if (fstat(fd, &st) == 0 && S_ISDIR(st.st_mode)) { close(fd); return false; }
 	for (;;) { hr_rinit(out); HR_OVER(out->b, out->n + (1 << 20), "read"); ssize_t r = read(fd, out->b + out->n, 1 << 20); if (r < 0) { close(fd); return false; } if (r == 0) break; out->n += r; }
 	close(fd); return true;
 }
 static bool hr_os_read_file_range(hsl path, int64_t off, int64_t n, hrv *out) {
 	HR_CS(c, path); int fd = open(c, O_RDONLY); HR_CSF(c);
-	if (fd < 0) return false;
+	if (fd < 0) return hr_asset_read(path, off, n, out);
 	if (off < 0 || n < 0 || lseek(fd, (off_t)off, SEEK_SET) < 0) { close(fd); return false; }
 	while (n > 0) { int64_t k = n < (1 << 20) ? n : (1 << 20); hr_rinit(out); HR_OVER(out->b, out->n + k, "read"); ssize_t r = read(fd, out->b + out->n, (size_t)k); if (r < 0) { close(fd); return false; } if (r == 0) break; out->n += r; n -= r; }
 	close(fd); return true;
@@ -482,7 +538,7 @@ static bool hr_os_write_file_atomic(hsl p, hsl d) {
 	if (!hr_wfile((hsl){ (uint8_t *)tb, p.n + 5 }, d, O_TRUNC)) return false;
 	HR_CS(c, p); bool ok = rename(tb, c) == 0; HR_CSF(c); if (!ok) unlink(tb); return ok;
 }
-static bool hr_os_file_exists(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && !S_ISDIR(st.st_mode); HR_CSF(c); return r; }
+static bool hr_os_file_exists(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && !S_ISDIR(st.st_mode); HR_CSF(c); return r || hr_asset_exists(p); }
 static bool hr_os_is_dir(hsl p) { HR_CS(c, p); struct stat st; bool r = stat(c, &st) == 0 && S_ISDIR(st.st_mode); HR_CSF(c); return r; }
 static int64_t hr_os_file_mtime(hsl p) { HR_CS(c, p); struct stat st; int64_t r = stat(c, &st) == 0 ? (int64_t)st.st_mtime : -1; HR_CSF(c); return r; }
 static bool hr_os_remove_file(hsl p) { HR_CS(c, p); bool r = unlink(c) == 0; HR_CSF(c); return r; }

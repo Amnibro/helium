@@ -21,6 +21,10 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `envmap` | image and physical-sky environment lighting: equirect to cube, GGX prefilter, Hillaire 2020 multi-scatter sky, cloud layer, `sun_color` |
 | `clusters` | clustered forward light grid, 16 x 9 x 24 cells, with the light and cell records the surface shader reads |
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
+| `meshopt` | decoder for glTF buffer views compressed with `EXT_meshopt_compression` or `KHR_meshopt_compression`: vertex streams (versions 0 and 1), triangle and index streams, and the octahedral, quaternion, exponential and color filters; `gltf` calls it while loading, so compressed files need no extra step |
+| `draco` | decoder for Draco 2.2 meshes (`KHR_draco_mesh_compression`): sequential and edgebreaker (standard and valence) connectivity, every prediction scheme and transform the 2.2 encoders write, quantized and integer attributes; `gltf` calls it while loading |
+| `codec_webp` | WebP decoder: lossy VP8 (with `ALPH` alpha) and lossless VP8L stills, simple and extended containers, output equal to libwebp's RGBA; `gltf` calls it for `.webp` images and `EXT_texture_webp` |
+| `video` | H.264 Constrained Baseline encoder and MP4 writer for exporting animations on the CPU: intra 16x16, P with whole-pixel motion search, skip; output decodes identically in ffmpeg |
 | `motion` | animation sampling (step, linear, slerp, cubic spline), node hierarchy, joint palettes, morph weights |
 | `shapes` | procedural sphere / plane / box assets in the same pools as glTF assets |
 | `scene3d` (`s3d::`) | the frame: cascaded sun shadows (PCF or PCSS, optionally fitted to the casters), contact shadows, shadowed point and spot lights, SSAO, MSAA forward shading with an analytic sky ambient, bloom, tone curve |
@@ -44,6 +48,11 @@ s3d::render(target);                 // RGBA8 target; s3d::hdr_target() is the l
 
 The scene is plain data (`view`, `sun`, `sky`, `look`, `lights`, `items`) that the
 caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
+
+One item can wear its own materials while other items of the same asset keep theirs:
+`s3d::item_material(it, k)` is the material the item draws in slot `k` of its asset's
+material list, and `s3d::recolor(it, k, m)` swaps in `m` for that item only (a slot out of
+range is ignored). `clear_scene` drops every swap.
 
 `s3d::render` records a frame into the current command buffer. The GPU starts on it at
 the next `gfx::frame()`, `gfx::flush()`, `gfx::submit()` or pixel readback. A windowed
@@ -224,8 +233,11 @@ pixels differ in a 768x1024 Holo render); both goldens pass unchanged.
 | `sun.contact` | 0 | screen-space contact-shadow ray length in metres (0.03-0.07 for faces and clothing). |
 | `contact_steps`, `contact_thick` | 12, 0.02 | ray steps (quadratically spaced) and the depth a hit may be behind (metres). |
 | `Light.kind` 1, `dir`, `cone`, `edge` | point, -, 0.5, 0.2 | spot light: outer half-angle in radians and the fraction of it that fades (`add_spot`). |
-| `Light.shadows`, `soft` | false, 1.5 | a shadowed spot takes one layer of the local shadow atlas and a point six; `soft` is the filter radius in texels. |
-| `local_shadow_size` | 1024 | atlas layer size (12 layers, made on first use). |
+| `Light.shadows`, `soft` | false, 1.5 | a shadowed spot takes one tile of the local shadow atlas and a point six; `soft` is the filter radius in texels. All 16 lights can be shadowed (96 tiles). |
+| `local_shadow_size` | 1024 | largest tile, in texels. |
+| `local_atlas` | 4096 | side of the shared local shadow atlas (one depth texture, made on first use; 64 MB at 4096). Use 2048 on phones. |
+| `local_auto`, `local_res`, `local_min` | true, 1.0, 128 | sizes each light's tiles by how large its range looks on screen (`local_res` texels per pixel of that radius), from `local_min` up to `local_shadow_size`. Off: every tile is `local_shadow_size`. When the tiles do not fit, the largest are halved until they do. |
+| `local_cache` | true | a tile is drawn again only when its light, its place in the atlas, or a shadow caster within its view changes (animated, swaying and morphed casters count as changed every frame). `s3d::local_stats()` gives the tiles drawn by the last frame. |
 
 Receiver-plane depth from the geometric normal keeps wide kernels on sloped receivers
 free of acne without a large constant bias (the cause of peter-panning at the chin,
@@ -310,6 +322,55 @@ Measured by the `vsm` check in `gfx_smoke` (1280 x 720, RX 9060 XT, RADV):
 | half-lit edge pixels seen from 0.25 m above the floor, against 2048 cascades over 60 m | 2,227 against 11,303 |
 | soft sun, `angle` 0.07: half-lit pixels against the cascade filter | 4,277 against 4,271 |
 
+
+### Local shadow atlas
+
+Shadows from spot and point lights share one depth atlas instead of 12 fixed layers, which
+held at most two shadowed point lights. Each light's tiles are packed by size, largest
+first, in Z order (power-of-two squares sorted that way always line up, so nothing is
+wasted), and each tile is sized by how large the light's range looks on screen, with some
+slack so it does not flip size every frame. Like the sun's virtual pages, a tile is kept
+from frame to frame and drawn again only when something it sees changes, so a still room
+with 16 shadowed lights draws no shadow tiles at all. The lookups clamp their filter to the
+tile so neighbors never bleed in. Each face's matrix and tile rectangle ride at the end of the
+light record buffer (`light_shd.x` is the record index of the light's first face), because
+96 faces would push the frame uniforms past SDL's 4 KiB uniform window.
+
+`local_shadow_check` (from `local_shadow_check.gold`, GPU) lights 16 pillars topped with
+balls on a floor with 16 shadowed point lights (above the balls, range 2 m, filter 0, direct
+light only) at 512 x 512. Bars, registered before the first run:
+
+- L1: all 16 lights get a shadow.
+- L2: the frame matches ray-traced shadows (`rt_shadows`, one exact ray per light through the
+  BVH) within a summed error of 5% of the unshadowed light, and at least 97% of the lit
+  pixels agree on shadowed or not. Control: the unshadowed frame must be more than 1% off
+  and at least ten times further off than the atlas frame.
+- L3: 10 frames of a still scene draw no tiles. Control: with `local_cache` off a frame draws
+  every face.
+- L4: moving one pillar redraws between 1 and 12 faces (only the lights in its reach), and
+  the cached frame equals a frame drawn fresh within 1 level.
+- L5: with the camera four times farther away the mean tile is at most half the size.
+- L6: a still frame with the cache costs under 0.7 times one without it.
+
+The scene and two bars changed after the first run, and here is why. With the lights at 0.55 m and a
+1.2 m range, the shadows covered so little of the frame that the unshadowed control was only 0.4%
+off. The lights moved above the balls, but overlapping lights still keep it near 1.5%, so the
+control is now relative (the atlas must be ten times closer to ray tracing than no shadows at
+all). L5 lowers `local_min` to 32 for its far camera, because the default floor of 128 hid
+the shrink. The first run also caught a real fault: 96 faces in the frame uniforms made them 9,952
+bytes, and SDL binds only 4 KiB, so every light read as black. Now fixed (see above).
+
+Results (RX 9060 XT, RADV):
+
+| Bar | Result |
+|---|---|
+| L1 | pass, 16 of 16 lights, 96 faces |
+| L2 | pass, error 0.0005, agreement 0.9984 |
+| L2 control | pass, unshadowed 0.0153 off, 33.8 times the atlas |
+| L3 | pass, 0 faces redrawn; without the cache 96 of 96 |
+| L4 | pass, 5 faces redrawn, cached equals fresh (0 levels) |
+| L5 | pass, mean tile 240 near, 64 far |
+| L6 | pass, 1.12 ms cached, 1.99 ms uncached |
 ### Post effects (E8)
 
 All off by default; with them off the frame is unchanged (both goldens pass as before).
@@ -714,6 +775,13 @@ s3d::pushers.push(float4 { player.x, player.y, player.z, 0.5 });
   `s3d::instance_drawn(set, level)` gives the number of copies drawn last frame,
   `s3d::instance_list(set, level)` their indices and `s3d::instance_triangles(set)` the
   triangles sent.
+* **Sets without shadows.** `s3d::instances[set].shadow = false` keeps a set out of
+  every shadow pass. Such a set is also tested as a whole first: when the box around
+  all its copies is wholly behind one camera plane, no copy is tested or drawn that
+  frame. Use it for grass and other small ground cover in many sets.
+* **A color per copy.** The bottom row of a copy's matrix is not part of its
+  transform. Its first three values (`c0.w`, `c1.w`, `c2.w`) are a color that
+  multiplies the copy's vertex color; all zero means no tint.
 * **Two levels of detail.** With `lod_asset` set, a copy whose sphere center is
   `lod_distance` meters or more from the eye is drawn with that asset instead. Both
   assets should have the same size and node layout.
@@ -1255,6 +1323,13 @@ and the shoulders, and its roots are drawn thicker so the scalp does not show th
 A fringe ends above the brows, and long loose hair is combed to the sides from the
 hairline down (`face`, the half width kept clear, in head units), so the eyes stay clear.
 
+### Soft puffs
+
+A soft puff material (`shading = 6`) is a standard surface whose alpha fades out
+where the surface turns away from the camera, so round shapes such as smoke,
+clouds and pollen balls get soft edges instead of a hard outline. Use it with
+`alpha_mode = gltf::ALPHA_BLEND`.
+
 ### Foliage
 
 Leaves, needles and grass blades are thin, so light goes through them. A foliage
@@ -1393,6 +1468,57 @@ garment::drape(240);
 * Results: `pos`, `nrm`, `uv`, `tan`, and the triangle lists `body` (main fabric) and
   `rib` (bands), ready for two materials; `part` (0 front, 1 left arm, 2 right arm, 4 back,
   5 neck band), `anchor`, `anchor_n`, `held`, `goal` describe each vertex.
+
+#### Following an animated body
+
+After `drape`, `garment::bind(P, I)` glues every garment vertex to the shell point nearest its anchor (the
+shell point the drape grew it from, so it matches the drape's own contact) and keeps its offset in that
+point's surface frame. The frame's normal blends the corner normals; its tangent is the triangle's rest
+tangent turned by the triangle's best fitting in-plane turn (a least-squares fit over its three edges), so
+neighbors on bending skin swing their offsets together. Each
+frame, `garment::pose(c, Q)` takes the shell at its new pose (same vertex order, for example skinned with
+the body), moves `targets` there, pins held vertices to them, moves the body contacts, carries every
+particle along by `carry` of the body's movement, and ties each particle to its target with a slack of
+`tie` meters (`cloth::tie`). Then step the cloth as usual (`cloth::step`, or `s3d::step_cloth` to draw
+it). On a phone's low setting draw `targets` instead and skip the step: the garment then simply rides the
+body.
+
+`garment_follow_check` (from `garment_follow_check.gold`, CPU only) drapes the sweater (`fine` 1) on
+`mh_tights.obj` and plays a 2 s, 60-frame clip on the shell: left arm raised 69 degrees with the elbow
+bending, right arm swinging, the torso twisting, a 3 cm bob, and 1 m of forward travel. Bars, registered
+before the first run:
+
+- F1: binding takes under a second and at the rest pose every target is the draped vertex (within 0.1 mm).
+- F2: no particle strays more than 35 mm from where the body carries it; the mean stray is under 12 mm.
+- F3: at most 2% of the vertices are ever more than 2 mm deeper in the body than the drape left them.
+- F4: no non-finite positions, mean particle speed under 3 m/s, and at most one cloth edge in a thousand
+  stretched past 1.35 times the shell's own stretch that frame (edges under 2 mm, seam welds, not counted).
+- F5: after the 1 m walk the garment's center is within 30 mm of where it sat on the body at rest.
+- F6: pose plus cloth step cost under 10 ms per frame on one PC core.
+
+F3 and F4 were changed after the first run, and here is why. The drape itself leaves 464 vertices inside
+the shell (mostly the held bands) and edges up to 3.1 times their cut length, so absolute bars measured the
+drape, not the following; F3 now counts only sinking deeper than the drape left a vertex. F4 first bounded
+the single worst edge. On 2 to 5 mm edges a few millimeters of free sway reads as 2 to 5 times, and the
+handful of edges past the bar (at most 19 of 21,004, on the thigh where the clip's simple heat-smoothed
+torso twist shears the shell) follow their own targets: the body asks 5.22 times of them and the fabric
+gives 5.36. So F4 now bounds the share.
+
+The first run also showed real faults, all fixed: the test clip's arm weights tore the shell at the
+armpit (now heat-smoothed), glue points restricted to a body part landed at the far edge of the part (up to
+58 mm sideways levers that flung seam neighbors 115 mm apart), and one arbitrary edge per triangle as the
+tangent turned neighbors' offsets up to a right angle against each other.
+
+Results (Ryzen PC, 7919 vertices, 7266 particles):
+
+| Bar | Result |
+|---|---|
+| F1 | pass, bind 38 ms |
+| F2 | pass, max 31.1 mm, mean 10.2 mm |
+| F3 | pass, 0.00% inside |
+| F4 | pass, 0.090% of edges over (fabric 5.36, targets 5.22, shell 1.93), speed 0.17 m/s |
+| F5 | pass, drift 7.9 mm |
+| F6 | pass, 5.1 ms per frame |
 
 ### Wet fabric (E14)
 
@@ -4351,6 +4477,56 @@ Cost (wall clock, 1280 x 720 Cornell, 60 frames): GI + RT shadows + one probe up
 6.2 ms vs 0.43 ms with both off. Not optimized yet: the update loops over every ray for every
 texel, all 4096 probes update every frame, and every pixel casts 8 probe-visibility rays.
 
+### Dynamic GI: moving objects, faster settling, 16 lights
+
+Probe GI used to build its ray-tracing scene once, so an object that moved or was hidden
+left its old shape in the probes for good (a ghost), and only the first 8 point lights
+reached the probes, with no spot cone or rect facing. Now:
+
+* Each static mesh in the GI scene is tracked by item, node and primitive. When its
+  transform changes, its triangles are rewritten in place and the BVH is refit from the
+  leaves up (the tree keeps its shape; only the boxes grow or shrink). Only the leaves that changed and their
+  parents are refit (the whole tree when more than 1 in 40 nodes would be touched), and only
+  the changed ranges of the node and triangle buffers are uploaded, so the cost follows what
+  moved, not the size of the scene. A mesh that is no
+  longer drawn has its triangles collapsed to a point. A new mesh, a changed primitive, or
+  a refit that more than doubles the root box's area triggers a full rebuild instead.
+  `gi_refit` (true) turns this off; `gi_rebuild()` forces a fresh build; `gi_stats()` returns
+  rebuilds, refits, the last refit's ms and the last build's ms.
+* `gi_adaptive` (true): for 17 updates after any refit the hysteresis is capped at 0.85, and
+  any probe texel whose new value differs from the old by more than 35 % (relative) uses
+  0.6, so a change settles in a few frames while still scenes keep the full 0.97 average.
+* The probes take all 16 lights. Spots use the same cone as the lit pass, and rect lights
+  shine only to the side they face (scaled by the cosine to the panel's normal), so a
+  light aimed out of a room no longer lights it.
+
+Gate: `gi_dynamic_check` (Gold, `hc/test/gfx/gi_dynamic_check.gold`, under the GPU lock in
+gfxtest.sh): a 4 x 2.5 x 4 open-topped room with a red block, 8^3 probes, 128 rays, one
+update a frame, 256 x 256. Bars were written before the first run; three were changed after
+it, for these reasons. D1 first moved the block on the scene's first frame, which is a build,
+not a refit, so it now renders once first. D2 compared against a reference with fewer frames
+of history; the probes rotate their rays by frame count, so two equally correct results with
+different histories differ by 0.03 (shown as `noise`), and the bar now uses a reference with
+the same history. D4b's rect light sat at mid-height, where facing up it correctly lights the
+walls above it, so it could not tell one-sided from two-sided; it now sits just under the wall
+tops.
+
+| check | result | bar |
+|---|---|---|
+| D1 refit vs brute force (20000 rays, 3 moves) | 100.00 % agree, 3 refits, 0 rebuilds | >= 99.9 % PASS |
+| D2 block hidden: error 60 frames later | 0.0053 (whole change 0.0697, window noise 0.0304) | <= 0.03 PASS |
+| D2c control: refit off keeps the ghost | 0.0830 | > 0.03 and >= 2 x D2: PASS |
+| D3 frames to settle after the change | 3 adaptive vs 25 plain | adaptive <= half PASS |
+| D4 spot aimed out of the room / at the floor | adds 0.000 / 0.121 of the unlit sum | up <= 5 % of down PASS |
+| D4b rect facing out / down | adds 0.003 / 1.604 | up <= 5 % of down PASS |
+| D5 16 lights, first 8 black | 1.782 x the unlit sum | > 1.2 PASS |
+| D6 refit cost, 23102 triangles, one moving sphere | 0.95 ms mean vs 20.7 ms full build | < 2 ms and < 0.25 x build PASS |
+| D7 the same in a 341504-triangle scene | 0.69 ms mean vs 217.5 ms full build | < 1 ms and < 0.05 x build PASS |
+
+Not done: skinned, instanced, morphing and blended meshes still stay out of the GI scene, and
+cloth is seen at its rest shape. A refit tree slowly loses quality as objects drift far from
+where they were built; the root-area rule catches only the large cases.
+
 ### GTAO results (GI part 3b; RX 9060 XT, RADV; `results/2026-11-02_rx9060xt_radv_420344b_gtao.txt`, clean worktree, full gfxtest ok)
 
 `ao_mode = 1` switches the AO pass from the hemisphere SSAO (`ao_mode = 0`, still the
@@ -4533,6 +4709,125 @@ above the measured worst case, which is the one grazing tile the sweep still
 undersamples; every other resolved sphere and tile is under 0.5 %. The ambient
 pass-through mean error is 0.0106 % (max 0.0488 %).
 
+### Compressed meshes (meshopt)
+
+`meshopt_check` (built from `meshopt_check.gold`, run by `gfxtest.sh`, CPU only) checks the decoder against
+261 streams made by the meshoptimizer 1.2.0 encoder, whose expected output is the meshoptimizer reference
+decoder's (`hc/test/gfx/fixtures/meshopt_cases.bin`: every stride from 4 to 256, counts that end inside a
+group and across blocks, smooth, random and all-zero data, both vertex stream versions, all four filters,
+16- and 32-bit triangle and index streams). Bars:
+
+- M1, M2: every stream decodes to exactly the reference bytes, counted per kind (each kind must have cases).
+- M3: 1,044 damaged streams (cut short, wrong header, a flipped byte, a run of 0xff) never crash; a decode
+  either fails and adds nothing or adds exactly count times stride bytes; cut-short and bad-header streams fail.
+- M4: decode speed above 70 MB/s (about 600 MB/s on the PC).
+- M5: `scene.glb` and its meshopt copies (`scene_meshopt.glb`, version 0, `EXT_`; `scene_meshopt1.glb`,
+  version 1, `KHR_`; vertex, index and animation views compressed, the original views pointing at a fallback
+  buffer with no data) load to the same vertex and index lists.
+- M6 (optional, arguments 2 and 3): a big plain `.glb` and its meshopt copy load to the same vertices and the
+  same triangles. The meshopt index encoder may rotate a triangle's corners (same winding), so triangles are
+  compared up to rotation. A 13.9 MB character loads equally fast either way; the size gain on real assets
+  comes with quantized attributes (`KHR_mesh_quantization`), which the loader already reads.
+
+The meshopt reference decoder and the encoder both treat a triangle's corner order as free; nothing in the
+renderer depends on which corner comes first.
+
+### Compressed meshes (Draco)
+
+`draco` decodes Draco 2.2 streams (the only version current encoders write, and the one
+`KHR_draco_mesh_compression` uses): sequential and edgebreaker connectivity (standard and valence),
+topology splits, attribute seams, the depth-first and prediction-degree traversals, the delta,
+parallelogram, constrained multi-parallelogram, texture-coordinate and geometric-normal predictions, the
+wrap and octahedral normal transforms, quantized floats and integer attributes. Metadata is skipped.
+`gltf` decodes a compressed primitive while loading and reads its accessors from the decoded data.
+
+`draco_check` (built from `draco_check.gold`, run by `gfxtest.sh`, CPU only) checks it against 342 streams
+made by the draco3d 1.5.7 encoders (the full build and the glTF build, identical streams removed), whose
+expected output is the draco3d 1.5.7 reference decoder's (`hc/test/gfx/fixtures/draco_cases.bin`: grids
+with and without holes, spheres with and without a texture seam, a torus, a random triangle soup, meshes
+sharing a vertex (non-manifold), a single triangle, and two meshes over 1,000 faces so the encoder picks
+valence connectivity; positions, normals, texture coordinates, 8-bit and float colors, 16-bit joints,
+float weights, 8-bit generic data and metadata; quantization from 7 to 20 bits; speeds 0 to 10).
+Bars, registered before the first run:
+
+- D1, D2: every stream decodes to exactly the reference points, triangles and attribute values (floats
+  bit for bit), counted per kind (sequential, standard, valence, metadata, and each encoder build and
+  speed); each kind must have cases.
+- D3: 1,710 damaged streams (cut by one byte, cut in half, a wrong header, a flipped byte, a run of 0xff)
+  never crash; a decode either fails and leaves nothing or gives triangles whose points all exist and the
+  full set of values; wrong headers fail.
+- D4: a 47,960-triangle sphere (valence, standard and no-prediction streams) decodes at more than 2 million
+  triangles per second each way.
+- D5: `scene_draco.glb` (the test scene's cube compressed with `KHR_draco_mesh_compression`) loads to the
+  same vertex and index lists as `scene_draco_ref.glb` (the same cube stored as the reference decoder's
+  output).
+
+Results (2026-11-15, PC CPU): D1 and D2 pass with every one of the 342 streams exact (24 sequential, 262
+standard, 12 valence, 44 with metadata); D3 passes 1,710 damaged decodes; D4 decodes the sphere in 17.6 ms
+(valence, 2.7 million triangles per second), 3.9 ms (standard) and 3.5 ms (no prediction). The native
+draco 1.5.7 decoder (Release build, same PC) takes 110 ms, 3 ms and 2 ms on the same files, so valence
+files, which need the geometric-normal and multi-parallelogram predictions, are about 6 times faster
+here. D5 passes.
+
+### WebP textures
+
+`codec_webp` decodes WebP still pictures to RGBA8: lossy (VP8, with or without an `ALPH` alpha plane,
+raw or lossless-compressed, with any of the four alpha filters) and lossless (VP8L, every transform,
+color cache and meta codes), in the simple and the extended (`VP8X`) container. Its output is meant to
+match libwebp's `WebPDecodeRGBA` byte for byte (fancy chroma upsampling, unpremultiplied alpha).
+Animated files fail cleanly. `gltf` decodes `.webp` images and reads the `EXT_texture_webp` source of a
+texture before its plain `source` fallback.
+
+`webp_check` (built from `webp_check.gold`, run by `gfxtest.sh`, CPU only) checks it against 472 files
+made by the libwebp 1.6.0 encoder, whose expected output is the libwebp 1.6.0 decoder's
+(`hc/test/gfx/fixtures/webp_cases.bin`: 160 lossy, 120 lossy with alpha, 120 lossless, 72 lossless with
+alpha; sizes 1x1, 2x3, 17x13, 64x64, 33x70 and 129x67; smooth gradients, noise, hard edges and few-color
+pictures; lossy quality, filter strength, sharpness, segments, partitions and alpha settings; lossless
+effort levels, exact mode and palettes). Bars, registered before the first run:
+
+- W1, W2: every file decodes to exactly the reference RGBA (FNV-1a 64 of every byte), counted per kind
+  (lossy, lossy with alpha, lossless, lossless with alpha) and per size; each group must have cases.
+- W3: 2,360 damaged files (cut by one byte, cut in half, a wrong first byte, a flipped byte, a run of
+  0xff) never crash; a decode either fails and leaves no pixels or gives exactly width times height
+  pixels; a wrong first byte fails.
+- W4: four 1024x768 pictures (lossy, lossless, and each with alpha) decode exactly and at more than
+  10 million pixels per second each.
+- W5: `scene_webp.glb` (two `EXT_texture_webp` textures, one lossless and one lossy, one with a PNG
+  fallback and one without) loads to the same texture sizes and pixels as `scene_webp_ref.glb` (the same
+  scene with PNG textures holding the reference decoder's output).
+
+Results (2026-11-15, PC CPU): W1 and W2 pass with all 472 files exact (160 lossy, 120 lossy with alpha,
+120 lossless, 72 lossless with alpha); W3 passes 2,360 damaged decodes; W4 decodes the 1024x768 pictures
+in 11.4 ms (lossy, 69 million pixels per second), 2.4 ms (lossless), 16.5 ms (lossy with alpha) and
+10.2 ms (lossless with alpha). The native libwebp 1.6.0 decoder (system build with SIMD, same PC) takes
+2.3, 0.5, 5.2 and 4.4 ms on the same files, so it is still 2 to 5 times faster. W5 passes.
+
+### Video export (H.264 in MP4)
+
+`video` turns rendered frames into an `.mp4` on the CPU: `start(w, h, fps, qp, gop)`, `add(rgba)` per frame
+(for example from `gfx::grab`), then `save(path)`. The stream is H.264 Constrained Baseline with CAVLC, so
+every phone, browser and player decodes it: intra 16x16 macroblocks, P macroblocks with whole-pixel motion
+search, and skipped macroblocks, one slice per frame, an IDR every `gop` frames, deblocking off. Sizes that
+are not a multiple of 16 are cropped in the SPS. No hardware encoder is used.
+
+`video_check` (built from `video_check.gold`, run by `gfxtest.sh`, CPU only, needs `ffmpeg` on the PATH)
+encodes 12 test clips (still, panning, zooming, noise, a scene cut and black-and-white extremes; 2x2 to
+176x144; qp 10 to 51; all-intra and long GOPs) and decodes each with ffmpeg's H.264 decoder. Bars,
+registered before the first run:
+
+- V1: ffmpeg decodes every clip with no error message to exactly the encoder's own reconstruction, byte
+  for byte, for every frame.
+- V2: at qp 10 the average luma PSNR is above 44 dB, at qp 26 above 36 dB on the still and panning
+  clips; every frame of the still clip after the first is under a tenth of the first frame's size.
+- V3: bad sizes, rates and GOPs, short frames and saving with no frames are refused.
+- V4: 30 panning frames at 1280x720 encode at more than 10 frames per second and decode exactly.
+
+Results (2026-11-15, PC CPU, ffmpeg n9.0.2): V1 passes for all 12 clips, every frame byte for byte; the
+same files also decode identically in OpenH264 2.6.0 (through GStreamer), and ffprobe reports Constrained
+Baseline. V2: qp 10 gives 53.9 and 51.9 dB, qp 26 gives 46.2 and 40.6 dB, and the still clip's later
+frames take at most 6 bytes against 156 for the first. V3 refuses 7 of 7. V4 encodes 1280x720 at 30.8
+frames per second (1,061 KB for 30 frames).
+
 ## Provenance
 
 * `sdf_font.amni` is Auron's own: glyphs defined as strokes in code, no font files.
@@ -4552,6 +4847,14 @@ pass-through mean error is 0.0106 % (max 0.0488 %).
   The PNG and JPEG came from a one-off encoder script that was not kept (their
   headers match Pillow's defaults). They are committed as data; the test only needs
   their decoded checksums to stay the same.
+* `draco_cases.bin`, `draco_big_s*.drc`, `scene_draco.glb` and `scene_draco_ref.glb` were made from
+  synthetic meshes (grids, spheres, a torus, a random soup) and from `scene.glb` by a one-off Node script
+  that drove the draco3d 1.5.7 encoders and reference decoder (Apache-2.0, npm packages `draco3d` and
+  `draco3dgltf`); the script was not kept. They are committed as data.
+* `webp_cases.bin`, `webp_big_*.webp`, `scene_webp.glb` and `scene_webp_ref.glb` were made from synthetic
+  pictures (gradients, noise, checkers, a disc, a seven-color pattern) and from `scene.glb` by one-off C and
+  Node programs that drove the libwebp 1.6.0 encoder and decoder (BSD-3-Clause); the programs were not
+  kept. They are committed as data.
 
 ## References
 

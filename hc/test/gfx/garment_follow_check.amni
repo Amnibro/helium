@@ -1,0 +1,435 @@
+import os;
+import math;
+import gfx.obj;
+import gfx.cloth;
+import gfx.garment;
+var failed bool = false;
+fn check(name const byte[:], ok bool, detail const byte[:]) {
+	let tag = if ok { "PASS " } else { "FAIL " };
+	if detail.len > 0 {
+		print(tag, name, " (", detail, ")");
+	} else {
+		print(tag, name);
+	}
+	if !ok { failed = true; }
+}
+var tris int[>..] = [];
+var jt f32[>..] = [];
+var cc int = 0;
+var unit real = 0.1;
+fn addj(name const byte[:]) {
+	let x, y, z = obj::centroid(name);
+	jt.push(x as f32);
+	jt.push(y as f32);
+	jt.push(z as f32);
+}
+fn setup() bool {
+	if !obj::load("hc/test/gfx/fixtures/mh_tights.obj") {
+		check("load body", false, "");
+		return false;
+	}
+	obj::tris_of("helper-tights", tris);
+	addj("joint-pelvis");
+	addj("joint-spine-2");
+	addj("joint-spine-1");
+	addj("joint-neck");
+	addj("joint-l-shoulder");
+	addj("joint-l-elbow");
+	addj("joint-l-hand");
+	addj("joint-r-shoulder");
+	addj("joint-r-elbow");
+	addj("joint-r-hand");
+	var s = garment::spec();
+	s.fine = 1.0;
+	unit = s.unit;
+	if !garment::make(obj::V, tris, jt, s) {
+		check("make garment", false, "");
+		return false;
+	}
+	cc = garment::drape(120);
+	true
+}
+var wa real[>..] = [];
+var wf real[>..] = [];
+var wr real[>..] = [];
+fn smooth(w real[>..]&, start const int[:], nb const int[:], n int) {
+	var nx real[>..] = [];
+	for v in n {
+		var sum = w[v];
+		for k in start[v]..start[v + 1] { sum += w[nb[k]]; }
+		nx.push(sum / ((start[v + 1] - start[v] + 1) as real));
+	}
+	for v in n { w[v] = nx[v]; }
+}
+fn weights(I const int[:]) {
+	let n = garment::sp.len;
+	let j4x, j4y, j4z = garment::joint(4);
+	let j5x, j5y, j5z = garment::joint(5);
+	let ddx = j4x - j5x;
+	let ddy = j4y - j5y;
+	let ddz = j4z - j5z;
+	let lim = sqrt(ddx * ddx + ddy * ddy + ddz * ddz) * unit;
+	wa.clear();
+	wf.clear();
+	wr.clear();
+	for v in n {
+		let p = garment::sp[v];
+		wa.push(if p == 1 { 1.0 } else { 0.0 });
+		wf.push(if p == 1 && garment::st[v] > lim { 1.0 } else { 0.0 });
+		wr.push(if p == 2 { 1.0 } else { 0.0 });
+	}
+	var keys int[>..] = [];
+	for t in I.len / 3 {
+		let a = I[3 * t];
+		let b = I[3 * t + 1];
+		let c = I[3 * t + 2];
+		keys.push(a * n + b);
+		keys.push(b * n + a);
+		keys.push(b * n + c);
+		keys.push(c * n + b);
+		keys.push(c * n + a);
+		keys.push(a * n + c);
+	}
+	sort(keys) { a, b => a < b };
+	dedup(keys);
+	var start int[>..] = [];
+	start.resize(n + 1, 0);
+	var nb int[>..] = [];
+	for k in keys {
+		start[k / n + 1] += 1;
+		nb.push(k % n);
+	}
+	for v in n { start[v + 1] += start[v]; }
+	for r in 40 {
+		smooth(wa, start, nb, n);
+		smooth(wf, start, nb, n);
+		smooth(wr, start, nb, n);
+	}
+}
+fn rot(px real, py real, pz real, cx real, cy real, cz real, ax real, ay real, az real, ang real) real, real, real {
+	let vx = px - cx;
+	let vy = py - cy;
+	let vz = pz - cz;
+	let c = cos(ang);
+	let s = sin(ang);
+	let d = ax * vx + ay * vy + az * vz;
+	let kx = ay * vz - az * vy;
+	let ky = az * vx - ax * vz;
+	let kz = ax * vy - ay * vx;
+	return cx + vx * c + kx * s + ax * d * (1.0 - c), cy + vy * c + ky * s + ay * d * (1.0 - c), cz + vz * c + kz * s + az * d * (1.0 - c);
+}
+fn sm(a real, b real, x real) real {
+	let t = clamp((x - a) / (b - a), 0.0, 1.0);
+	t * t * (3.0 - 2.0 * t)
+}
+fn posed(s real, Q f32[>..]&) {
+	let j0x, j0y, j0z = garment::joint(0);
+	let j2x, j2y, j2z = garment::joint(2);
+	let j4x, j4y, j4z = garment::joint(4);
+	let j5x, j5y, j5z = garment::joint(5);
+	let j7x, j7y, j7z = garment::joint(7);
+	Q.resize(obj::V.len, 0.0);
+	let sn = sin(2.0 * PI * s);
+	for v in obj::V.len / 3 {
+		let x0 = obj::V[3 * v] as real;
+		let y0 = obj::V[3 * v + 1] as real;
+		let z0 = obj::V[3 * v + 2] as real;
+		let x1, y1, z1 = rot(x0, y0, z0, j5x, j5y, j5z, 0.0, 1.0, 0.0, wf[v] * 0.8 * s);
+		let x2, y2, z2 = rot(x1, y1, z1, j4x, j4y, j4z, 0.0, 0.0, 1.0, wa[v] * 1.2 * s);
+		let x3, y3, z3 = rot(x2, y2, z2, j7x, j7y, j7z, 1.0, 0.0, 0.0, wr[v] * 0.5 * sn);
+		var tw = max(wa[v], wr[v]);
+		let smv = sm(j0y, j2y, y3);
+		if smv > tw { tw = smv; }
+		let x4, y4, z4 = rot(x3, y3, z3, j0x, j0y, j0z, 0.0, 1.0, 0.0, 0.35 * sn * tw);
+		Q[3 * v] = x4 as f32;
+		Q[3 * v + 1] = (y4 + 0.3 * sin(4.0 * PI * s)) as f32;
+		Q[3 * v + 2] = (z4 + 10.0 * s) as f32;
+	}
+}
+fn now_ns() int {
+	clock_ns()
+}
+var nverts int = 0;
+fn f1_bind() {
+	let t0 = now_ns();
+	let ok = garment::bind(obj::V, tris);
+	let t1 = now_ns();
+	let ms = ((t1 - t0) as real) / 1000000.0;
+	nverts = garment::pose(cc, obj::V);
+	var same = garment::targets.len == garment::pos.len;
+	if same {
+		for i in garment::targets.len {
+			let d = garment::targets[i] - garment::pos[i];
+			if abs(d) > 0.001 { same = false; }
+		}
+	}
+	var d byte[>..] = [];
+	format(d, nverts, " vertices, bind ");
+	format_flt(d, ms, 1);
+	format(d, " ms");
+	check("F1 bind", ok && same && nverts > 0 && ms < 1000.0, d);
+}
+var Q f32[>..] = [];
+var rdepth real[>..] = [];
+var rl real[>..] = [];
+var pg int[>..] = [];
+var r0x real = 0.0;
+var r0y real = 0.0;
+var r0z real = 0.0;
+var r1x real = 0.0;
+var r1y real = 0.0;
+var r1z real = 0.0;
+var f_stray_max real[>..] = [];
+var f_stray_mean real[>..] = [];
+var f_inside real[>..] = [];
+var f_stretch real[>..] = [];
+var f_over real[>..] = [];
+var f_tstretch real[>..] = [];
+var f_shell real[>..] = [];
+var f_speed real[>..] = [];
+var f_fin int[>..] = [];
+var f_ms real[>..] = [];
+var cs_max real = 0.0;
+fn mean_tri(P const f32[:]) real, real, real {
+	var sx = 0.0;
+	var sy = 0.0;
+	var sz = 0.0;
+	var n = 0;
+	for k in tris {
+		sx += P[3 * k] as real;
+		sy += P[3 * k + 1] as real;
+		sz += P[3 * k + 2] as real;
+		n += 1;
+	}
+	let d = max(n, 1) as real;
+	return sx / d, sy / d, sz / d;
+}
+fn mean_part() real, real, real {
+	var sx = 0.0;
+	var sy = 0.0;
+	var sz = 0.0;
+	let n = cloth::pos.len / 3;
+	for i in n {
+		sx += cloth::pos[3 * i];
+		sy += cloth::pos[3 * i + 1];
+		sz += cloth::pos[3 * i + 2];
+	}
+	let d = max(n, 1) as real;
+	return sx / d, sy / d, sz / d;
+}
+fn part_dist(a int, b int) real {
+	let dx = cloth::pos[3 * a] - cloth::pos[3 * b];
+	let dy = cloth::pos[3 * a + 1] - cloth::pos[3 * b + 1];
+	let dz = cloth::pos[3 * a + 2] - cloth::pos[3 * b + 2];
+	sqrt(dx * dx + dy * dy + dz * dz)
+}
+fn depth_of(v int, i int) real {
+	(cloth::pos[3 * i] - garment::gp[3 * v]) * garment::gn[3 * v] + (cloth::pos[3 * i + 1] - garment::gp[3 * v + 1]) * garment::gn[3 * v + 1] + (cloth::pos[3 * i + 2] - garment::gp[3 * v + 2]) * garment::gn[3 * v + 2]
+}
+fn vert_dist(A const f32[:], B const f32[:], a int, b int) real {
+	let dx = (A[3 * a] - B[3 * b]) as real;
+	let dy = (A[3 * a + 1] - B[3 * b + 1]) as real;
+	let dz = (A[3 * a + 2] - B[3 * b + 2]) as real;
+	sqrt(dx * dx + dy * dy + dz * dz)
+}
+fn shell_stretch(P const f32[:], R const f32[:]) real {
+	var m = 0.0;
+	for t in tris.len / 3 {
+		for e in 3 {
+			let a = tris[3 * t + e];
+			let b = tris[3 * t + (e + 1) % 3];
+			let r = vert_dist(P, P, a, b);
+			if r < 0.000000001 { continue; }
+			let q = vert_dist(R, R, a, b) / r;
+			if q > m { m = q; }
+		}
+	}
+	m
+}
+fn rest_state() {
+	rdepth.clear();
+	for v in nverts {
+		rdepth.push(depth_of(v, cloth::particle(cc, v)));
+	}
+	rl.clear();
+	let e0 = cloth::cloths[cc].e0;
+	let ne = cloth::cloths[cc].ne;
+	for k in ne {
+		let e = e0 + k;
+		let a = cloth::edges[2 * e];
+		let b = cloth::edges[2 * e + 1];
+		rl.push(max(cloth::edge_len[e], part_dist(a, b)));
+	}
+	pg.clear();
+	pg.resize(cloth::pos.len / 3, -1);
+	for v in nverts {
+		let i = cloth::particle(cc, v);
+		if pg[i] < 0 { pg[i] = v; }
+	}
+	let x, y, z = mean_part();
+	let tx, ty, tz = mean_tri(obj::V);
+	r0x = x - tx;
+	r0y = y - ty;
+	r0z = z - tz;
+}
+fn run_clip() {
+	rest_state();
+	let e0 = cloth::cloths[cc].e0;
+	let ne = cloth::cloths[cc].ne;
+	for k in 60 {
+		let s = (k as real) / 59.0;
+		posed(s, Q);
+		let t0 = now_ns();
+		garment::pose(cc, Q);
+		cloth::step(cc, 1.0 / 30.0, 0.0, 0.0, 0.0);
+		let t1 = now_ns();
+		f_ms.push(((t1 - t0) as real) / 1000000.0);
+		let shell = shell_stretch(obj::V, Q);
+		f_shell.push(shell);
+		var smax = 0.0;
+		var ssum = 0.0;
+		var inside = 0;
+		for v in nverts {
+			let i = cloth::particle(cc, v);
+			let dx = cloth::pos[3 * i] - (garment::targets[3 * v] as real);
+			let dy = cloth::pos[3 * i + 1] - (garment::targets[3 * v + 1] as real);
+			let dz = cloth::pos[3 * i + 2] - (garment::targets[3 * v + 2] as real);
+			let st = sqrt(dx * dx + dy * dy + dz * dz) * unit;
+			if st > smax { smax = st; }
+			ssum += st;
+			if depth_of(v, i) < min(rdepth[v], 0.0) - 0.02 { inside += 1; }
+		}
+		f_stray_max.push(smax);
+		f_stray_mean.push(ssum / (max(nverts, 1) as real));
+		f_inside.push((inside as real) / (max(nverts, 1) as real));
+		let thr = 1.35 * max(1.0, shell);
+		var counted = 0;
+		var over = 0;
+		var fmax = 0.0;
+		var tmax = 0.0;
+		for j in ne {
+			if rl[j] < 0.02 { continue; }
+			let e = e0 + j;
+			let a = cloth::edges[2 * e];
+			let b = cloth::edges[2 * e + 1];
+			counted += 1;
+			let q = part_dist(a, b) / rl[j];
+			if q > fmax { fmax = q; }
+			if q > thr { over += 1; }
+			if pg[a] >= 0 && pg[b] >= 0 {
+				let tq = vert_dist(garment::targets, garment::targets, pg[a], pg[b]) / rl[j];
+				if tq > tmax { tmax = tq; }
+			}
+		}
+		f_stretch.push(fmax);
+		f_over.push((over as real) / (max(counted, 1) as real));
+		f_tstretch.push(tmax);
+		f_speed.push(cloth::speed(cc) * unit);
+		var fin = 1;
+		for q in cloth::pos.len {
+			let x = cloth::pos[q];
+			if !(x == x) || abs(x) > 1.0e30 { fin = 0; }
+		}
+		f_fin.push(fin);
+		let sn = cloth::stretch_now(cc);
+		if sn > cs_max { cs_max = sn; }
+	}
+	let x, y, z = mean_part();
+	let tx, ty, tz = mean_tri(Q);
+	r1x = x - tx;
+	r1y = y - ty;
+	r1z = z - tz;
+}
+fn rmax(xs const real[:]) real {
+	var m = 0.0;
+	for x in xs { if x > m { m = x; } }
+	m
+}
+fn rmean(xs const real[:]) real {
+	var s = 0.0;
+	for x in xs { s += x; }
+	s / (max(xs.len, 1) as real)
+}
+fn f2_follows() {
+	let mx = rmax(f_stray_max) * 1000.0;
+	let mean = rmean(f_stray_mean) * 1000.0;
+	var d byte[>..] = [];
+	format(d, "max ");
+	format_flt(d, mx, 1);
+	format(d, " mm, mean ");
+	format_flt(d, mean, 1);
+	format(d, " mm");
+	check("F2 follows", mx <= 35.0 && mean < 12.0, d);
+}
+fn f3_outside() {
+	let m = rmax(f_inside);
+	var d byte[>..] = [];
+	format(d, "max inside ");
+	format_flt(d, m * 100.0, 2);
+	format(d, "%");
+	check("F3 stays outside", m <= 0.02, d);
+}
+fn f4_stable() {
+	var allfin = true;
+	for f in f_fin { if f != 1 { allfin = false; } }
+	let sp = rmax(f_speed);
+	let ov = rmax(f_over);
+	let fm = rmax(f_stretch);
+	let tm = rmax(f_tstretch);
+	let sh = rmax(f_shell);
+	var d byte[>..] = [];
+	format(d, "over ");
+	format_flt(d, ov * 100.0, 3);
+	format(d, "%, fabric stretch ");
+	format_flt(d, fm, 3);
+	format(d, ", target stretch ");
+	format_flt(d, tm, 3);
+	format(d, ", shell stretch ");
+	format_flt(d, sh, 3);
+	format(d, ", speed ");
+	format_flt(d, sp, 2);
+	format(d, " m/s");
+	check("F4 stable", allfin && sp < 3.0 && ov <= 0.001, d);
+	var s byte[>..] = [];
+	format(s, "cloth stretch ");
+	format_flt(s, cs_max, 3);
+	print(s);
+}
+fn f5_rides() {
+	let dx = r1x - r0x;
+	let dy = r1y - r0y;
+	let dz = r1z - r0z;
+	let drift = sqrt(dx * dx + dy * dy + dz * dz) * unit;
+	var d byte[>..] = [];
+	format(d, "drift ");
+	format_flt(d, drift * 1000.0, 1);
+	format(d, " mm");
+	check("F5 rides along", drift < 0.03, d);
+}
+fn f6_cost() {
+	let m = rmean(f_ms);
+	var d byte[>..] = [];
+	format(d, "mean ");
+	format_flt(d, m, 2);
+	format(d, " ms per frame, ", cloth::pos.len / 3, " particles");
+	check("F6 cost", m < 10.0, d);
+}
+fn main() {
+	if !setup() {
+		print("follow: FAILED");
+		return;
+	}
+	f1_bind();
+	weights(tris);
+	run_clip();
+	f2_follows();
+	f3_outside();
+	f4_stable();
+	f5_rides();
+	f6_cost();
+	if failed {
+		print("follow: FAILED");
+	} else {
+		print("follow: ok");
+	}
+}

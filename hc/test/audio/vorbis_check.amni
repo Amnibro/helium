@@ -1,0 +1,262 @@
+import os;
+import binary;
+import codec_vorbis;
+var bad bool = false;
+var dir byte[>..];
+fn ns() int {
+	clock_ns()
+}
+fn report(pass bool, name const byte[:], detail const byte[:]) {
+	if pass {
+		print("PASS ", name, " ", detail);
+	} else {
+		bad = true;
+		print("FAIL ", name, " ", detail);
+	}
+}
+
+struct Case { name const byte[:], channels int, rate int }
+fn cases() Case[>..] {
+	var r Case[>..] = [];
+	r.push(Case{"v_mono8k", 1, 8000});
+	r.push(Case{"v_st44", 2, 44100});
+	r.push(Case{"v_st48hi", 2, 48000});
+	r.push(Case{"v_st48lo", 2, 48000});
+	r.push(Case{"v_51", 6, 48000});
+	r.push(Case{"v_silence", 2, 44100});
+	r.push(Case{"v_short", 1, 22050});
+	r.push(Case{"v_clicks", 2, 48000});
+	r
+}
+fn refs(name const byte[:], out f32[>..]&) bool {
+	out.clear();
+	var path byte[>..] = [];
+	path.append(dir);
+	path.push('/');
+	path.append(name);
+	path.append(".f32");
+	var bytes byte[>..] = [];
+	if !read_file(path, bytes) { return false; }
+	let n = bytes.len / 4;
+	for i in n {
+		out.push(binary::read_f32le(bytes, i * 4));
+	}
+	return true;
+}
+var blob byte[>..];
+var offs int[>..];
+var lens int[>..];
+fn file(i int) const byte[:] {
+	let a = offs[i];
+	blob[a..a + lens[i]]
+}
+fn sci(out byte[>..]&, v real) {
+	var m = v;
+	var e = 0;
+	if m > 0.0 {
+		while m >= 10.0 { m /= 10.0; e++; }
+		while m < 1.0 { m *= 10.0; e--; }
+		if m >= 9.995 { m = 1.0; e++; }
+	} else {
+		m = 0.0;
+	}
+	format_flt(out, m, 2);
+	out.push('e');
+	out.push(if e < 0 { '-' } else { '+' });
+	format_int(out, abs(e), 10, 2, '0');
+}
+fn v1() {
+	let cs = cases();
+	for c, i in cs {
+		var pcm f32[>..] = [];
+		let ch, rate, ok = codec_vorbis::decode(file(i), pcm);
+		var want f32[>..] = [];
+		let rok = refs(c.name, want);
+		var detail byte[>..] = [];
+		var pass = false;
+		if !ok {
+			format(detail, codec_vorbis::error());
+		} else if !rok {
+			format(detail, "cannot read reference");
+		} else if ch != c.channels || rate != c.rate {
+			format(detail, "channels/rate ", ch, "/", rate);
+		} else if pcm.len != want.len {
+			format(detail, "length ", pcm.len, " vs ", want.len);
+		} else {
+			var md = 0.0;
+			pass = true;
+			for k in pcm.len {
+				let a real = pcm[k];
+				let b real = want[k];
+				let d = abs(a - b);
+				if d > md { md = d; }
+				if !(d <= 0.0001) { pass = false; }
+			}
+			format(detail, pcm.len / ch, " frames, max diff ");
+			sci(detail, md);
+		}
+		report(pass, c.name, detail);
+	}
+}
+var lcg uint = 7;
+fn lcg_next() real {
+	lcg = lcg * 6364136223846793005 + 1442695040888963407;
+	let top = (lcg >> 40) as int;
+	top / 8388608.0 - 1.0
+}
+fn v2() {
+	for n in [64, 512, 4096] {
+		var x f32[>..] = [];
+		for j in n / 2 { x.push(lcg_next() as f32); }
+		var defs real[>..] = [];
+		var mx = 0.0;
+		for i in n {
+			var s = 0.0;
+			for j in n / 2 {
+				let xv real = x[j];
+				s += xv * cos(PI / (2.0 * n) * (2.0 * i + 1.0 + n / 2) * (2.0 * j + 1.0));
+			}
+			defs.push(s);
+			if abs(s) > mx { mx = abs(s); }
+		}
+		var res f32[>..] = [];
+		codec_vorbis::imdct_into(x, res);
+		var name byte[>..] = [];
+		format(name, "imdct", n);
+		var detail byte[>..] = [];
+		if res.len != n {
+			format(detail, "length ", res.len, " vs ", n);
+			report(false, name, detail);
+		} else {
+			var md = 0.0;
+			var pass = true;
+			let tol = 0.00001 * mx + 0.000001;
+			for i in n {
+				let r real = res[i];
+				let d = abs(defs[i] - r);
+				if d > md { md = d; }
+				if !(d <= tol) { pass = false; }
+			}
+			format(detail, "max diff ");
+			sci(detail, md);
+			report(pass, name, detail);
+		}
+	}
+}
+fn fine(data const byte[:], must_fail bool) bool {
+	var pcm f32[>..] = [];
+	let ch, rate, ok = codec_vorbis::decode(data, pcm);
+	if !ok { return true; }
+	if must_fail { return false; }
+	if ch < 1 || ch > 255 { return false; }
+	if pcm.len % ch != 0 { return false; }
+	for v in pcm {
+		if !(v >= -1.0 && v <= 1.0) { return false; }
+	}
+	return true;
+}
+fn v3() {
+	let cs = cases();
+	var good = 0;
+	var total = 0;
+	fn tally(data const byte[:], must bool) {
+		total++;
+		if fine(data, must) { good++; }
+	}
+	for c, i in cs {
+		let f = file(i);
+		let n = f.len;
+		tally(f[..n / 2], false);
+		tally(f[..min(40, n)], false);
+		var d byte[>..] = [];
+		if n > 0 {
+			d.append(f);
+			d[0] = 0x55;
+			tally(d, false);
+			d.clear();
+			d.append(f);
+			let m = n / 2;
+			d[m] = d[m] ^ 0x5a;
+			tally(d, false);
+			d.clear();
+			d.append(f);
+			var k = 50;
+			while k < n {
+				d[k] = d[k] ^ 0xff;
+				k += 97;
+			}
+			tally(d, false);
+		}
+		tally(f[..0], true);
+	}
+	var detail byte[>..] = [];
+	format(detail, good, "/", total, " fine");
+	report(good == total, "damaged", detail);
+}
+fn v4() {
+	let cs = cases();
+	var idx = 0;
+	for c, i in cs {
+		if c.name == "v_st48hi" { idx = i; }
+	}
+	var best = 0;
+	var first = true;
+	var frames = 0;
+	for r in 7 {
+		var pcm f32[>..] = [];
+		let t0 = ns();
+		let ch, rate, ok = codec_vorbis::decode(file(idx), pcm);
+		let t1 = ns();
+		if !ok {
+			report(false, "speed", codec_vorbis::error());
+			return;
+		}
+		let dt = t1 - t0;
+		if first || dt < best {
+			best = dt;
+			first = false;
+		}
+		if ch > 0 { frames = pcm.len / ch; }
+	}
+	let secs = max(best, 1) / 1000000000.0;
+	let speed = (frames / 48000.0) / secs;
+	let ms = max(best, 1) / 1000000.0;
+	var detail byte[>..] = [];
+	format_flt(detail, ms, 2);
+	format(detail, " ms, ");
+	format_flt(detail, speed, 0);
+	format(detail, "x realtime");
+	report(speed >= 200.0, "speed", detail);
+}
+fn main() {
+	dir.clear();
+	if arg_count() > 1 {
+		for a, i in args() {
+			if i == 1 { dir.append(a); }
+		}
+	} else {
+		dir.append("hc/test/audio/fixtures");
+	}
+	let cs = cases();
+	for c in cs {
+		var path byte[>..] = [];
+		path.append(dir);
+		path.push('/');
+		path.append(c.name);
+		path.append(".ogg");
+		var data byte[>..] = [];
+		if !read_file(path, data) {
+			print("FAIL ", c.name, " missing file");
+			print("vorbis: FAILED");
+			return;
+		}
+		offs.push(blob.len);
+		lens.push(data.len);
+		blob.append(data);
+	}
+	v1();
+	v2();
+	v3();
+	v4();
+	if bad { print("vorbis: FAILED"); } else { print("vorbis: ok"); }
+}

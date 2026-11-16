@@ -1,0 +1,1550 @@
+=== 45b0a7b432beec5f
+namespace codec_webp;
+=== -3f0a8ef5bf24f994
+
+=== -55c516ff5d9cc079
+var why byte[>..];
+var src byte[>..];
+fn fail(reason const byte[:]) bool {
+	why.clear();
+	why.append(reason);
+	false
+}
+fn error() const byte[:] { why[..why.len] }
+fn sb(at int) int { let v int = src[at]; v }
+fn le16(at int) int { sb(at) | (sb(at + 1) << 8) }
+fn le24(at int) int { sb(at) | (sb(at + 1) << 8) | (sb(at + 2) << 16) }
+fn le32(at int) int { le24(at) | (sb(at + 3) << 24) }
+=== 0670bcb822b5d03a
+var img_at int = 0;
+var img_len int = 0;
+var alph_at int = -1;
+var alph_len int = 0;
+var width int = 0;
+var height int = 0;
+var lossless bool = false;
+var has_alpha bool = false;
+fn tag_is(at int, s const byte[:]) bool {
+	for i in 4 { if sb(at + i) != s[i] { return false; } }
+	true
+}
+fn parse() bool {
+	img_at = 0;
+	img_len = 0;
+	alph_at = -1;
+	alph_len = 0;
+	width = 0;
+	height = 0;
+	lossless = false;
+	has_alpha = false;
+	let n = src.len;
+	if n < 20 { return fail("file too short"); }
+	if !tag_is(0, "RIFF") || !tag_is(8, "WEBP") { return fail("not a WebP file"); }
+	let rs = le32(4);
+	if rs < 12 || rs > 0xfffffff6 || rs > n - 8 { return fail("bad RIFF size"); }
+	var at = 12;
+	var ext = false;
+	var cw = 0;
+	var ch = 0;
+	if tag_is(12, "VP8X") {
+		if le32(16) != 10 || n < 30 { return fail("bad VP8X chunk"); }
+		let flags = sb(20);
+		cw = 1 + le24(24);
+		ch = 1 + le24(27);
+		if cw * ch >= 4294967296 { return fail("canvas too big"); }
+		if (flags & 2) != 0 { return fail("animated WebP is not supported"); }
+		ext = true;
+		var total = 22;
+		at = 30;
+		loop {
+			if at + 8 > n { return fail("truncated chunk"); }
+			let sz = le32(at + 4);
+			if sz > 0xfffffff6 { return fail("bad chunk size"); }
+			let padded = 8 + sz + (sz & 1);
+			if total + padded > rs { return fail("chunk past RIFF size"); }
+			if tag_is(at, "VP8 ") || tag_is(at, "VP8L") { break; }
+			if at + 8 + sz > n { return fail("chunk past end of file"); }
+			if tag_is(at, "ALPH") { alph_at = at + 8; alph_len = sz; }
+			at += padded;
+			total += padded;
+		}
+	} else {
+		if !tag_is(12, "VP8 ") && !tag_is(12, "VP8L") { return fail("no image chunk"); }
+	}
+	let isz = le32(at + 4);
+	if isz > rs - 12 || isz > n - (at + 8) { return fail("bad image chunk size"); }
+	img_at = at + 8;
+	img_len = isz;
+	lossless = tag_is(at, "VP8L");
+	if !lossless {
+		if img_len < 10 { return fail("VP8 chunk too short"); }
+		if sb(img_at + 3) != 0x9d || sb(img_at + 4) != 0x01 || sb(img_at + 5) != 0x2a { return fail("bad VP8 signature"); }
+		let tg = le24(img_at);
+		if (tg & 1) != 0 || ((tg >> 1) & 7) > 3 || (tg & 16) == 0 || (tg >> 5) >= img_len { return fail("bad VP8 frame header"); }
+		width = le16(img_at + 6) & 0x3fff;
+		height = le16(img_at + 8) & 0x3fff;
+		if width == 0 || height == 0 { return fail("bad VP8 size"); }
+		has_alpha = alph_at >= 0;
+	} else {
+		if img_len < 5 { return fail("VP8L chunk too short"); }
+		if sb(img_at) != 0x2f || (sb(img_at + 4) >> 5) != 0 { return fail("bad VP8L header"); }
+		let v = le32(img_at + 1);
+		width = 1 + (v & 0x3fff);
+		height = 1 + ((v >> 14) & 0x3fff);
+		has_alpha = ((v >> 28) & 1) != 0;
+	}
+	if ext && (width != cw || height != ch) { return fail("image size differs from canvas"); }
+	if width * height > 67108864 { return fail("picture too big"); }
+	true
+}
+=== 2c8733d1cbb2a029
+var lb_pos int = 0;
+var lb_end int = 0;
+var lb_val int = 0;
+var lb_n int = 0;
+var lb_over bool = false;
+fn lbegin(at int, end int) {
+	lb_pos = at;
+	lb_end = end;
+	lb_val = 0;
+	lb_n = 0;
+	lb_over = false;
+}
+fn lfill() {
+	while lb_n <= 48 && lb_pos < lb_end {
+		lb_val = lb_val | (sb(lb_pos) << lb_n);
+		lb_pos += 1;
+		lb_n += 8;
+	}
+}
+fn lpeek(n int) int {
+	if lb_n < n { lfill(); }
+	lb_val & ((1 << n) - 1)
+}
+fn lskip(n int) {
+	if lb_n < n { lfill(); }
+	if lb_n < n {
+		lb_over = true;
+		lb_val = 0;
+		lb_n = 0;
+	} else {
+		lb_val = lb_val >> n;
+		lb_n -= n;
+	}
+}
+fn lbits(n int) int {
+	let v = lpeek(n);
+	lskip(n);
+	v
+}
+=== -64acccf370a356ed
+var ht int[>..];
+var hrev int[>..];
+fn brev(c int, l int) int {
+	var r = 0;
+	var v = c;
+	for i in l {
+		r = (r << 1) | (v & 1);
+		v = v >> 1;
+	}
+	r
+}
+fn hbuild(lens const int[:], n int) int {
+	var cnt int[16] = [0; 16];
+	var nz = 0;
+	var last = 0;
+	for s in n {
+		let l = lens[s];
+		if l > 15 || l < 0 { return -1; }
+		if l > 0 {
+			cnt[l] += 1;
+			nz += 1;
+			last = s;
+		}
+	}
+	if nz == 0 { return -1; }
+	let base = ht.len;
+	if nz == 1 {
+		ht.resize(base + 256, last);
+		return base;
+	}
+	var open = 1;
+	for l in 1..16 {
+		open = open * 2 - cnt[l];
+		if open < 0 { return -1; }
+	}
+	if open > 0 { return -1; }
+	var nc int[16] = [0; 16];
+	var code = 0;
+	for l in 1..16 {
+		code = (code + cnt[l - 1]) << 1;
+		nc[l] = code;
+	}
+	hrev.clear();
+	hrev.resize(n, 0);
+	var smax int[256] = [0; 256];
+	for s in n {
+		let l = lens[s];
+		if l > 0 {
+			let r = brev(nc[l], l);
+			nc[l] += 1;
+			hrev[s] = r;
+			if l > 8 {
+				let p = r & 255;
+				if l > smax[p] { smax[p] = l; }
+			}
+		}
+	}
+	var off int[256] = [0; 256];
+	var total = 256;
+	for p in 256 {
+		if smax[p] > 0 {
+			off[p] = total;
+			total += 1 << (smax[p] - 8);
+		}
+	}
+	ht.resize(base + total, 0);
+	for p in 256 {
+		if smax[p] > 0 { ht[base + p] = smax[p] * 65536 + off[p]; }
+	}
+	for s in n {
+		let l = lens[s];
+		if l > 0 {
+			let r = hrev[s];
+			if l <= 8 {
+				var i = r;
+				while i < 256 {
+					ht[base + i] = l * 65536 + s;
+					i += 1 << l;
+				}
+			} else {
+				let p = r & 255;
+				let lim = 1 << (smax[p] - 8);
+				let step = 1 << (l - 8);
+				var j = r >> 8;
+				while j < lim {
+					ht[base + off[p] + j] = (l - 8) * 65536 + s;
+					j += step;
+				}
+			}
+		}
+	}
+	base
+}
+fn hread(t int) int {
+	let e = ht[t + lpeek(8)];
+	let l = e >> 16;
+	if l <= 8 {
+		lskip(l);
+		return e & 65535;
+	}
+	lskip(8);
+	let e2 = ht[t + (e & 65535) + lpeek(l - 8)];
+	lskip(e2 >> 16);
+	e2 & 65535
+}
+=== 03845745db21fb8b
+var lcl int[>..];
+fn lcode(nsym int) int {
+	lcl.clear();
+	lcl.resize(nsym, 0);
+	if lbits(1) == 1 {
+		let cnt = 1 + lbits(1);
+		let first8 = lbits(1);
+		let s0 = lbits(if first8 == 0 { 1 } else { 8 });
+		if s0 < nsym { lcl[s0] = 1; }
+		if cnt == 2 {
+			let s1 = lbits(8);
+			if s1 < nsym { lcl[s1] = 1; }
+		}
+		if lb_over { return -1; }
+		return hbuild(lcl, nsym);
+	}
+	var cl int[19] = [0; 19];
+	let nc = 4 + lbits(4);
+	if nc > 19 { return -1; }
+	for i in nc { cl[CLORDER[i]] = lbits(3); }
+	let ct = hbuild(cl, 19);
+	if ct < 0 { return -1; }
+	var limit = nsym;
+	if lbits(1) == 1 {
+		let w = 2 + 2 * lbits(3);
+		limit = 2 + lbits(w);
+		if limit > nsym { return -1; }
+	}
+	var sym = 0;
+	var prev = 8;
+	while sym < nsym && limit > 0 {
+		limit -= 1;
+		let c = hread(ct);
+		if lb_over { return -1; }
+		if c < 16 {
+			lcl[sym] = c;
+			sym += 1;
+			if c != 0 { prev = c; }
+		} else {
+			var rep = 0;
+			var val = 0;
+			if c == 16 {
+				rep = 3 + lbits(2);
+				val = prev;
+			} else if c == 17 {
+				rep = 3 + lbits(3);
+			} else {
+				rep = 11 + lbits(7);
+			}
+			if sym + rep > nsym { return -1; }
+			for i in rep {
+				lcl[sym] = val;
+				sym += 1;
+			}
+		}
+	}
+	if lb_over { return -1; }
+	hbuild(lcl, nsym)
+}
+=== 65a1fb47a7d5ff20
+var tr_type int[>..];
+var tr_bits int[>..];
+var tr_w int[>..];
+var tr_off int[>..];
+var tr_px int[>..];
+var scr int[>..];
+var ent int[>..];
+var gt int[>..];
+var argb int[>..];
+var tmp2 int[>..];
+var cache int[>..];
+fn cdiv(v int, b int) int { (v + (1 << b) - 1) >> b }
+fn padd(a int, b int) int { (((a & 0xff00ff00) + (b & 0xff00ff00)) & 0xff00ff00) | (((a & 0x00ff00ff) + (b & 0x00ff00ff)) & 0x00ff00ff) }
+recursive fn stream(w int, h int, top bool, out int[>..]&) bool {
+	var dw = w;
+	if top {
+		tr_type.clear();
+		tr_bits.clear();
+		tr_w.clear();
+		tr_off.clear();
+		tr_px.clear();
+		var seen = 0;
+		while lbits(1) == 1 {
+			let t = lbits(2);
+			if (seen & (1 << t)) != 0 { return fail("duplicate transform"); }
+			seen = seen | (1 << t);
+			var bits = 0;
+			let off = tr_px.len;
+			if t == 0 || t == 1 {
+				bits = 2 + lbits(3);
+				if !stream(cdiv(dw, bits), cdiv(h, bits), false, scr) { return false; }
+				tr_px.append(scr);
+			} else if t == 3 {
+				let nc = 1 + lbits(8);
+				bits = if nc > 16 { 0 } else if nc > 4 { 1 } else if nc > 2 { 2 } else { 3 };
+				if !stream(nc, 1, false, scr) { return false; }
+				for i in 1..nc { scr[i] = padd(scr[i], scr[i - 1]); }
+				scr.resize(1 << (8 >> bits), 0);
+				tr_px.append(scr);
+			}
+			tr_type.push(t);
+			tr_bits.push(bits);
+			tr_w.push(dw);
+			tr_off.push(off);
+			if t == 3 { dw = cdiv(dw, bits); }
+		}
+	}
+	var cbits = 0;
+	if lbits(1) == 1 {
+		cbits = lbits(4);
+		if cbits < 1 || cbits > 11 { return fail("bad color cache size"); }
+	}
+	let csize = if cbits > 0 { 1 << cbits } else { 0 };
+	var mbits = 0;
+	var ew = 0;
+	var ngroups = 1;
+	if top && lbits(1) == 1 {
+		mbits = 2 + lbits(3);
+		ew = cdiv(dw, mbits);
+		if !stream(ew, cdiv(h, mbits), false, ent) { return false; }
+		var mx = 0;
+		for p in ent {
+			let g = (p >> 8) & 65535;
+			if g > mx { mx = g; }
+		}
+		ngroups = mx + 1;
+	}
+	let gbase = gt.len;
+	for g in ngroups {
+		for k in 5 {
+			let c = lcode(if k == 0 { 280 + csize } else if k == 4 { 40 } else { 256 });
+			if c < 0 { return fail("bad Huffman code"); }
+			gt.push(c);
+		}
+	}
+	out.clear();
+	out.resize(dw * h, 0);
+	if !pixels(dw, h, gbase, mbits, ew, cbits, out) { return false; }
+	if top && !inverse(w, h, out) { return false; }
+	true
+}
+=== -7cd252f1055568fa
+fn copylen(s int) int {
+	if s < 4 { return s + 1; }
+	let e = (s - 2) >> 1;
+	((2 + (s & 1)) << e) + lbits(e) + 1
+}
+fn cput(out int[>..]&, pos int, px int, cbits int) {
+	out[pos] = px;
+	if cbits > 0 { cache[((0x1e35a7bd * px) & 0xffffffff) >> (32 - cbits)] = px; }
+}
+fn pixels(dw int, h int, gbase int, mbits int, ew int, cbits int, out int[>..]&) bool {
+	let total = dw * h;
+	let csize = if cbits > 0 { 1 << cbits } else { 0 };
+	cache.clear();
+	cache.resize(csize, 0);
+	var pos = 0;
+	var x = 0;
+	var y = 0;
+	while pos < total {
+		var gi = gbase;
+		if mbits > 0 { gi = gbase + 5 * ((ent[(y >> mbits) * ew + (x >> mbits)] >> 8) & 65535); }
+		let s = hread(gt[gi]);
+		if s < 256 {
+			let r = hread(gt[gi + 1]);
+			let b = hread(gt[gi + 2]);
+			let a = hread(gt[gi + 3]);
+			cput(out, pos, (a << 24) | (r << 16) | (s << 8) | b, cbits);
+			pos += 1;
+			x += 1;
+			if x == dw {
+				x = 0;
+				y += 1;
+				if lb_over { return fail("truncated lossless data"); }
+			}
+		} else if s < 280 {
+			let ln = copylen(s - 256);
+			let dc = copylen(hread(gt[gi + 4]));
+			var dist = 0;
+			if dc > 120 {
+				dist = dc - 120;
+			} else {
+				let e = PLANE[dc - 1];
+				dist = (e >> 4) * dw + 8 - (e & 15);
+				if dist < 1 { dist = 1; }
+			}
+			if dist > pos || ln > total - pos { return fail("bad lossless copy"); }
+			for i in ln {
+				let v = out[pos - dist];
+				cput(out, pos, v, cbits);
+				pos += 1;
+				x += 1;
+				if x == dw {
+					x = 0;
+					y += 1;
+					if lb_over { return fail("truncated lossless data"); }
+				}
+			}
+		} else if s < 280 + csize {
+			let v = cache[s - 280];
+			cput(out, pos, v, cbits);
+			pos += 1;
+			x += 1;
+			if x == dw {
+				x = 0;
+				y += 1;
+				if lb_over { return fail("truncated lossless data"); }
+			}
+		} else {
+			return fail("bad lossless symbol");
+		}
+	}
+	if lb_over { return fail("truncated lossless data"); }
+	true
+}
+=== 04490f6b181dfcc9
+fn clampb(v int) int { if v < 0 { 0 } else if v > 255 { 255 } else { v } }
+fn sext8(v int) int { if v >= 128 { v - 256 } else { v } }
+fn avg2(a int, b int) int { (((a ^ b) & 0xfefefefe) >> 1) + (a & b) }
+fn sel(l int, t int, tl int) int {
+	var s = 0;
+	for k in 4 {
+		let sh = k * 8;
+		let a = (l >> sh) & 255;
+		let b = (t >> sh) & 255;
+		let c = (tl >> sh) & 255;
+		s += abs(a - c) - abs(b - c);
+	}
+	if s <= 0 { t } else { l }
+}
+fn addsub(l int, t int, tl int) int {
+	var r = 0;
+	for k in 4 {
+		let sh = k * 8;
+		r = r | (clampb(((l >> sh) & 255) + ((t >> sh) & 255) - ((tl >> sh) & 255)) << sh);
+	}
+	r
+}
+fn halfadd(l int, t int, tl int) int {
+	let av = avg2(l, t);
+	var r = 0;
+	for k in 4 {
+		let sh = k * 8;
+		let a = (av >> sh) & 255;
+		let c = (tl >> sh) & 255;
+		r = r | (clampb(a + (a - c) / 2) << sh);
+	}
+	r
+}
+fn predict(m int, l int, t int, tl int, tr int) int {
+	match m {
+		1 => l,
+		2 => t,
+		3 => tr,
+		4 => tl,
+		5 => avg2(avg2(l, tr), t),
+		6 => avg2(l, tl),
+		7 => avg2(l, t),
+		8 => avg2(tl, t),
+		9 => avg2(t, tr),
+		10 => avg2(avg2(l, tl), avg2(t, tr)),
+		11 => sel(l, t, tl),
+		12 => addsub(l, t, tl),
+		13 => halfadd(l, t, tl),
+		_ => 0xff000000,
+	}
+}
+fn inverse(w int, h int, out int[>..]&) bool {
+	var i = tr_type.len - 1;
+	while i >= 0 {
+		let t = tr_type[i];
+		let bits = tr_bits[i];
+		let tw = tr_w[i];
+		let off = tr_off[i];
+		if t == 2 {
+			for p in out.len {
+				let px = out[p];
+				let g = (px >> 8) & 255;
+				let r = (((px >> 16) & 255) + g) & 255;
+				let b = ((px & 255) + g) & 255;
+				out[p] = (px & 0xff00ff00) | (r << 16) | b;
+			}
+		} else if t == 1 {
+			let bw = cdiv(tw, bits);
+			for y in h {
+				for x in tw {
+					let d = tr_px[off + (y >> bits) * bw + (x >> bits)];
+					let gr = sext8(d & 255);
+					let gb = sext8((d >> 8) & 255);
+					let rb = sext8((d >> 16) & 255);
+					let px = out[y * tw + x];
+					let g = sext8((px >> 8) & 255);
+					let r = (((px >> 16) & 255) + ((gr * g) >> 5)) & 255;
+					let b = ((px & 255) + ((gb * g) >> 5) + ((rb * sext8(r)) >> 5)) & 255;
+					out[y * tw + x] = (px & 0xff00ff00) | (r << 16) | b;
+				}
+			}
+		} else if t == 0 {
+			let bw = cdiv(tw, bits);
+			for y in h {
+				for x in tw {
+					let k = y * tw + x;
+					var pred = 0;
+					if y == 0 {
+						pred = if x == 0 { 0xff000000 } else { out[k - 1] };
+					} else if x == 0 {
+						pred = out[k - tw];
+					} else {
+						let mode = (tr_px[off + (y >> bits) * bw + (x >> bits)] >> 8) & 15;
+						let trv = if x == tw - 1 { out[y * tw] } else { out[k - tw + 1] };
+						pred = predict(mode, out[k - 1], out[k - tw], out[k - tw - 1], trv);
+					}
+					out[k] = padd(out[k], pred);
+				}
+			}
+		} else {
+			tmp2.clear();
+			tmp2.resize(tw * h, 0);
+			if bits == 0 {
+				for p in (tw * h) { tmp2[p] = tr_px[off + ((out[p] >> 8) & 255)]; }
+			} else {
+				let per = 1 << bits;
+				let bw = 8 >> bits;
+				let mask = (1 << bw) - 1;
+				let iw = cdiv(tw, bits);
+				for y in h {
+					for x in tw {
+						let px = out[y * iw + (x >> bits)];
+						let idx = ((px >> 8) >> ((x & (per - 1)) * bw)) & mask;
+						tmp2[y * tw + x] = tr_px[off + idx];
+					}
+				}
+			}
+			out.clear();
+			out.append(tmp2);
+		}
+		i -= 1;
+	}
+	out.len == w * h
+}
+=== -2ca304af209254ea
+fn lreset() {
+	ht.clear();
+	gt.clear();
+}
+fn vp8l(px byte[>..]&) bool {
+	lreset();
+	lbegin(img_at + 5, img_at + img_len);
+	if !stream(width, height, true, argb) { return false; }
+	let n = width * height;
+	px.clear();
+	px.resize(n * 4, 0);
+	for i in n {
+		let p = argb[i];
+		px[4 * i] = ((p >> 16) & 255) as byte;
+		px[4 * i + 1] = ((p >> 8) & 255) as byte;
+		px[4 * i + 2] = (p & 255) as byte;
+		px[4 * i + 3] = ((p >> 24) & 255) as byte;
+	}
+	true
+}
+=== -238b8c30998540b9
+var bd_pos int[9] = [0; 9];
+var bd_end int[9] = [0; 9];
+var bd_val int[9] = [0; 9];
+var bd_rng int[9] = [0; 9];
+var bd_cnt int[9] = [0; 9];
+var bd_eof int[9] = [0; 9];
+fn bload(r int) {
+	if bd_pos[r] < bd_end[r] {
+		bd_cnt[r] += 8;
+		bd_val[r] = (bd_val[r] << 8) + sb(bd_pos[r]);
+		bd_pos[r] += 1;
+	} else if bd_eof[r] == 0 {
+		bd_val[r] = bd_val[r] << 8;
+		bd_cnt[r] += 8;
+		bd_eof[r] = 1;
+	} else {
+		bd_cnt[r] = 0;
+	}
+}
+fn binit(r int, at int, size int) {
+	bd_pos[r] = at;
+	bd_end[r] = at + size;
+	bd_val[r] = 0;
+	bd_rng[r] = 254;
+	bd_cnt[r] = -8;
+	bd_eof[r] = 0;
+	bload(r);
+}
+fn bit(r int, p int) int {
+	if bd_cnt[r] < 0 { bload(r); }
+	let range = bd_rng[r];
+	let split = (range * p) >> 8;
+	let value = bd_val[r] >> bd_cnt[r];
+	var rg = 0;
+	var b = 0;
+	if value > split {
+		rg = range - split;
+		bd_val[r] -= (split + 1) << bd_cnt[r];
+		b = 1;
+	} else {
+		rg = split + 1;
+	}
+	var shift = 0;
+	while rg < 128 {
+		rg = rg << 1;
+		shift += 1;
+	}
+	bd_cnt[r] -= shift;
+	bd_rng[r] = rg - 1;
+	b
+}
+fn bsign(r int, v int) int {
+	if bd_cnt[r] < 0 { bload(r); }
+	let split = bd_rng[r] >> 1;
+	let value = bd_val[r] >> bd_cnt[r];
+	var res = v;
+	if value > split {
+		bd_rng[r] = (bd_rng[r] - 1) | 1;
+		bd_val[r] -= (split + 1) << bd_cnt[r];
+		res = -v;
+	} else {
+		bd_rng[r] = bd_rng[r] | 1;
+	}
+	bd_cnt[r] -= 1;
+	res
+}
+fn bval(r int, n int) int {
+	var v = 0;
+	for i in n { v = (v << 1) | bit(r, 128); }
+	v
+}
+fn bsval(r int, n int) int {
+	let v = bval(r, n);
+	if bit(r, 128) == 1 { -v } else { v }
+}
+=== 768462e26f366b3d
+var mb_w int = 0;
+var mb_h int = 0;
+var seg_on bool = false;
+var seg_map bool = false;
+var abs_d bool = true;
+var seg_q int[4] = [0; 4];
+var seg_f int[4] = [0; 4];
+var seg_p int[3] = [255; 3];
+var fl_simple bool = false;
+var fl_level int = 0;
+var fl_sharp int = 0;
+var fl_deltas bool = false;
+var ref_d int[4] = [0; 4];
+var mode_d int[4] = [0; 4];
+var ftype int = 0;
+var nparts int = 1;
+var dq int[24] = [0; 24];
+var cprob int[1056] = [0; 1056];
+var skip_on bool = false;
+var skip_p int = 0;
+fn clampm(v int, m int) int { if v < 0 { 0 } else if v > m { m } else { v } }
+fn vp8_head() bool {
+	let tg = le24(img_at);
+	let plen = tg >> 5;
+	mb_w = (width + 15) >> 4;
+	mb_h = (height + 15) >> 4;
+	let p0 = img_at + 10;
+	if plen > img_len - 10 { return fail("truncated frame"); }
+	if mb_w * mb_h > 8 * plen + 256 { return fail("damaged frame"); }
+	binit(0, p0, plen);
+	bval(0, 1);
+	bval(0, 1);
+	seg_on = false;
+	seg_map = false;
+	abs_d = true;
+	for i in 4 {
+		seg_q[i] = 0;
+		seg_f[i] = 0;
+		ref_d[i] = 0;
+		mode_d[i] = 0;
+	}
+	for i in 3 { seg_p[i] = 255; }
+	if bval(0, 1) == 1 {
+		seg_on = true;
+		seg_map = bval(0, 1) == 1;
+		if bval(0, 1) == 1 {
+			abs_d = bval(0, 1) == 1;
+			for i in 4 { seg_q[i] = if bval(0, 1) == 1 { bsval(0, 7) } else { 0 }; }
+			for i in 4 { seg_f[i] = if bval(0, 1) == 1 { bsval(0, 6) } else { 0 }; }
+		}
+		if seg_map {
+			for i in 3 { seg_p[i] = if bval(0, 1) == 1 { bval(0, 8) } else { 255 }; }
+		}
+	}
+	fl_simple = bval(0, 1) == 1;
+	fl_level = bval(0, 6);
+	fl_sharp = bval(0, 3);
+	fl_deltas = false;
+	if bval(0, 1) == 1 {
+		fl_deltas = true;
+		if bval(0, 1) == 1 {
+			for i in 4 { if bval(0, 1) == 1 { ref_d[i] = bsval(0, 6); } }
+			for i in 4 { if bval(0, 1) == 1 { mode_d[i] = bsval(0, 6); } }
+		}
+	}
+	ftype = if fl_level == 0 { 0 } else if fl_simple { 1 } else { 2 };
+	if bd_eof[0] != 0 { return fail("truncated header"); }
+	nparts = 1 << bval(0, 2);
+	let endc = img_at + img_len;
+	let szpos = p0 + plen;
+	if szpos + 3 * (nparts - 1) > endc { return fail("bad partition sizes"); }
+	var ps = szpos + 3 * (nparts - 1);
+	for i in nparts {
+		var sz = endc - ps;
+		if i < nparts - 1 { sz = le24(szpos + 3 * i); }
+		if sz > endc - ps { sz = endc - ps; }
+		if i == nparts - 1 && sz <= 0 { return fail("no token partition"); }
+		binit(1 + i, ps, sz);
+		ps += sz;
+	}
+	let base = bval(0, 7);
+	var d int[5] = [0; 5];
+	for i in 5 { d[i] = if bval(0, 1) == 1 { bsval(0, 4) } else { 0 }; }
+	for s in 4 {
+		var q = base;
+		if seg_on {
+			q = seg_q[s];
+			if !abs_d { q += base; }
+		}
+		let k = s * 6;
+		dq[k] = DCTAB[clampm(q + d[0], 127)];
+		dq[k + 1] = ACTAB[clampm(q, 127)];
+		dq[k + 2] = DCTAB[clampm(q + d[1], 127)] * 2;
+		dq[k + 3] = max((ACTAB[clampm(q + d[2], 127)] * 101581) >> 16, 8);
+		dq[k + 4] = DCTAB[clampm(q + d[3], 117)];
+		dq[k + 5] = ACTAB[clampm(q + d[4], 127)];
+	}
+	bval(0, 1);
+	for i in 1056 { cprob[i] = if bit(0, COEFU[i]) == 1 { bval(0, 8) } else { COEF0[i] }; }
+	skip_on = bval(0, 1) == 1;
+	skip_p = 0;
+	if skip_on { skip_p = bval(0, 8); }
+	true
+}
+=== -7ab28afe4ed3d1ee
+var mr_seg int[>..];
+var mr_skip int[>..];
+var mr_i4 int[>..];
+var mr_ym int[>..];
+var mr_cm int[>..];
+var mr_sub int[>..];
+var top_m int[>..];
+var left_m int[4] = [0; 4];
+fn tree4(base int) int {
+	if bit(0, BMODEP[base]) == 0 { return 0; }
+	if bit(0, BMODEP[base + 1]) == 0 { return 1; }
+	if bit(0, BMODEP[base + 2]) == 0 { return 2; }
+	if bit(0, BMODEP[base + 3]) == 0 {
+		if bit(0, BMODEP[base + 4]) == 0 { return 3; }
+		return 4 + bit(0, BMODEP[base + 5]);
+	}
+	if bit(0, BMODEP[base + 6]) == 0 { return 6; }
+	if bit(0, BMODEP[base + 7]) == 0 { return 7; }
+	8 + bit(0, BMODEP[base + 8])
+}
+fn modes_row() bool {
+	for i in 4 { left_m[i] = 0; }
+	for x in mb_w {
+		var seg = 0;
+		if seg_map { seg = if bit(0, seg_p[0]) == 0 { bit(0, seg_p[1]) } else { 2 + bit(0, seg_p[2]) }; }
+		mr_seg[x] = seg;
+		mr_skip[x] = if skip_on { bit(0, skip_p) } else { 0 };
+		if bit(0, 145) == 0 {
+			mr_i4[x] = 1;
+			for y in 4 {
+				for xx in 4 {
+					let m = tree4((top_m[4 * x + xx] * 10 + left_m[y]) * 9);
+					top_m[4 * x + xx] = m;
+					left_m[y] = m;
+					mr_sub[16 * x + xx + 4 * y] = m;
+				}
+			}
+		} else {
+			mr_i4[x] = 0;
+			var ym = 0;
+			if bit(0, 156) == 1 {
+				ym = if bit(0, 128) == 1 { 1 } else { 3 };
+			} else {
+				ym = if bit(0, 163) == 1 { 2 } else { 0 };
+			}
+			for i in 4 {
+				top_m[4 * x + i] = ym;
+				left_m[i] = ym;
+			}
+			mr_ym[x] = ym;
+		}
+		var cm = 0;
+		if bit(0, 142) == 0 {
+			cm = 0;
+		} else if bit(0, 114) == 0 {
+			cm = 2;
+		} else {
+			cm = if bit(0, 183) == 1 { 1 } else { 3 };
+		}
+		mr_cm[x] = cm;
+	}
+	if bd_eof[0] != 0 { return fail("truncated mode data"); }
+	true
+}
+=== 5dde3b2380f3fbf4
+var co int[>..];
+fn wrap16(v int) int { ((v + 32768) & 65535) - 32768 }
+fn large(r int, p int) int {
+	if bit(r, cprob[p + 3]) == 0 {
+		if bit(r, cprob[p + 4]) == 0 { return 2; }
+		return 3 + bit(r, cprob[p + 5]);
+	}
+	if bit(r, cprob[p + 6]) == 0 {
+		if bit(r, cprob[p + 7]) == 0 { return 5 + bit(r, 159); }
+		let a = bit(r, 165);
+		let b = bit(r, 145);
+		return 7 + 2 * a + b;
+	}
+	let b1 = bit(r, cprob[p + 8]);
+	let b0 = bit(r, cprob[p + 9 + b1]);
+	let cat = 2 * b1 + b0;
+	let st = match cat { 0 => 0, 1 => 3, 2 => 7, _ => 12 };
+	let cl = match cat { 0 => 3, 1 => 4, 2 => 5, _ => 11 };
+	var v = 0;
+	for i in cl { v = v + v + bit(r, CATP[st + i]); }
+	v + 3 + (8 << cat)
+}
+fn coeffs(r int, ty int, ctx int, dqdc int, dqac int, first int, at int) int {
+	var n = first;
+	var p = (ty * 8 + BANDS[n]) * 33 + ctx * 11;
+	while n < 16 {
+		if bit(r, cprob[p]) == 0 { return n; }
+		while bit(r, cprob[p + 1]) == 0 {
+			n += 1;
+			p = (ty * 8 + BANDS[n]) * 33;
+			if n == 16 { return 16; }
+		}
+		let nb = (ty * 8 + BANDS[n + 1]) * 33;
+		var v = 0;
+		if bit(r, cprob[p + 2]) == 0 {
+			v = 1;
+			p = nb + 11;
+		} else {
+			v = large(r, p);
+			p = nb + 22;
+		}
+		let s = bsign(r, v) * (if n > 0 { dqac } else { dqdc });
+		co[at + ZIGZAG[n]] = wrap16(s);
+		n += 1;
+	}
+	16
+}
+=== 29aec81a28d258a3
+var nz_top int[>..];
+var dnz_top int[>..];
+var nz_left int = 0;
+var dnz_left int = 0;
+var mr_code int[>..];
+var mr_has int[>..];
+fn setb(v int, i int, f int) int { ((v | (1 << i)) ^ (1 << i)) | (f << i) }
+fn codeof(nz int, dc int) int { if nz > 3 { 3 } else if nz > 1 { 2 } else if dc != 0 { 1 } else { 0 } }
+fn wht(sc int, base int) {
+	var tmp int[16] = [0; 16];
+	for i in 4 {
+		let a0 = co[sc + i] + co[sc + 12 + i];
+		let a1 = co[sc + 4 + i] + co[sc + 8 + i];
+		let a2 = co[sc + 4 + i] - co[sc + 8 + i];
+		let a3 = co[sc + i] - co[sc + 12 + i];
+		tmp[i] = a0 + a1;
+		tmp[8 + i] = a0 - a1;
+		tmp[4 + i] = a3 + a2;
+		tmp[12 + i] = a3 - a2;
+	}
+	for i in 4 {
+		let dc = tmp[4 * i] + 3;
+		let a0 = dc + tmp[4 * i + 3];
+		let a1 = tmp[4 * i + 1] + tmp[4 * i + 2];
+		let a2 = tmp[4 * i + 1] - tmp[4 * i + 2];
+		let a3 = dc - tmp[4 * i + 3];
+		co[base + 16 * (4 * i)] = (a0 + a1) >> 3;
+		co[base + 16 * (4 * i + 1)] = (a3 + a2) >> 3;
+		co[base + 16 * (4 * i + 2)] = (a0 - a1) >> 3;
+		co[base + 16 * (4 * i + 3)] = (a3 - a2) >> 3;
+	}
+}
+fn resid(mx int, tp int) bool {
+	let base = mx * 384;
+	for i in 384 { co[base + i] = 0; }
+	let cd = mx * 24;
+	let i4 = mr_i4[mx];
+	if skip_on && mr_skip[mx] != 0 {
+		for i in 24 { mr_code[cd + i] = 0; }
+		nz_top[mx] = 0;
+		nz_left = 0;
+		if i4 == 0 {
+			dnz_top[mx] = 0;
+			dnz_left = 0;
+		}
+		mr_has[mx] = 0;
+		return true;
+	}
+	let q = mr_seg[mx] * 6;
+	var first = 0;
+	var ty = 3;
+	if i4 == 0 {
+		let sc = mb_w * 384;
+		for i in 16 { co[sc + i] = 0; }
+		let nz = coeffs(tp, 1, dnz_top[mx] + dnz_left, dq[q + 2], dq[q + 3], 0, sc);
+		let f = if nz > 0 { 1 } else { 0 };
+		dnz_top[mx] = f;
+		dnz_left = f;
+		if nz > 1 {
+			wht(sc, base);
+		} else {
+			let dc0 = (co[sc] + 3) >> 3;
+			for i in 16 { co[base + 16 * i] = dc0; }
+		}
+		first = 1;
+		ty = 0;
+	}
+	var nzt = nz_top[mx];
+	var nzl = nz_left;
+	var has = 0;
+	for y in 4 {
+		var l = (nzl >> y) & 1;
+		for x in 4 {
+			let b = y * 4 + x;
+			let nz = coeffs(tp, ty, l + ((nzt >> x) & 1), dq[q], dq[q + 1], first, base + b * 16);
+			l = if nz > first { 1 } else { 0 };
+			nzt = setb(nzt, x, l);
+			let c = codeof(nz, co[base + b * 16]);
+			mr_code[cd + b] = c;
+			if c != 0 { has = 1; }
+		}
+		nzl = setb(nzl, y, l);
+	}
+	for ch in 2 {
+		for y in 2 {
+			var l = (nzl >> (4 + 2 * ch + y)) & 1;
+			for x in 2 {
+				let b = 256 + ch * 64 + (y * 2 + x) * 16;
+				let nz = coeffs(tp, 2, l + ((nzt >> (4 + 2 * ch + x)) & 1), dq[q + 4], dq[q + 5], 0, base + b);
+				l = if nz > 0 { 1 } else { 0 };
+				nzt = setb(nzt, 4 + 2 * ch + x, l);
+				let c = codeof(nz, co[base + b]);
+				mr_code[cd + 16 + ch * 4 + y * 2 + x] = c;
+				if c != 0 { has = 1; }
+			}
+			nzl = setb(nzl, 4 + 2 * ch + y, l);
+		}
+	}
+	nz_top[mx] = nzt;
+	nz_left = nzl;
+	mr_has[mx] = has;
+	if bd_eof[tp] != 0 { return fail("truncated token data"); }
+	true
+}
+=== 402064b860ff1806
+var wk int[832] = [0; 832];
+var top_y int[>..];
+var top_u int[>..];
+var top_v int[>..];
+var pl byte[>..];
+var ysz int = 0;
+var usz int = 0;
+fn recon_row(my int) {
+	for j in 16 { wk[40 + j * 32 - 1] = 129; }
+	for j in 8 {
+		wk[584 + j * 32 - 1] = 129;
+		wk[600 + j * 32 - 1] = 129;
+	}
+	if my > 0 {
+		wk[7] = 129;
+		wk[551] = 129;
+		wk[567] = 129;
+	} else {
+		for i in 21 { wk[7 + i] = 127; }
+		for i in 9 {
+			wk[551 + i] = 127;
+			wk[567 + i] = 127;
+		}
+	}
+	let ys = mb_w * 16;
+	let cs = mb_w * 8;
+	for mx in mb_w {
+		if mx > 0 {
+			for j in 17 {
+				let jj = j - 1;
+				for k in 4 { wk[40 + jj * 32 - 4 + k] = wk[40 + jj * 32 + 12 + k]; }
+			}
+			for j in 9 {
+				let jj = j - 1;
+				for k in 4 {
+					wk[584 + jj * 32 - 4 + k] = wk[584 + jj * 32 + 4 + k];
+					wk[600 + jj * 32 - 4 + k] = wk[600 + jj * 32 + 4 + k];
+				}
+			}
+		}
+		if my > 0 {
+			for k in 16 { wk[8 + k] = top_y[mx * 16 + k]; }
+			for k in 8 {
+				wk[552 + k] = top_u[mx * 8 + k];
+				wk[568 + k] = top_v[mx * 8 + k];
+			}
+		}
+		let cd = mx * 24;
+		let cb = mx * 384;
+		if mr_i4[mx] != 0 {
+			if my > 0 {
+				if mx >= mb_w - 1 {
+					for k in 4 { wk[24 + k] = top_y[mx * 16 + 15]; }
+				} else {
+					for k in 4 { wk[24 + k] = top_y[(mx + 1) * 16 + k]; }
+				}
+			}
+			for r in 3 {
+				for k in 4 { wk[24 + 128 * (r + 1) + k] = wk[24 + k]; }
+			}
+			for n in 16 {
+				let o = 40 + 4 * (n & 3) + 128 * (n >> 2);
+				pred4(o, mr_sub[mx * 16 + n]);
+				dotrans(mr_code[cd + n], cb + 16 * n, o);
+			}
+		} else {
+			pred_big(40, 16, mr_ym[mx], my > 0, mx > 0);
+			for n in 16 { dotrans(mr_code[cd + n], cb + 16 * n, 40 + 4 * (n & 3) + 128 * (n >> 2)); }
+		}
+		pred_big(584, 8, mr_cm[mx], my > 0, mx > 0);
+		pred_big(600, 8, mr_cm[mx], my > 0, mx > 0);
+		uvtrans(cd + 16, cb + 256, 584);
+		uvtrans(cd + 20, cb + 320, 600);
+		if my < mb_h - 1 {
+			for k in 16 { top_y[mx * 16 + k] = wk[40 + 15 * 32 + k]; }
+			for k in 8 {
+				top_u[mx * 8 + k] = wk[584 + 7 * 32 + k];
+				top_v[mx * 8 + k] = wk[600 + 7 * 32 + k];
+			}
+		}
+		for j in 16 {
+			for k in 16 { pl[(my * 16 + j) * ys + mx * 16 + k] = wk[40 + j * 32 + k] as byte; }
+		}
+		for j in 8 {
+			for k in 8 {
+				pl[ysz + (my * 8 + j) * cs + mx * 8 + k] = wk[584 + j * 32 + k] as byte;
+				pl[ysz + usz + (my * 8 + j) * cs + mx * 8 + k] = wk[600 + j * 32 + k] as byte;
+			}
+		}
+	}
+}
+=== -6594ee0d5af7aa7a
+fn pred_big(o int, s int, mode int, tp bool, lf bool) {
+	if mode == 0 {
+		var dc = 128;
+		if tp || lf {
+			var sum = 0;
+			if tp { for i in s { sum += wk[o - 32 + i]; } }
+			if lf { for i in s { sum += wk[o - 1 + 32 * i]; } }
+			let lg = if s == 16 { 5 } else { 4 };
+			dc = if tp && lf { (sum + s) >> lg } else { (sum + (s >> 1)) >> (lg - 1) };
+		}
+		for j in s {
+			for i in s { wk[o + 32 * j + i] = dc; }
+		}
+	} else if mode == 1 {
+		let tl = wk[o - 33];
+		for j in s {
+			let l = wk[o + 32 * j - 1];
+			for i in s { wk[o + 32 * j + i] = clampb(l + wk[o - 32 + i] - tl); }
+		}
+	} else if mode == 2 {
+		for j in s {
+			for i in s { wk[o + 32 * j + i] = wk[o - 32 + i]; }
+		}
+	} else {
+		for j in s {
+			let l = wk[o + 32 * j - 1];
+			for i in s { wk[o + 32 * j + i] = l; }
+		}
+	}
+}
+fn nb(o int, n int) int {
+	if n < 4 { wk[o - 1 + 32 * n] } else if n == 4 { wk[o - 33] } else { wk[o - 32 + n - 5] }
+}
+fn pred4(o int, mode int) {
+	if mode == 0 {
+		var dc = 4;
+		for i in 4 { dc += wk[o - 32 + i] + wk[o - 1 + 32 * i]; }
+		dc = dc >> 3;
+		for j in 4 {
+			for i in 4 { wk[o + 32 * j + i] = dc; }
+		}
+	} else if mode == 1 {
+		let tl = wk[o - 33];
+		for j in 4 {
+			let l = wk[o + 32 * j - 1];
+			for i in 4 { wk[o + 32 * j + i] = clampb(l + wk[o - 32 + i] - tl); }
+		}
+	} else {
+		for y in 4 {
+			for x in 4 {
+				let e = PRED4[(mode - 2) * 16 + x + 4 * y];
+				let k = e >> 12;
+				let a = nb(o, (e >> 8) & 15);
+				var v = a;
+				if k == 2 {
+					v = (a + nb(o, (e >> 4) & 15) + 1) >> 1;
+				} else if k == 3 {
+					v = (a + 2 * nb(o, (e >> 4) & 15) + nb(o, e & 15) + 2) >> 2;
+				}
+				wk[o + 32 * y + x] = v;
+			}
+		}
+	}
+}
+=== 5d41713f7baaec0c
+fn m1(a int) int { ((a * 20091) >> 16) + a }
+fn m2(a int) int { (a * 35468) >> 16 }
+fn wadd(p int, v int) { wk[p] = clampb(wk[p] + v); }
+fn idct(cb int, o int) {
+	var tmp int[16] = [0; 16];
+	for i in 4 {
+		let a = co[cb + i] + co[cb + 8 + i];
+		let b = co[cb + i] - co[cb + 8 + i];
+		let c = m2(co[cb + 4 + i]) - m1(co[cb + 12 + i]);
+		let d = m1(co[cb + 4 + i]) + m2(co[cb + 12 + i]);
+		tmp[4 * i] = a + d;
+		tmp[4 * i + 1] = b + c;
+		tmp[4 * i + 2] = b - c;
+		tmp[4 * i + 3] = a - d;
+	}
+	for i in 4 {
+		let dc = tmp[i] + 4;
+		let a = dc + tmp[8 + i];
+		let b = dc - tmp[8 + i];
+		let c = m2(tmp[4 + i]) - m1(tmp[12 + i]);
+		let d = m1(tmp[4 + i]) + m2(tmp[12 + i]);
+		let p = o + 32 * i;
+		wadd(p, (a + d) >> 3);
+		wadd(p + 1, (b + c) >> 3);
+		wadd(p + 2, (b - c) >> 3);
+		wadd(p + 3, (a - d) >> 3);
+	}
+}
+fn dcadd(cb int, o int) {
+	let dc = (co[cb] + 4) >> 3;
+	for j in 4 {
+		for i in 4 { wadd(o + 32 * j + i, dc); }
+	}
+}
+fn dotrans(code int, cb int, o int) {
+	if code >= 2 {
+		idct(cb, o);
+	} else if code == 1 {
+		dcadd(cb, o);
+	}
+}
+fn uvtrans(cd int, cb int, o int) {
+	var any = 0;
+	var big = 0;
+	for k in 4 {
+		let c = mr_code[cd + k];
+		if c != 0 { any = 1; }
+		if c >= 2 { big = 1; }
+	}
+	if any == 0 { return; }
+	for k in 4 {
+		let po = o + 4 * (k & 1) + 128 * (k >> 1);
+		if big == 1 {
+			idct(cb + 16 * k, po);
+		} else if co[cb + 16 * k] != 0 {
+			dcadd(cb + 16 * k, po);
+		}
+	}
+}
+=== -663e452454849d1f
+var f_seg int[>..];
+var f_i4 int[>..];
+var f_has int[>..];
+var fs_lim int[8] = [0; 8];
+var fs_il int[8] = [0; 8];
+var fs_hev int[8] = [0; 8];
+fn s1(v int) int { if v < -128 { -128 } else if v > 127 { 127 } else { v } }
+fn s2(v int) int { if v < -16 { -16 } else if v > 15 { 15 } else { v } }
+fn put(o int, v int) { pl[o] = clampb(v) as byte; }
+fn two(o int, st int, p1 int, p0 int, q0 int, q1 int) {
+	let a = 3 * (q0 - p0) + s1(p1 - q1);
+	let a1 = s2((a + 4) >> 3);
+	let a2 = s2((a + 3) >> 3);
+	put(o - st, p0 + a2);
+	put(o, q0 - a1);
+}
+fn four(o int, st int, p1 int, p0 int, q0 int, q1 int) {
+	let a = 3 * (q0 - p0);
+	let a1 = s2((a + 4) >> 3);
+	let a2 = s2((a + 3) >> 3);
+	let a3 = (a1 + 1) >> 1;
+	put(o - 2 * st, p1 + a3);
+	put(o - st, p0 + a2);
+	put(o, q0 - a1);
+	put(o + st, q1 - a3);
+}
+fn six(o int, st int) {
+	let p2 int = pl[o - 3 * st];
+	let p1 int = pl[o - 2 * st];
+	let p0 int = pl[o - st];
+	let q0 int = pl[o];
+	let q1 int = pl[o + st];
+	let q2 int = pl[o + 2 * st];
+	let a = s1(3 * (q0 - p0) + s1(p1 - q1));
+	let a1 = (27 * a + 63) >> 7;
+	let a2 = (18 * a + 63) >> 7;
+	let a3 = (9 * a + 63) >> 7;
+	put(o - 3 * st, p2 + a3);
+	put(o - 2 * st, p1 + a2);
+	put(o - st, p0 + a1);
+	put(o, q0 - a1);
+	put(o + st, q1 - a2);
+	put(o + 2 * st, q2 - a3);
+}
+fn edge(pos int, step int, lstep int, cnt int, thr int, il int, hv int, kind int) {
+	let t2 = 2 * thr + 1;
+	for i in cnt {
+		let o = pos + i * lstep;
+		let p1 int = pl[o - 2 * step];
+		let p0 int = pl[o - step];
+		let q0 int = pl[o];
+		let q1 int = pl[o + step];
+		if 4 * abs(p0 - q0) + abs(p1 - q1) > t2 { continue; }
+		if kind == 0 {
+			two(o, step, p1, p0, q0, q1);
+			continue;
+		}
+		let p3 int = pl[o - 4 * step];
+		let p2 int = pl[o - 3 * step];
+		let q2 int = pl[o + 2 * step];
+		let q3 int = pl[o + 3 * step];
+		if abs(p3 - p2) > il || abs(p2 - p1) > il || abs(p1 - p0) > il || abs(q3 - q2) > il || abs(q2 - q1) > il || abs(q1 - q0) > il { continue; }
+		if abs(p1 - p0) > hv || abs(q1 - q0) > hv {
+			two(o, step, p1, p0, q0, q1);
+		} else if kind == 1 {
+			six(o, step);
+		} else {
+			four(o, step, p1, p0, q0, q1);
+		}
+	}
+}
+fn fprep() {
+	for s in 4 {
+		for i4 in 2 {
+			var lvl = fl_level;
+			if seg_on {
+				lvl = seg_f[s];
+				if !abs_d { lvl += fl_level; }
+			}
+			if fl_deltas {
+				lvl += ref_d[0];
+				if i4 == 1 { lvl += mode_d[0]; }
+			}
+			lvl = clampm(lvl, 63);
+			let k = s * 2 + i4;
+			if lvl > 0 {
+				var il = lvl;
+				if fl_sharp > 0 {
+					il = if fl_sharp > 4 { il >> 2 } else { il >> 1 };
+					if il > 9 - fl_sharp { il = 9 - fl_sharp; }
+				}
+				if il < 1 { il = 1; }
+				fs_il[k] = il;
+				fs_lim[k] = 2 * lvl + il;
+				fs_hev[k] = if lvl >= 40 { 2 } else if lvl >= 15 { 1 } else { 0 };
+			} else {
+				fs_lim[k] = 0;
+			}
+		}
+	}
+}
+fn loop_filter() {
+	let ys = mb_w * 16;
+	let cs = mb_w * 8;
+	for my in mb_h {
+		for mx in mb_w {
+			let idx = my * mb_w + mx;
+			let i4 = f_i4[idx];
+			let k = f_seg[idx] * 2 + i4;
+			let lim = fs_lim[k];
+			if lim == 0 { continue; }
+			let il = fs_il[k];
+			let hv = fs_hev[k];
+			let inner = i4 != 0 || f_has[idx] != 0;
+			let yp = my * 16 * ys + mx * 16;
+			let up = ysz + my * 8 * cs + mx * 8;
+			let vp = up + usz;
+			if ftype == 1 {
+				if mx > 0 { edge(yp, 1, ys, 16, lim + 4, il, hv, 0); }
+				if inner {
+					for e in 1..4 { edge(yp + 4 * e, 1, ys, 16, lim, il, hv, 0); }
+				}
+				if my > 0 { edge(yp, ys, 1, 16, lim + 4, il, hv, 0); }
+				if inner {
+					for e in 1..4 { edge(yp + 4 * e * ys, ys, 1, 16, lim, il, hv, 0); }
+				}
+			} else {
+				if mx > 0 {
+					edge(yp, 1, ys, 16, lim + 4, il, hv, 1);
+					edge(up, 1, cs, 8, lim + 4, il, hv, 1);
+					edge(vp, 1, cs, 8, lim + 4, il, hv, 1);
+				}
+				if inner {
+					for e in 1..4 { edge(yp + 4 * e, 1, ys, 16, lim, il, hv, 2); }
+					edge(up + 4, 1, cs, 8, lim, il, hv, 2);
+					edge(vp + 4, 1, cs, 8, lim, il, hv, 2);
+				}
+				if my > 0 {
+					edge(yp, ys, 1, 16, lim + 4, il, hv, 1);
+					edge(up, cs, 1, 8, lim + 4, il, hv, 1);
+					edge(vp, cs, 1, 8, lim + 4, il, hv, 1);
+				}
+				if inner {
+					for e in 1..4 { edge(yp + 4 * e * ys, ys, 1, 16, lim, il, hv, 2); }
+					edge(up + 4 * cs, cs, 1, 8, lim, il, hv, 2);
+					edge(vp + 4 * cs, cs, 1, 8, lim, il, hv, 2);
+				}
+			}
+		}
+	}
+}
+=== 21f10e80432c139e
+var up_u int[>..];
+var up_v int[>..];
+fn g(i int) int { let v int = pl[i]; v }
+fn mh(v int, k int) int { (v * k) >> 8 }
+fn clip8c(v int) int { if v >= 0 && v <= 16383 { v >> 6 } else if v < 0 { 0 } else { 255 } }
+fn upsample(pb int, nr int, fr int, dst int[>..]&) {
+	let cs = mb_w * 8;
+	let n = pb + nr * cs;
+	let f = pb + fr * cs;
+	dst[0] = (3 * g(n) + g(f) + 2) >> 2;
+	let last = (width - 1) >> 1;
+	for i in 1..(last + 1) {
+		let a = g(n + i - 1);
+		let b = g(n + i);
+		let c = g(f + i - 1);
+		let d = g(f + i);
+		let s = a + b + c + d + 8;
+		dst[2 * i - 1] = (((s + 2 * (b + c)) >> 3) + a) >> 1;
+		dst[2 * i] = (((s + 2 * (a + d)) >> 3) + b) >> 1;
+	}
+	if (width & 1) == 0 { dst[width - 1] = (3 * g(n + last) + g(f + last) + 2) >> 2; }
+}
+fn to_rgba(px byte[>..]&) {
+	px.clear();
+	px.resize(width * height * 4, 0);
+	up_u.clear();
+	up_u.resize(width, 0);
+	up_v.clear();
+	up_v.resize(width, 0);
+	let ch = (height + 1) >> 1;
+	let ys = mb_w * 16;
+	for r in height {
+		var near = r >> 1;
+		var far = if (r & 1) == 1 { (r + 1) >> 1 } else { (r >> 1) - 1 };
+		if far < 0 { far = 0; }
+		if far > ch - 1 { far = ch - 1; }
+		if near > ch - 1 { near = ch - 1; }
+		upsample(ysz, near, far, up_u);
+		upsample(ysz + usz, near, far, up_v);
+		for x in width {
+			let y = mh(g(r * ys + x), 19077);
+			let u = up_u[x];
+			let v = up_v[x];
+			let o = (r * width + x) * 4;
+			px[o] = clip8c(y + mh(v, 26149) - 14234) as byte;
+			px[o + 1] = clip8c(y - mh(u, 6419) - mh(v, 13320) + 8708) as byte;
+			px[o + 2] = clip8c(y + mh(u, 33050) - 17685) as byte;
+			px[o + 3] = 255 as byte;
+		}
+	}
+}
+=== 08b1427e898bf600
+var al int[>..];
+fn alpha(px byte[>..]&) bool {
+	if alph_at < 0 || alph_len < 2 { return false; }
+	let hd = sb(alph_at);
+	let method = hd & 3;
+	let filter = (hd >> 2) & 3;
+	let pre = (hd >> 4) & 3;
+	let rsv = hd >> 6;
+	if method > 1 || pre > 1 || rsv != 0 { return false; }
+	let n = width * height;
+	al.clear();
+	if method == 0 {
+		if alph_len - 1 < n { return false; }
+		for i in n { al.push(sb(alph_at + 1 + i)); }
+	} else {
+		lreset();
+		lbegin(alph_at + 1, alph_at + alph_len);
+		if !stream(width, height, true, argb) { return false; }
+		if argb.len != n { return false; }
+		for i in n { al.push((argb[i] >> 8) & 255); }
+	}
+	for y in height {
+		let o = y * width;
+		if filter == 0 { continue; }
+		if y == 0 || filter == 1 {
+			var pred = if y == 0 { 0 } else { al[o - width] };
+			for x in width {
+				pred = (pred + al[o + x]) & 255;
+				al[o + x] = pred;
+			}
+		} else if filter == 2 {
+			for x in width { al[o + x] = (al[o + x] + al[o - width + x]) & 255; }
+		} else {
+			var left = al[o - width];
+			var tl = left;
+			for x in width {
+				let top = al[o - width + x];
+				left = (al[o + x] + clampb(left + top - tl)) & 255;
+				tl = top;
+				al[o + x] = left;
+			}
+		}
+	}
+	for i in n { px[4 * i + 3] = al[i] as byte; }
+	true
+}
+=== 4902c6c988bbeac6
+fn rz(a int[>..]&, n int) {
+	a.clear();
+	a.resize(n, 0);
+}
+fn vp8(px byte[>..]&) bool {
+	if !vp8_head() { return false; }
+	rz(mr_seg, mb_w);
+	rz(mr_skip, mb_w);
+	rz(mr_i4, mb_w);
+	rz(mr_ym, mb_w);
+	rz(mr_cm, mb_w);
+	rz(mr_sub, mb_w * 16);
+	rz(top_m, mb_w * 4);
+	rz(nz_top, mb_w);
+	rz(dnz_top, mb_w);
+	rz(mr_code, mb_w * 24);
+	rz(mr_has, mb_w);
+	rz(co, mb_w * 384 + 16);
+	rz(top_y, mb_w * 16);
+	rz(top_u, mb_w * 8);
+	rz(top_v, mb_w * 8);
+	rz(f_seg, mb_w * mb_h);
+	rz(f_i4, mb_w * mb_h);
+	rz(f_has, mb_w * mb_h);
+	ysz = mb_w * 16 * mb_h * 16;
+	usz = mb_w * 8 * mb_h * 8;
+	pl.clear();
+	pl.resize(ysz + 2 * usz, 0);
+	for my in mb_h {
+		if !modes_row() { return false; }
+		nz_left = 0;
+		dnz_left = 0;
+		let tp = 1 + (my & (nparts - 1));
+		for mx in mb_w {
+			if !resid(mx, tp) { return false; }
+			let idx = my * mb_w + mx;
+			f_seg[idx] = mr_seg[mx];
+			f_i4[idx] = mr_i4[mx];
+			f_has[idx] = mr_has[mx];
+		}
+		recon_row(my);
+	}
+	if ftype > 0 {
+		fprep();
+		loop_filter();
+	}
+	to_rgba(px);
+	if has_alpha && !alpha(px) { return fail("bad alpha"); }
+	true
+}
+=== 5047d7c7312fce0a
+fn is_webp(b const byte[:]) bool {
+	b.len >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P'
+}
+fn load(data const byte[:]) {
+	src.clear();
+	src.append(data);
+}
+fn size(b const byte[:]) int, int, bool {
+	load(b);
+	let ok = parse();
+	if ok { return width, height, true; }
+	return 0, 0, false;
+}
+fn decode(data const byte[:], px byte[>..]&) int, int, bool {
+	px.clear();
+	load(data);
+	if !parse() { return 0, 0, false; }
+	let ok = if lossless { vp8l(px) } else { vp8(px) };
+	if !ok {
+		px.clear();
+		return 0, 0, false;
+	}
+	return width, height, true;
+}

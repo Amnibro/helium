@@ -7,6 +7,7 @@ layout(set = 2, binding = 3) uniform samplerCubeArray tex_env;
 layout(set = 2, binding = 4) uniform sampler2D tex_cloud;
 layout(set = 2, binding = 5) uniform sampler3D tex_noise;
 layout(set = 2, binding = 6) uniform sampler2DArrayShadow tex_local;
+layout(std430, set = 2, binding = 7) readonly buffer LightRecs { vec4 lrec[]; };
 layout(set = 3, binding = 0) uniform Fog {
 	mat4 inv_view_proj;
 	mat4 cascade_mat[3];
@@ -27,7 +28,6 @@ layout(set = 3, binding = 0) uniform Fog {
 	vec4 cl;
 	vec4 light_dir[16];
 	vec4 light_shd[16];
-	mat4 local_mat[12];
 	vec4 vol_pos[8];
 	vec4 vol_half[8];
 	vec4 vol_rgb[8];
@@ -45,13 +45,14 @@ float local_vis(vec4 sh, vec3 lp, vec3 p) {
 	if (sh.x < 0.0) return 1.0;
 	vec3 d = p - lp;
 	vec3 a = abs(d);
-	int layer = int(sh.x) + (sh.y > 1.5 ? (a.x >= a.y && a.x >= a.z ? (d.x > 0.0 ? 0 : 1) : (a.y >= a.z ? (d.y > 0.0 ? 2 : 3) : (d.z > 0.0 ? 4 : 5))) : 0);
-	vec4 s = local_mat[layer] * vec4(p, 1.0);
+	int fi = int(sh.x) + 5 * (sh.y > 1.5 ? (a.x >= a.y && a.x >= a.z ? (d.x > 0.0 ? 0 : 1) : (a.y >= a.z ? (d.y > 0.0 ? 2 : 3) : (d.z > 0.0 ? 4 : 5))) : 0);
+	vec4 s = mat4(lrec[fi], lrec[fi + 1], lrec[fi + 2], lrec[fi + 3]) * vec4(p, 1.0);
 	if (s.w <= 0.0) return 1.0;
 	vec3 ndc = s.xyz / s.w;
 	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
-	return texture(tex_local, vec4(uv, float(layer), ndc.z));
+	vec4 rc = lrec[fi + 4];
+	return texture(tex_local, vec4(rc.xy + uv * rc.z, 0.0, ndc.z));
 }
 vec4 vol_at(vec3 p) {
 	vec4 o = vec4(0.0);
