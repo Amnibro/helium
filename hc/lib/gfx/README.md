@@ -3979,6 +3979,12 @@ largest coordinate, because the intersection is only as precise as the triangle'
   (1 / cos t + 1 / cos ts)) S (1 - Fs) cos s / (pi 1.33^2), where s and ts are the sun's angle
   in air and in water. Bars: total within 0.1 %, every pixel within 2 %. Controls that must
   fail: the sun x 1.01, absorption x 1.05.
+* **P9 sea lift.** `from_scene()` lifts the sea's vertices on the GPU with `sea_wave()` from
+  water.glsl, the function the realtime vertex shader uses, so the traced sea is the drawn
+  sea in any engine copy. 4096 points on a 64 x 64 grid over 200 m x 200 m around (37, -51),
+  waves (0.35, 0.045, 1.0) at time 17.3: every lifted height must be within 0.1 mm of a
+  double-precision sum of the same waves, and x and z must not move. Control that must fail:
+  the reference at time + 0.01 s.
 
 ### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
