@@ -119,12 +119,9 @@ struct Groom {
 	drawn int = 0,
 	filled int = -1,
 }
-=== 32181930edbc4ece
+=== 4955e5f47c1f1f24
 let RW = gfx::BUFFER_COMPUTE_READ | gfx::BUFFER_COMPUTE_WRITE;
 let RD = gfx::BUFFER_COMPUTE_READ;
-fn ident() gfx::mat4 {
-	gfx::mat4 { c0: float4 { 1.0, 0.0, 0.0, 0.0 }, c1: float4 { 0.0, 1.0, 0.0, 0.0 }, c2: float4 { 0.0, 0.0, 1.0, 0.0 }, c3: float4 { 0.0, 0.0, 0.0, 1.0 } }
-}
 var grooms Groom[>..];
 var simv float4[>..];
 var part_node int[>..];
@@ -153,8 +150,9 @@ var skin_p gfx::ComputePipeline;
 var sim_p gfx::ComputePipeline;
 var sdf_p gfx::ComputePipeline;
 var cast_p gfx::ComputePipeline;
-var raw byte[>..];
-var us HairU[>..];
+var export_p gfx::ComputePipeline;
+var raw byte[>..] = [];
+var us HairU[>..] = [];
 === -6d1ad9050aa68803
 fn mel_of(c float3, bn f32) float2 {
 	let x = bn as real;
@@ -188,7 +186,7 @@ fn mel_of(c float3, bn f32) float2 {
 	}
 	float2 { e as f32, p as f32 }
 }
-=== -19d0a99b4467d438
+=== 77682ae25324879e
 fn ready() {
 	if made { return; }
 	made = true;
@@ -201,6 +199,7 @@ fn ready() {
 	sim_p = gfx::compute_pipeline(embed_shader("shaders/strand_sim.comp"));
 	sdf_p = gfx::compute_pipeline(embed_shader("shaders/strand_sdf.comp"));
 	cast_p = gfx::compute_pipeline(embed_shader("shaders/strand_cast.comp"));
+	export_p = gfx::compute_pipeline(embed_shader("shaders/strand_export.comp"));
 }
 === 0810e01be5d9549b
 fn size(nw int, nh int) {
@@ -243,6 +242,9 @@ fn valid(data const byte[:]) bool {
 	true
 }
 === 012ecdd5bbddca85
+fn ident() gfx::mat4 {
+	gfx::mat4 { c0: float4 { 1.0, 0.0, 0.0, 0.0 }, c1: float4 { 0.0, 1.0, 0.0, 0.0 }, c2: float4 { 0.0, 0.0, 1.0, 0.0 }, c3: float4 { 0.0, 0.0, 0.0, 1.0 } }
+}
 fn load(data const byte[:], strands int) int {
 	if !valid(data) { return -1; }
 	ready();
@@ -943,6 +945,38 @@ fn raster_pass(g int, mode int, k int, base HairU) {
 	let ny = max(1, ceil((gr.strands as real) * (u.ext.w as real)) as int);
 	gfx::dispatch((gr.segments + 63) / 64, ny, 1);
 	gfx::end_compute();
+}
+=== 35938bd0c8cb42de
+fn fibers(g int, m int, k int, fib f32[>..]&, box f32[>..]&) bool {
+	if !live(g) { return false; }
+	let gr .= grooms[g];
+	var u = uniforms_of(g);
+	u.ext.w = 1.0;
+	u.look = float4 { m as f32, k as f32, 0.0, 0.0 };
+	u.light_vp = gr.model;
+	let n = gr.segments * gr.strands;
+	let f = gfx::buffer(RW, n*48, []);
+	let b = gfx::buffer(RW, n*k*24, []);
+	gfx::begin_compute([f, b]);
+	gfx::bind(export_p);
+	put_uniform(u);
+	gfx::bind_storage_buffer(gfx::COMPUTE, 0, gr.pts);
+	gfx::bind_storage_buffer(gfx::COMPUTE, 1, gr.segs);
+	gfx::dispatch((gr.segments + 63) / 64, gr.strands, 1);
+	gfx::end_compute();
+	fib.clear();
+	box.clear();
+	var rf byte[>..] = [];
+	var rb byte[>..] = [];
+	rf.resize(n*48, 0);
+	rb.resize(n*k*24, 0);
+	let ok1 = gfx::read_buffer(f, 0, rf);
+	let ok2 = gfx::read_buffer(b, 0, rb);
+	for i in n*12 { fib.push(f32_at(rf, 4*i)); }
+	for i in n*k*6 { box.push(f32_at(rb, 4*i)); }
+	gfx::release(f);
+	gfx::release(b);
+	ok1 && ok2
 }
 === 03c2b0f3476f0f45
 fn track(g int) {

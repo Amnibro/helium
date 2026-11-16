@@ -1127,7 +1127,9 @@ genbinop(op int, line int, a0 int, at0 int, b0 int, bt0 int) Val:
 	a, at2, b, bt2 := balance(line, a0, at, b0, bt)
 	ek := TY[elty(at2)].k; fl := ek == T_FLOAT; sg := ek == T_INT; rt ~= at2; oc ~= 0
 	if op == '+' { oc = if fl { SOP_FADD } else { SOP_IADD } } else if op == '-' { oc = if fl { SOP_FSUB } else { SOP_ISUB } } else if op == '*' { oc = if fl { SOP_FMUL } else { SOP_IMUL } } else if op == '/' { oc = if fl { SOP_FDIV } else if sg { SOP_SDIV } else { SOP_UDIV } } else if op == '%' { oc = if fl { SOP_FMOD } else if sg { SOP_SMOD } else { SOP_UMOD } } else if op == '&' { oc = SOP_BITWISEAND } else if op == '|' { oc = SOP_BITWISEOR } else if op == '^' { oc = SOP_BITWISEXOR } else if op == P_SHL { oc = SOP_SHIFTLEFTLOGICAL } else if op == P_SHR { oc = if sg { SOP_SHIFTRIGHTARITHMETIC } else { SOP_SHIFTRIGHTLOGICAL } } else if op == '<' { oc = if fl { SOP_FORDLESSTHAN } else if sg { SOP_SLESSTHAN } else { SOP_ULESSTHAN }; rt = TBOOL } else if op == '>' { oc = if fl { SOP_FORDGREATERTHAN } else if sg { SOP_SGREATERTHAN } else { SOP_UGREATERTHAN }; rt = TBOOL } else if op == P_LE { oc = if fl { SOP_FORDLESSTHANEQUAL } else if sg { SOP_SLESSTHANEQUAL } else { SOP_ULESSTHANEQUAL }; rt = TBOOL } else if op == P_GE { oc = if fl { SOP_FORDGREATERTHANEQUAL } else if sg { SOP_SGREATERTHANEQUAL } else { SOP_UGREATERTHANEQUAL }; rt = TBOOL } else if op == P_EQ { oc = if fl { SOP_FORDEQUAL } else { SOP_IEQUAL }; rt = TBOOL } else if op == P_NE { oc = if fl { SOP_FUNORDNOTEQUAL } else { SOP_INOTEQUAL }; rt = TBOOL } else { serr(line, "unsupported binary operator") }
-	if rt == TBOOL && isvec(at2): serr(line, "comparison operators require scalar operands (use lessThan()/equal() for vectors)")
+	if rt == TBOOL && isvec(at2):
+		if op != P_EQ && op != P_NE: serr(line, "comparison operators require scalar operands (use lessThan()/equal() for vectors)")
+		c := nid(); emit4(SBODY, oc, tyid(TBVEC[TY[at2].cols - 2]), c, a, b); r := nid(); emit3(SBODY, if op == P_EQ { SOP_ALL } else { SOP_ANY }, tyid(TBOOL), r, c); return rv(TBOOL, r)
 	if (op == '&' || op == '|' || op == '^' || op == P_SHL || op == P_SHR) && fl: serr(line, "bitwise operators require integer operands")
 	r := nid(); t := tyid(rt); emit4(SBODY, oc, t, r, a, b); rv(rt, r)
 cbaseop(p int) int: if p == P_ADDA { '+' } else if p == P_SUBA { '-' } else if p == P_MULA { '*' } else if p == P_DIVA { '/' } else if p == P_MODA { '%' } else if p == P_ANDA { '&' } else if p == P_ORA { '|' } else if p == P_XORA { '^' } else if p == P_SHLA { P_SHL } else if p == P_SHRA { P_SHR } else { 0 }
@@ -1233,7 +1235,7 @@ initins():
 	for n, i ["barrier", "memoryBarrier", "memoryBarrierShared", "memoryBarrierBuffer", "groupMemoryBarrier"]: addin(n, I_BARRIER, i, 0, 0, 0, 0)
 	addin("atomicAdd", I_ATOMIC, SOP_ATOMICIADD, 0, 0, 2, 0); addin("atomicMin", I_ATOMIC, 0, SOP_ATOMICSMIN, SOP_ATOMICUMIN, 2, 0); addin("atomicMax", I_ATOMIC, 0, SOP_ATOMICSMAX, SOP_ATOMICUMAX, 2, 0)
 	addin("atomicAnd", I_ATOMIC, SOP_ATOMICAND, 0, 0, 2, 0); addin("atomicOr", I_ATOMIC, SOP_ATOMICOR, 0, 0, 2, 0); addin("atomicXor", I_ATOMIC, SOP_ATOMICXOR, 0, 0, 2, 0); addin("atomicExchange", I_ATOMIC, SOP_ATOMICEXCHANGE, 0, 0, 2, 0); addin("atomicCompSwap", I_ATOMIC, SOP_ATOMICCOMPAREEXCHANGE, 0, 0, 3, 1)
-	for n, i ["rayQueryInitializeEXT", "rayQueryProceedEXT", "rayQueryTerminateEXT", "rayQueryConfirmIntersectionEXT", "rayQueryGetRayTMinEXT", "rayQueryGetRayFlagsEXT", "rayQueryGetWorldRayDirectionEXT", "rayQueryGetWorldRayOriginEXT", "rayQueryGetIntersectionTypeEXT", "rayQueryGetIntersectionTEXT", "rayQueryGetIntersectionInstanceCustomIndexEXT", "rayQueryGetIntersectionInstanceIdEXT", "rayQueryGetIntersectionGeometryIndexEXT", "rayQueryGetIntersectionPrimitiveIndexEXT", "rayQueryGetIntersectionBarycentricsEXT", "rayQueryGetIntersectionFrontFaceEXT"]: addin(n, I_RQ, [4473, 4477, 4474, 4476, 6016, 6017, 6029, 6030, 4479, 6018, 6019, 6020, 6022, 6023, 6024, 6025][i], 0, 0, if i == 0 { 8 } else if i < 8 { 1 } else { 2 }, 0)
+	for n, i ["rayQueryInitializeEXT", "rayQueryProceedEXT", "rayQueryTerminateEXT", "rayQueryConfirmIntersectionEXT", "rayQueryGetRayTMinEXT", "rayQueryGetRayFlagsEXT", "rayQueryGetWorldRayDirectionEXT", "rayQueryGetWorldRayOriginEXT", "rayQueryGetIntersectionTypeEXT", "rayQueryGetIntersectionTEXT", "rayQueryGetIntersectionInstanceCustomIndexEXT", "rayQueryGetIntersectionInstanceIdEXT", "rayQueryGetIntersectionGeometryIndexEXT", "rayQueryGetIntersectionPrimitiveIndexEXT", "rayQueryGetIntersectionBarycentricsEXT", "rayQueryGetIntersectionFrontFaceEXT", "rayQueryGenerateIntersectionEXT"]: addin(n, I_RQ, [4473, 4477, 4474, 4476, 6016, 6017, 6029, 6030, 4479, 6018, 6019, 6020, 6022, 6023, 6024, 6025, 4475][i], 0, 0, if i == 0 { 8 } else if i < 8 { 1 } else { 2 }, 0)
 	addin("imageLoad", I_IMAGE, 0, 0, 0, 2, 0); addin("imageStore", I_IMAGE, 1, 0, 0, 3, 0); addin("imageSize", I_IMAGE, 2, 0, 0, 1, 0)
 extinst(rt int, inst int, args const int[:]) int:
 	r := nid(); w int[>..] ~= [tyid(rt)]; w.push(r); w.push(GLSLEXT); w.push(inst); w.append(args); emitw(SBODY, SOP_EXTINST, w[..]); r
@@ -1310,6 +1312,7 @@ genintrin(e int, ii int) Val:
 			if TY[at].k != T_ACC: serr(line, str("'", fnn, "' requires an accelerationStructureEXT"))
 			emitw(SBODY, op, [q.id, acc, rvalas(a[2], TUINT), rvalas(a[3], TUINT), rvalas(a[4], TVEC[1]), rvalas(a[5], TFLOAT), rvalas(a[6], TVEC[1]), rvalas(a[7], TFLOAT)]); return rv(TVOID, 0)
 		if op == 4474 || op == 4476: emit1(SBODY, op, q.id); return rv(TVOID, 0)
+		if op == 4475: emitw(SBODY, op, [q.id, rvalas(a[1], TFLOAT)]); return rv(TVOID, 0)
 		rt := if op == 4477 || op == 6025 { TBOOL } else if op == 6016 || op == 6018 { TFLOAT } else if op == 6017 || op == 4479 { TUINT } else if op == 6024 { TVEC[0] } else if op == 6029 || op == 6030 { TVEC[1] } else { TINT }
 		r := nid(); w int[>..] ~= [tyid(rt), r, q.id]
 		if f.na == 2: if EX[a[1]].k != E_BOOL { serr(line, str("'", fnn, "' takes a constant true (committed) or false (candidate)")) } w.push(cint(if EX[a[1]].bv { 1 } else { 0 }))
@@ -2183,10 +2186,12 @@ recursive tpnode(e int, prec int):
 			sh := op == P_SHL || op == P_SHR
 			if TPW && sh && rt >= 0 && TY[elty(rt)].k == T_INT: rtg = vecty(TUINT, ncomp(rt))
 			wp := if !TPW { -1 } else if sh || op == '&' || op == '|' || op == '^' { 14 } else if mp == 9 || mp == 10 { 11 } else { -1 }
-			lp := if wp >= 0 { wp } else { mp }; rp := if wp >= 0 { wp } else { mp + 1 }
+			lp := if wp >= 0 { wp } else { mp }; rp := if wp >= 0 { wp } else { mp + 1 }; vq := (TPW || TPH || TPM) && (op == P_EQ || op == P_NE) && (lt >= 0 && TY[lt].k == T_VEC || rt >= 0 && TY[rt].k == T_VEC)
+			if vq: TPO.append(if op == P_EQ { "all(" } else { "any(" })
 			if ltg >= 0 { tpexprto(l, ltg, lp) } else { tpexpr(l, lp) }
 			format(TPO, " ", tpopstr(op), " ")
 			if rtg >= 0 { tpexprto(r, rtg, rp) } else { tpexpr(r, rp) }
+			if vq: TPO.push(')')
 		if pa: TPO.push(')')
 	else if k == E_COND:
 		if TPW:

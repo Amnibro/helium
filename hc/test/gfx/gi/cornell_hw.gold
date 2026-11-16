@@ -68,7 +68,7 @@ main():
 	cornell::build(); t f32[>..] ~= []; al f32[>..] ~= []
 	for x cornell::tris: t.push(x as f32)
 	for m cornell::tri_mat: al.append([cornell::albedo_r(m) as f32, cornell::albedo_g(m) as f32, cornell::albedo_b(m) as f32])
-	if YR.len != W * H || !hwrt::scene(t[..], true): print(if YR.len != W * H { "hwrt cornell: FAILED (reference is not 128 x 128)" } else { "hwrt cornell: skipped (no ray-query device)" }); return
+	if YR.len != W * H || !hwrt::scene(t[..], [], true): print(if YR.len != W * H { "hwrt cornell: FAILED (reference is not 128 x 128)" } else { "hwrt cornell: skipped (no ray-query device)" }); return
 	cpu := hwrt::is_cpu(); print(str("hwrt device: ", hwrt::name(), if cpu { " (CPU device: R4 and R5 reported, not gated)" } else { "" }))
 	md := mats(t[..], al[..]); tb := hwrt::buf(md.len * 4, 0x20, false); hwrt::put(tb, md[..]); ab := hwrt::buf(W * H * 32, 0x20, false); pb := hwrt::buf(64, 0x20, false)
 	ph := hwrt::pipe(embed_shader("cornell_hw.comp"), 3); ps := hwrt::pipe(embed_shader("cornell_sw.comp"), 5); nb, rb := bvh(t[..], al[..])
@@ -83,7 +83,7 @@ main():
 	pc, pc2 := pathp3(t[..], al[..], spp); ok = report("P3 control, light x 1.01", pc[..], pc2, false, 0.0) && ok; LS = 1.0
 	sp := pathtrace::ico(6); ce := [1.85, 2.45, 1.7]
 	for k sp.len / 9: for c 9 { t.push((ce[c % 3] + 0.6 * sp[k * 9 + c]) as f32) } al.append([0.73, 0.73, 0.73])
-	if !hwrt::scene(t[..], true): print("hwrt cornell: FAILED (heavy scene build)"); hwrt::done(); return
+	if !hwrt::scene(t[..], [], true): print("hwrt cornell: FAILED (heavy scene build)"); hwrt::done(); return
 	hd := mats(t[..], al[..]); tb2 := hwrt::buf(hd.len * 4, 0x20, false); hwrt::put(tb2, hd[..]); nb2, rb2 := bvh(t[..], al[..])
 	h5, th := render(ph, [tb2, ab, pb][..], ab, pb, 256, 1.0); w5, ts := render(ps, [tb2, ab, pb, nb2, rb2][..], ab, pb, 256, 1.0)
 	ratio := ts / th; dl := lum(h5[..]) / lum(w5[..]) - 1.0; r4 := ratio >= 2.0 && abs(dl) < 0.003

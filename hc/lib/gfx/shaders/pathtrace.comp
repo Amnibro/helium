@@ -10,9 +10,11 @@ layout(std430, set = 0, binding = 5) readonly buffer Par { vec4 par[]; };
 layout(std430, set = 0, binding = 6) readonly buffer Lit { vec4 lit[]; };
 layout(std430, set = 0, binding = 7) readonly buffer Sky { vec4 skyc[]; };
 layout(std430, set = 0, binding = 8) readonly buffer Cld { uint cld[]; };
+layout(std430, set = 0, binding = 9) readonly buffer Fib { vec4 fib[]; };
 #include "lighting.glsl"
 #include "ms.glsl"
 #include "water.glsl"
+#include "strand_shade.glsl"
 uint rs;
 vec2 suv;
 vec4 cl_tx(int x, int y) { int w = int(par[18].x); uint i = uint(clamp(y, 0, int(par[18].y) - 1) * w + clamp(x, 0, w - 1)) * 2u; return vec4(unpackHalf2x16(cld[i]), unpackHalf2x16(cld[i + 1u])); }
@@ -43,6 +45,10 @@ float cloud_t(vec3 p) {
 }
 int hit_p;
 vec2 hit_b;
+int hit_k;
+float hit_h;
+uint sk_st;
+uint sk_sg;
 uint hash(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }
 float rnd() { rs = rs * 747796405u + 2891336453u; uint w = ((rs >> ((rs >> 28u) + 4u)) ^ rs) * 277803737u; w = (w >> 22u) ^ w; return float(w >> 8u) * (1.0 / 16777216.0); }
 vec4 texel(uint t, int x, int y, int w, int h, bool srgb) {
@@ -65,19 +71,45 @@ vec4 tsamp(float tf, vec2 uv, bool srgb) {
 vec2 tuv(int q, vec2 b) { return vec2(tri[q].w, tri[q + 1].w) * (1.0 - b.x - b.y) + vec2(tri[q + 2].w, tri[q + 3].x) * b.x + tri[q + 3].yz * b.y; }
 bool pass_ok(int p, vec2 b) {
 	int q = p * 7;
-	int m = int(tri[q + 3].w) * 6;
+	int m = int(tri[q + 3].w) * 7;
 	vec4 mm = mat[m + 2];
 	if (mm.w < 0.5) return true;
 	float a = mat[m].a * tri[q + 6].a * tsamp(mat[m + 3].x, tuv(q, b), false).a;
 	return mm.w < 1.5 ? a >= mm.z : rnd() < a;
 }
+float fiber(vec3 o, vec3 d, int c, out float h) {
+	int k = int(par[21].x), i = c / k, j = c - i * k;
+	vec4 a = fib[i * 3], b = fib[i * 3 + 1];
+	if (floatBitsToUint(b.w) == sk_st && abs(int(floatBitsToUint(fib[i * 3 + 2].w)) - int(sk_sg)) <= 1) return -1.0;
+	vec3 T = b.xyz - a.xyz;
+	float ln = length(T);
+	T /= ln;
+	vec3 w = o - a.xyz, dp = d - T * dot(d, T), wp = w - T * dot(w, T);
+	float aa = dot(dp, dp);
+	if (aa < 1e-12) return -1.0;
+	float tc = -dot(wp, dp) / aa;
+	vec3 q = wp + dp * tc;
+	float e = a.w * a.w - dot(q, q);
+	if (e < 0.0) return -1.0;
+	float t = tc - sqrt(e / aa), s = dot(w + d * t, T);
+	h = clamp(dot(q, cross(T, d)) * inversesqrt(aa) / a.w, -1.0, 1.0);
+	return t > 0.0 && s >= ln * float(j) / float(k) && s <= ln * float(j + 1) / float(k) ? t : -1.0;
+}
 float trace(vec3 o, vec3 d, float tmax, bool any) {
 	rayQueryEXT q;
 	rayQueryInitializeEXT(q, tlas, any ? 4u : 0u, 255u, o, 0.0, d, tmax);
-	while (rayQueryProceedEXT(q)) { if (pass_ok(rayQueryGetIntersectionPrimitiveIndexEXT(q, false), rayQueryGetIntersectionBarycentricsEXT(q, false))) rayQueryConfirmIntersectionEXT(q); }
-	if (rayQueryGetIntersectionTypeEXT(q, true) == 0u) return -1.0;
+	float h;
+	while (rayQueryProceedEXT(q)) {
+		int c = rayQueryGetIntersectionPrimitiveIndexEXT(q, false);
+		if (rayQueryGetIntersectionTypeEXT(q, false) == 1u) { float t = fiber(o, d, c, h); if (t >= 0.0 && t <= (rayQueryGetIntersectionTypeEXT(q, true) == 0u ? tmax : rayQueryGetIntersectionTEXT(q, true))) rayQueryGenerateIntersectionEXT(q, t); }
+		else if (pass_ok(c, rayQueryGetIntersectionBarycentricsEXT(q, false))) rayQueryConfirmIntersectionEXT(q);
+	}
+	uint ty = rayQueryGetIntersectionTypeEXT(q, true);
+	if (ty == 0u) return -1.0;
 	hit_p = rayQueryGetIntersectionPrimitiveIndexEXT(q, true);
-	hit_b = rayQueryGetIntersectionBarycentricsEXT(q, true);
+	hit_k = -1;
+	if (ty == 2u) { hit_k = hit_p / int(par[21].x); if (!any) fiber(o, d, hit_p, hit_h); }
+	else hit_b = rayQueryGetIntersectionBarycentricsEXT(q, true);
 	return rayQueryGetIntersectionTEXT(q, true);
 }
 float offc(float p, float n) { int oi = int(256.0 * n); float pi = intBitsToFloat(floatBitsToInt(p) + (p < 0.0 ? -oi : oi)); return abs(p) < 0.03125 ? p + 0.0000152587890625 * n : pi; }
@@ -135,7 +167,7 @@ vec3 sunw(vec3 p, vec3 st, out vec3 wl) {
 	float t1 = trace(p, l, 1e30, false);
 	if (t1 < 0.0) return vec3(0.0);
 	int q = hit_p * 7;
-	if (mat[int(tri[q + 3].w) * 6 + 4].y < 0.5) return vec3(0.0);
+	if (mat[int(tri[q + 3].w) * 7 + 4].y < 0.5) return vec3(0.0);
 	vec3 s = p + l * t1;
 	vec3 nw = wnorm(q, hit_b, s);
 	vec3 gn = tri[q + 5].xyz;
@@ -159,15 +191,40 @@ vec3 cube(vec3 d) {
 	return mix(mix(cube_tx(f, i.x, i.y, n), cube_tx(f, i.x + 1, i.y, n), t.x), mix(cube_tx(f, i.x, i.y + 1, n), cube_tx(f, i.x + 1, i.y + 1, n), t.x), t.y).rgb * par[17].y;
 }
 vec3 env(vec3 d) { return par[11].x > 0.5 ? vec3(par[11].y) : par[17].x > 0.5 ? cube(d) : sky_color(d, normalize(par[6].xyz), par[8].rgb, par[9].rgb, par[10].rgb, par[7].rgb) * par[8].w; }
+struct Sh { vec3 n; vec3 gn; vec3 v; vec3 alb; vec3 f0; float f90; float rough; vec3 ms; vec3 kd; vec3 T; vec3 sig; float h; vec3 hm; bool fb; };
+vec3 ev(Sh s, vec3 l) { vec3 af; vec3 ab; float pd; return s.fb ? chiang(s.T, l, s.v, s.sig, s.h, s.hm.x, s.hm.y, s.hm.z, 0.0, af, ab, pd) : dot(s.gn, l) > 0.0 ? bsdf(s.n, s.v, l, s.alb, s.f0, s.f90, s.rough, s.ms, s.kd) : vec3(0.0); }
+vec3 direct(Sh s, vec3 p, vec3 po, bool inw, vec3 st) {
+	vec3 r = vec3(0.0);
+	if (par[7].w > 0.5 && inw) {
+		vec3 wl;
+		vec3 ew = sunw(po, st, wl);
+		r += ev(s, wl) * ew;
+	} else if (par[7].w > 0.5) {
+		vec3 ts = normalize(par[6].xyz);
+		vec3 b1;
+		vec3 b2;
+		onb(ts, b1, b2);
+		float ct = 1.0 - rnd() * (1.0 - par[6].w);
+		float sn = sqrt(max(0.0, 1.0 - ct * ct));
+		float ph = 6.28318530717959 * rnd();
+		vec3 l = b1 * (sn * cos(ph)) + b2 * (sn * sin(ph)) + ts * ct;
+		vec3 f = ev(s, l);
+		if (f != vec3(0.0) && trace(po, l, 1e30, true) < 0.0) r += f * par[7].rgb * cloud_t(p);
+	}
+	for (int i = 0; i < int(par[1].w); i++) {
+		vec3 dl = lit[i * 2].xyz - p;
+		float dd = length(dl);
+		vec3 l = dl / dd;
+		vec3 f = ev(s, l);
+		if (f != vec3(0.0) && trace(po, l, dd, true) < 0.0) r += f * (lit[i * 2 + 1].rgb * range_falloff(dd, lit[i * 2 + 1].w));
+	}
+	return r;
+}
 vec3 radiance(vec3 o, vec3 d) {
 	vec3 L = vec3(0.0);
 	vec3 tp = vec3(1.0);
 	int maxd = int(par[1].z);
-	int nli = int(par[1].w);
 	vec3 ts = normalize(par[6].xyz);
-	vec3 sb1;
-	vec3 sb2;
-	onb(ts, sb1, sb2);
 	bool inw = par[16].w > 0.5;
 	bool dl = true;
 	vec3 sa = par[14].rgb;
@@ -175,8 +232,11 @@ vec3 radiance(vec3 o, vec3 d) {
 	vec3 st = sa + ss;
 	bool scat = ss.x + ss.y + ss.z > 0.0;
 	float sd = par[7].w > 0.5 && par[6].w < 1.0 ? 1.0 / (6.28318530717959 * (1.0 - par[6].w)) : 0.0;
+	sk_st = ~0u;
 	for (int depth = 0; depth < maxd; depth++) {
 		float t = trace(o, d, 1e30, false);
+		int hk = hit_k;
+		float fh = hit_h;
 		if (inw) {
 			float tt = t < 0.0 ? 1e30 : t;
 			if (scat) {
@@ -201,12 +261,40 @@ vec3 radiance(vec3 o, vec3 d) {
 		}
 		if (t < 0.0) { vec4 k = depth == 0 ? cloud_up(suv) : vec4(0.0, 0.0, 0.0, 1.0); L += tp * ((env(d) + (dl && dot(d, ts) >= par[6].w ? par[7].rgb * (sd * (depth == 0 ? 1.0 : cloud_t(o))) : vec3(0.0))) * k.a + k.rgb); break; }
 		vec3 p = o + d * t;
+		if (hk >= 0) {
+			vec4 fa = fib[hk * 3];
+			vec4 fb = fib[hk * 3 + 1];
+			vec4 fc = fib[hk * 3 + 2];
+			Sh sh;
+			sh.fb = true;
+			sh.T = normalize(fb.xyz - fa.xyz);
+			sh.v = -d;
+			sh.sig = fc.rgb;
+			sh.h = fh;
+			sh.hm = mat[int(floatBitsToUint(fb.w) >> 24u) * 7 + 6].xyz;
+			sk_st = floatBitsToUint(fb.w);
+			sk_sg = floatBitsToUint(fc.w);
+			L += tp * direct(sh, p, p, inw, st);
+			vec3 l = chiang_dir(sh.T, sh.v, sh.sig, sh.h, sh.hm.x, sh.hm.y, sh.hm.z, vec4(rnd(), rnd(), rnd(), rnd()));
+			vec3 af;
+			vec3 ab;
+			float pd;
+			vec3 fv = chiang(sh.T, l, sh.v, sh.sig, sh.h, sh.hm.x, sh.hm.y, sh.hm.z, 0.0, af, ab, pd);
+			if (!(pd > 0.0)) break;
+			tp *= fv / (pd * par[12].x);
+			if (!rr(depth, tp)) break;
+			dl = false;
+			o = p;
+			d = l;
+			continue;
+		}
+		sk_st = ~0u;
 		int q = hit_p * 7;
 		vec2 hb = hit_b;
 		float w0 = 1.0 - hb.x - hb.y;
 		vec3 n = normalize(tri[q].xyz * w0 + tri[q + 1].xyz * hb.x + tri[q + 2].xyz * hb.y);
 		vec2 uv = tuv(q, hb);
-		int mb = int(tri[q + 3].w) * 6;
+		int mb = int(tri[q + 3].w) * 7;
 		vec4 m0 = mat[mb];
 		vec4 m1 = mat[mb + 1];
 		vec4 m2 = mat[mb + 2];
@@ -309,23 +397,18 @@ vec3 radiance(vec3 o, vec3 d) {
 			}
 		}
 		vec3 po = offs(p, gn, tri[q + 5].w);
-		if (par[7].w > 0.5 && inw) {
-			vec3 wl;
-			vec3 ew = sunw(po, st, wl);
-			if (dot(gn, wl) > 0.0) L += tp * bsdf(n, v, wl, alb, f0, f90, rough, ms, kd) * ew;
-		} else if (par[7].w > 0.5) {
-			float ct = 1.0 - rnd() * (1.0 - par[6].w);
-			float st = sqrt(max(0.0, 1.0 - ct * ct));
-			float ph = 6.28318530717959 * rnd();
-			vec3 l = sb1 * (st * cos(ph)) + sb2 * (st * sin(ph)) + ts * ct;
-			if (dot(gn, l) > 0.0 && trace(po, l, 1e30, true) < 0.0) L += tp * bsdf(n, v, l, alb, f0, f90, rough, ms, kd) * par[7].rgb * cloud_t(p);
-		}
-		for (int i = 0; i < nli; i++) {
-			vec3 dl = lit[i * 2].xyz - p;
-			float dd = length(dl);
-			vec3 l = dl / dd;
-			if (dot(gn, l) > 0.0 && trace(po, l, dd, true) < 0.0) L += tp * bsdf(n, v, l, alb, f0, f90, rough, ms, kd) * (lit[i * 2 + 1].rgb * range_falloff(dd, lit[i * 2 + 1].w));
-		}
+		Sh sh;
+		sh.fb = false;
+		sh.n = n;
+		sh.gn = gn;
+		sh.v = v;
+		sh.alb = alb;
+		sh.f0 = f0;
+		sh.f90 = f90;
+		sh.rough = rough;
+		sh.ms = ms;
+		sh.kd = kd;
+		L += tp * direct(sh, p, po, inw, st);
 		vec3 b1;
 		vec3 b2;
 		onb(n, b1, b2);

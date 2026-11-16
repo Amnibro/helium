@@ -4035,7 +4035,7 @@ strand segment, shaded with the realtime hair's Chiang model.
   strand. Fibers shade with the realtime hair's Chiang model (gfx.hair, after pbrt-v3: lobes R,
   TT, TRT and the rest with scales tilted by alpha, exact longitudinal and trimmed-logistic
   azimuthal sampling, lobes picked by the luminance of their attenuation): sun and point
-  lights at every bounce, then one sampled direction. Grooms come from `hair::export`, the
+  lights at every bounce, then one sampled direction. Grooms come from `hair::fibers`, the
   raster pass's own strand generator run once at full detail. Test fiber: one cylinder of
   radius 0.1 from (0.1, -0.75, -0.3) to (-0.1, 0.75, 0.3), absorption 0.2, 0.5, 1.2 per unit
   radius, beta_m = beta_n = 0.3, alpha 2 degrees, seen from (0, 0, 2) toward the origin (field
@@ -4086,6 +4086,10 @@ strand segment, shaded with the realtime hair's Chiang model.
 | P12 slab controls, sun x 1.01 / plain base (worst channel) | 10402 / 6176 ppm: fail | 10404 / 6172 ppm: fail |
 | P12 skin furnace: total, worst bin | 250 ppm, 977 ppm | 250 ppm, 978 ppm |
 | P12 control, skin base 0.9 | -23425 ppm: fails | -23424 ppm: fails |
+| P13 hair furnace: worst channel loss | 117 ppm | 117 ppm |
+| P13 furnace controls, pdf x 1.02 / absorption x 1.02 | 43614 / 15873 ppm: fail | 43614 / 15874 ppm: fail |
+| P13 sunlit fiber: worst half channel | 1160 ppm | 1161 ppm |
+| P13 sun controls, mirrored sun / tip to root | 3243300 / 30200 ppm: fail | 3243287 / 30202 ppm: fail |
 
 The CPU and GPU results agree to the printed digit because both use the same seeds and
 the same shader; only rounding in the last place differs. The furnace error grows with

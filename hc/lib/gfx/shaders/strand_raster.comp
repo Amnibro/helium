@@ -8,10 +8,8 @@ layout(std430, set = 0, binding = 4) readonly buffer LFront { uint lfront[]; };
 layout(std430, set = 0, binding = 5) readonly buffer LAcc { uint lacc[]; };
 layout(std430, set = 1, binding = 0) buffer Front { uint front[]; };
 layout(std430, set = 1, binding = 1) buffer Acc { uint acc[]; };
-float hsh(uint a, uint b) { uint h = a * 747796405u + b * 2891336453u + 1u; h ^= h >> 16; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16; return float(h & 0xffffffu) / 16777216.0; }
+#include "strand_gen.glsl"
 #include "strand_shade.glsl"
-float seg_g;
-float seg_w;
 float lightTx(ivec2 q, float w, uint s) {
 	if (q.x < 0 || q.y < 0 || q.x >= int(light.x) || q.y >= int(light.y)) return 0.0;
 	uint li = s * uint(light.x) * uint(light.y) + uint(q.y) * uint(light.x) + uint(q.x);
@@ -41,13 +39,15 @@ vec2 lightD(vec3 P, mat4 vp, float fw, uint s) {
 vec3 lit1(vec3 P, vec3 T, vec3 V, vec3 L, vec3 sig, vec3 cms, float h, float bm, float ex, vec2 ld, float sb) {
 	float nf = min(ld.y * look.y, 60.0), tr = exp(-ld.x * light.z);
 	if (tr < 0.002 && nf >= 59.0) return vec3(0.0);
-	vec3 af, ab, fs = chiang(T, L, V, sig, h, bm, mel.z, 0.035, ex, af, ab);
+	vec3 af, ab;
+	float pd;
+	vec3 fs = chiang(T, L, V, sig, h, bm, mel.z, 0.035, ex, af, ab, pd);
 	float sl = dot(T, L) + dot(T, V), sf2 = bm * bm * (1.0 + nf) + ex;
 	vec3 tf = pow(max(af + ab * 0.5, vec3(1e-3)), vec3(nf)) * sb;
 	return tr * sb * fs + tf * cms * exp(-0.5 * sl * sl / sf2) * inversesqrt(6.2831853 * sf2) * 0.1591549 * 2.0 * look.w;
 }
 vec3 shadeAt(vec3 P, vec3 T, vec3 sig0, vec3 cms, float h, float bm) {
-	vec3 sig = sig0 * 1.7, V = normalize(cam.xyz - P);
+	vec3 sig = sig0, V = normalize(cam.xyz - P);
 	vec3 col = vec3(0.0);
 	if (sun_rgb.r + sun_rgb.g + sun_rgb.b > 0.0) {
 		float sb = bodyT(P);
@@ -62,39 +62,12 @@ vec3 shadeAt(vec3 P, vec3 T, vec3 sig0, vec3 cms, float h, float bm) {
 	}
 	return col + sky.rgb * cms;
 }
-vec3 ptan(uint p) { return normalize(cross(pts[p * 3u + 1u].xyz, pts[p * 3u + 2u].xyz) + vec3(0.0, -1e-7, 0.0)); }
-vec3 partShift(uint p, float u) {
-	vec4 a = pts[p * 3u], sd = pts[p * 3u + 1u];
-	vec3 x = a.xyz + sd.xyz * u;
-	float w = smoothstep(0.004, 0.0, abs(x.x)) * smoothstep(shape.y + 0.012, shape.y + 0.042, x.z) * smoothstep(shape.x - 0.064, shape.x - 0.024, x.y) * (1.0 - smoothstep(0.0, 0.6, sd.w));
-	return vec3(sign(x.x + 1e-6) * shape.z * w, 0.0, 0.0);
-}
-vec3 strandPos(uint p, float u, float dz, float wob, float ph, float fo) {
-	vec4 a = pts[p * 3u], s = pts[p * 3u + 1u], n = pts[p * 3u + 2u];
-	float t = s.w;
-	return a.xyz + s.xyz * u + n.xyz * (dz + fo * t * t + wob * t * sin(ph + t * 23.0)) + normalize(s.xyz + vec3(1e-7)) * wob * 0.5 * t * cos(ph * 1.7 + t * 17.0);
-}
 void main() {
 	uint si = gl_GlobalInvocationID.x, j = gl_GlobalInvocationID.y;
-	if (si >= uint(size.w) || float(j) >= size.z) return;
-	uvec4 sg = segs[si];
-	uint p = sg.x, g = sg.y, kz = sg.z & 255u, kg = (sg.z >> 8) & 255u, kw = (sg.z >> 16) & 255u;
-	seg_g = kg > 0u ? float(kg) / 64.0 : 1.0;
-	seg_w = kw > 0u ? float(kw) / 64.0 : 1.0;
-	float sc = kz > 0u ? min(float(kz), size.z) : size.z, lk = pts[p * 3u + 2u].w, sn = lk > 0.5 ? sc * 0.45 : sc, sx = max(sn * (ext.w > 0.0 ? min(ext.w, 1.0) : 1.0), min(sn, 1.0));
-	if (float(j) >= sx) return;
-	float cvs = sn / sx * min(sx - float(j), 1.0);
-	float h1 = hsh(g, j * 4u + 1u), h2 = hsh(g, j * 4u + 2u), h3 = hsh(g, j * 4u + 3u);
-	float t0 = pts[p * 3u + 1u].w, t1 = pts[p * 3u + 4u].w;
-	float tend = 1.0 - 0.32 * h2 * h2;
-	if (t0 >= tend) return;
-	float fly = step(0.965 - 0.1 * sun_rgb.w, hsh(g, j * 4u + 31u));
-	float nc = 3.0 + floor(hsh(g, 999u) * 5.0), cl = floor(h3 * nc), cc = (hsh(g, 1000u + uint(cl)) * 2.0 - 1.0) * 1.2, cz = (hsh(g, 2000u + uint(cl)) - 0.5) * params.z;
-	float u0 = (fract(hsh(g, 7u) + float(j) * 0.6180339887) * 2.0 - 1.0) * 1.4, cs = (lk > 0.5 ? 0.18 : 0.62) + 0.25 * hsh(g, j * 4u + 77u) - fly * 0.4;
-	float ua = mix(u0, cc, min(cs + 0.3 * t0, 0.97)), ub = mix(u0, cc, min(cs + 0.3 * t1, 0.97));
-	float dz = mix((h1 - 0.5) * params.z, cz, lk > 0.5 ? 0.3 : 0.75) * (lk > 0.5 ? 2.2 : 1.0), wob = (0.0007 + fly * (0.0047 + 0.004 * sun_rgb.w) + lk * 0.0011) * hsh(g, j + 500u), ph = 6.2831 * h3, fo = fly * sun_rgb.w * 0.012 * (0.3 + hsh(g, j * 4u + 41u));
-	vec3 A = strandPos(p, ua, dz, wob, ph, fo) + partShift(p, ua), B = strandPos(p + 1u, ub, dz, wob, ph, fo) + partShift(p + 1u, ub);
-	if (t1 > tend) B = mix(A, B, (tend - t0) / max(t1 - t0, 1e-5));
+	if (!strandSeg(si, j)) return;
+	uint p = sP, g = sG;
+	float t0 = sT0, t1 = sT1, lk = sLk, cvs = sCvs;
+	vec3 A = sA, B = sB;
 	bool lit = look.z > 1.5;
 	float ws = lit ? 1.0 : cam.w;
 	mat4 VP = lit ? light_vp : view_proj;
@@ -117,14 +90,13 @@ void main() {
 	vec3 TA = ptan(p), TB = ptan(p + 1u), Ts = normalize(B - A + vec3(1e-7));
 	TA *= sign(dot(TA, Ts) + 1e-6); TB *= sign(dot(TB, Ts) + 1e-6);
 	float hs = hsh(g, j * 4u + 9u), hm = hsh(g, j * 4u + 11u);
-	vec2 mm = mel.xy * (1.0 + 0.05 * (hsh(g, 3u) * 2.0 - 1.0)) * (1.0 + 0.22 * (hs * 2.0 - 1.0)) * vec2(1.0, 1.0 + 0.5 * hm * hm);
 	float hh = hsh(g, j * 4u + 13u) * 1.9 - 0.95, bm = hair.w * 0.75;
 	bool shade = look.z > 0.5 && look.z < 1.5;
 	vec3 colA = vec3(0.0), colB = vec3(0.0);
 	if (shade) {
 		vec3 cb = hair.rgb * (1.0 + 0.05 * (hsh(g, 3u) * 2.0 - 1.0)) * (1.0 + 0.22 * (hs * 2.0 - 1.0)) * mix(vec3(1.0), vec3(1.07, 0.98, 0.86), hm * hm);
-		colA = shadeAt(A, TA, hSigma(mm * mix(1.7, 1.0, smoothstep(0.0, 0.35, t0)) * mix(1.0, 0.85, smoothstep(0.6, 1.0, t0))), cb * mix(0.62, 1.0, smoothstep(0.0, 0.35, t0)) * mix(1.0, 1.08, smoothstep(0.6, 1.0, t0)), hh, bm);
-		colB = shadeAt(B, TB, hSigma(mm * mix(1.7, 1.0, smoothstep(0.0, 0.35, t1)) * mix(1.0, 0.85, smoothstep(0.6, 1.0, t1))), cb * mix(0.62, 1.0, smoothstep(0.0, 0.35, t1)) * mix(1.0, 1.08, smoothstep(0.6, 1.0, t1)), hh, bm);
+		colA = shadeAt(A, TA, strandSig(g, j, t0), cb * mix(0.62, 1.0, smoothstep(0.0, 0.35, t0)) * mix(1.0, 1.08, smoothstep(0.6, 1.0, t0)), hh, bm);
+		colB = shadeAt(B, TB, strandSig(g, j, t1), cb * mix(0.62, 1.0, smoothstep(0.0, 0.35, t1)) * mix(1.0, 1.08, smoothstep(0.6, 1.0, t1)), hh, bm);
 	}
 	float occ0 = pts[p * 3u].w, occ1 = pts[p * 3u + 3u].w;
 	bool acc_mode = look.z > 0.5 && look.z < 1.5 || look.z > 2.5;

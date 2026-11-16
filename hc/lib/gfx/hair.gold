@@ -35,7 +35,7 @@ Module vars, each groom owning a slice of every per-groom array:
 - `grooms` and the per-groom arrays: `simv` (float4, SIM per groom), `part_node` (int, PARTS per groom), `part_ib` (mat4, PARTS per groom), `bone_node` (int, BONES per groom), `bone_rest` and `mats` (mat4, BONES per groom), `probe_v` (f32, 8 per groom), `kept_vp` (mat4, 4 per groom) and `kept_x` (float4, 4 per groom): the view-projection and extras each local-light map was last drawn with
 - screen size `w` and `h` (int 0), `made` false, and the f32 knobs `detail` 2.0 and `light_detail` 1.0: how many strands a pass draws per pixel of a guide's strand spread, on screen and in the light maps (0 or less draws every strand); and the bool knob `light_turns` true: the local-light maps are redrawn one per frame in turn instead of all every frame
 - buffers `front` and `acc`, texture `hairt`, sampler `smp`, and `comp` of type `gfx::Pipeline`
-- `clear_p`, `raster_p`, `resolve_p`, `skin_p`, `sim_p`, `sdf_p` and `cast_p`, each of type `gfx::ComputePipeline`, all default
+- `clear_p`, `raster_p`, `resolve_p`, `skin_p`, `sim_p`, `sdf_p`, `cast_p` and `export_p`, each of type `gfx::ComputePipeline`, all default
 - the growable `raw` bytes and `us` (HairU), reused every frame
 
 `mel_of(c, bn)` gives a float2 of melanin values, computed in real:
@@ -46,7 +46,7 @@ Module vars, each groom owning a slice of every per-groom array:
 - If e is negative, e becomes 0 and p becomes max(r2/a22, 0). Otherwise, if p is negative, p becomes 0 and e becomes max(r1/a11, 0).
 - The result is (e, p) as f32.
 
-`ready()` runs once, guarded by `made`. It sets `smp` to `gfx::sampler(gfx::NEAREST, gfx::CLAMP)` and `comp` to `gfx::pipeline(vs, fs, desc)`, a call with exactly three arguments: `embed_shader("shaders/strand_comp.vert")`, `embed_shader("shaders/strand_comp.frag")`, and a `gfx::PipelineDesc` whose only field given is blend `gfx::BLEND_PREMULTIPLIED` (the shaders are never fields of the desc). It then sets each compute pipeline directly to `gfx::compute_pipeline` of `embed_shader` of "shaders/strand_X.comp", where X is clear, raster, resolve, skin, sim, sdf and cast in that order (cast_p from "shaders/strand_cast.comp").
+`ready()` runs once, guarded by `made`. It sets `smp` to `gfx::sampler(gfx::NEAREST, gfx::CLAMP)` and `comp` to `gfx::pipeline(vs, fs, desc)`, a call with exactly three arguments: `embed_shader("shaders/strand_comp.vert")`, `embed_shader("shaders/strand_comp.frag")`, and a `gfx::PipelineDesc` whose only field given is blend `gfx::BLEND_PREMULTIPLIED` (the shaders are never fields of the desc). It then sets each compute pipeline directly to `gfx::compute_pipeline` of `embed_shader` of "shaders/strand_X.comp", where X is clear, raster, resolve, skin, sim, sdf, cast and export in that order (cast_p from "shaders/strand_cast.comp", export_p from "shaders/strand_export.comp").
 This block defines no helper that creates buffers.
 
 `size(nw, nh)`: when `w` is positive, it first releases `front`, `acc` and `hairt`. It then sets `w` and `h` and creates:
@@ -192,6 +192,12 @@ Raster pass (mode, slice k): lit is mode above 1. It uses a copy of the groom's 
 - Compute textures are slot 0 `s3d::nd_target()` and slot 1 `s3d::shadow_map`, both with smp.
 - Storage is 0 pts, 1 segs, 2 `front` if lit else lfront, 3 `acc` if lit else lacc.
 - It is dispatched ceil(segments/64) × max(1, ceil of strands times that copy's ext.w) × 1.
+
+`fibers(g, m, k, fib, box)` (fib and box growable f32 lists) hands the path tracer the groom's strands exactly as the raster pass grows them, and returns a bool; when g is not live it returns false before doing anything.
+- It uses a copy of the groom's uniforms with ext.w set to 1.0, look set to (m, k, 0, 0) as f32, and `light_vp` set to the groom's model.
+- n = segments times strands. Two buffers with rw: f of n*48 bytes and b of n*k*24 bytes, passed as the write list of `gfx::begin_compute([f, b])`.
+- It binds `export_p`, puts the uniform copy, binds storage 0 pts and 1 segs, dispatches ceil(segments/64) × strands × 1 and ends the compute pass.
+- It clears fib and box, reads n*12 f32 from f into fib and n*k*6 f32 from b into box with `gfx::read_buffer`, releases f and b, and returns both reads succeeding.
 
 Tracking a groom that follows an item:
 1. Call `s3d::pose(item)`; n0 is the item asset's first node.

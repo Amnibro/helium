@@ -1,0 +1,27 @@
+layout(local_size_x = 64) in;
+#include "strand_common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer Pts { vec4 pts[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Segs { uvec4 segs[]; };
+layout(std430, set = 1, binding = 0) buffer Fib { vec4 fib[]; };
+layout(std430, set = 1, binding = 1) buffer Box { float box[]; };
+#include "strand_gen.glsl"
+void main() {
+	uint si = gl_GlobalInvocationID.x, j = gl_GlobalInvocationID.y, n = uint(size.w), o = j * n + si, k = uint(look.y);
+	if (si >= n || float(j) >= size.z) return;
+	bool ok = strandSeg(si, j);
+	vec3 A = (light_vp * vec4(sA, 1.0)).xyz, B = (light_vp * vec4(sB, 1.0)).xyz;
+	float r = ok ? 0.25 * params.w * seg_w * (2.0 - 0.5 * (sT0 + sT1)) * (sLk > 0.5 ? 0.8 : 1.0) * sCvs * cam.w : 0.0;
+	fib[o * 3u] = vec4(A, r);
+	fib[o * 3u + 1u] = vec4(B, uintBitsToFloat(uint(look.x) << 24 | ((sG * uint(size.z) + j) & 16777215u)));
+	fib[o * 3u + 2u] = vec4(ok ? strandSig(sG, j, 0.5 * (sT0 + sT1)) : vec3(0.0), uintBitsToFloat(si));
+	for (uint i = 0u; i < k; i++) {
+		vec3 a = mix(A, B, float(i) / float(k)), b = mix(A, B, float(i + 1u) / float(k)), lo = min(a, b) - r, hi = max(a, b) + r;
+		uint q = (o * k + i) * 6u;
+		box[q] = uintBitsToFloat(ok ? floatBitsToUint(lo.x) : 0x7fc00000u);
+		box[q + 1u] = lo.y;
+		box[q + 2u] = lo.z;
+		box[q + 3u] = hi.x;
+		box[q + 4u] = hi.y;
+		box[q + 5u] = hi.z;
+	}
+}

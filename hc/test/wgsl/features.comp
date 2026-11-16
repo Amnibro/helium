@@ -33,5 +33,5 @@ void main() {
 	memoryBarrierBuffer();
 	memoryBarrier();
 	groupMemoryBarrier();
-	outv[li] = old + total + int(gl_WorkGroupID.y) + int(gl_LocalInvocationID.x) + outv.length() + int(info.x);
+	outv[li] = old + total + int(gl_WorkGroupID.y) + int(gl_LocalInvocationID.x) + outv.length() + int(info.x) + (a.xyz != vec3(0.0) ? 1 : 0) + (p == ivec2(3) ? 2 : 0);
 }
