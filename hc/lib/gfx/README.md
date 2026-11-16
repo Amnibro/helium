@@ -3993,6 +3993,17 @@ largest coordinate, because the intersection is only as precise as the triangle'
   six 64 x 64 renders at 1024 samples, one down each axis, must match the analytic value at
   every pixel's center within 0.002 in every channel. Controls that must fail: the reference
   x 1.01, and the reference with the x axis mirrored.
+* **P11 engine clouds.** `from_scene()` reads back the sky pass's cloud layer and the cloud
+  shadow map. Camera rays that leave the scene get the cloud layer the way the sky pass
+  applies it (same 9-tap upsample, sky and sun disk times its alpha plus its color), and
+  every ray toward the sun is dimmed by the cloud shadow map exactly as `contact.frag`
+  does. Layer: a 16 x 12 layer that is linear in screen position over a sky of 1, 64 x 48
+  pixels at 256 samples, every pixel whose taps stay inside the layer within 0.002 of the
+  analytic value in every channel; controls that must fail: the reference without the alpha,
+  and the reference flipped top to bottom. Shadow: the P2 scene under a 32 x 32 shadow map
+  that is linear in x at strength 0.8 must pass P2's bar against the analytic sun times the
+  cloud factor; controls that must fail: the reference without the cloud factor, and the
+  reference with the map mirrored in x.
 
 ### Path tracer results (2026-11-15, RX 9060 XT, RADV; lavapipe for the CPU column)
 
