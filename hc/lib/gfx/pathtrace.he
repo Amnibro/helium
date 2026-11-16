@@ -52,11 +52,11 @@ var CSK = 0.0
 var CLU = [0.0, 0.0, 0.0, 0.0]
 var CLV = [0.0, 0.0, 0.0, 0.0]
 struct CubeU { p float4 }
-struct Mat { base real[4] = [1.0, 1.0, 1.0, 1.0], glow real[3] = [0.0, 0.0, 0.0], metal real = 0.0, rough real = 1.0, spec real = 1.0, ior real = 1.5, tb int = -1, tmr int = -1, tn int = -1, te int = -1, ns real = 1.0, mode int = 0, cut real = 0.5, unlit bool = false, water bool = false }
+struct Mat { base real[4] = [1.0, 1.0, 1.0, 1.0], glow real[3] = [0.0, 0.0, 0.0], metal real = 0.0, rough real = 1.0, spec real = 1.0, ior real = 1.5, tb int = -1, tmr int = -1, tn int = -1, te int = -1, ns real = 1.0, mode int = 0, cut real = 0.5, unlit bool = false, water bool = false, sss real[3] = [0.0, 0.0, 0.0] }
 clear(): TRI.clear(); POS.clear(); MAT.clear(); TXH.clear(); TXP.clear(); LIT.clear(); IMG.clear(); PMAT.clear(); MASK = false; SKIPPED = 0; SKYC.clear(); SKYN = 0; CLD.clear(); CW = 0; CH = 0; CSN = 0; CSK = 0.0
 mat(m Mat) int:
-	for x [m.base[0], m.base[1], m.base[2], m.base[3], m.glow[0], m.glow[1], m.glow[2], m.metal, m.rough, m.ns, m.cut, m.mode as real, m.tb as real, m.tmr as real, m.tn as real, m.te as real, m.spec, if m.water { 1.0 } else { 0.0 }, if m.unlit { 1.0 } else { 0.0 }, m.ior]: MAT.push(x as f32)
-	MAT.len / 20 - 1
+	for x [m.base[0], m.base[1], m.base[2], m.base[3], m.glow[0], m.glow[1], m.glow[2], m.metal, m.rough, m.ns, m.cut, m.mode as real, m.tb as real, m.tmr as real, m.tn as real, m.te as real, m.spec, if m.water { 1.0 } else { 0.0 }, if m.unlit { 1.0 } else { 0.0 }, m.ior, m.sss[0], m.sss[1], m.sss[2], 0.0]: MAT.push(x as f32)
+	MAT.len / 24 - 1
 image(w int, h int, px const byte[:]) int:
 	TXH.append([TXP.len as u32, w as u32, h as u32, 0 as u32])
 	for i w * h: TXP.push((px[i * 4] as u32) | ((px[i * 4 + 1] as u32) << 8) | ((px[i * 4 + 2] as u32) << 16) | ((px[i * 4 + 3] as u32) << 24))
@@ -77,7 +77,7 @@ tri(p const real[:], n const real[:], uv const real[:], col const real[:], m int
 	for k 9 { POS.push(p[k] as f32); ps = max(ps, abs(p[k])) }
 	for c 3: l := sqrt(n[c * 3] * n[c * 3] + n[c * 3 + 1] * n[c * 3 + 1] + n[c * 3 + 2] * n[c * 3 + 2]); if l > 0.0 { nn.append([n[c * 3] / l, n[c * 3 + 1] / l, n[c * 3 + 2] / l]) } else { nn.append([gx, gy, gz]) }
 	for x [nn[0], nn[1], nn[2], uv[0], nn[3], nn[4], nn[5], uv[1], nn[6], nn[7], nn[8], uv[2], uv[3], uv[4], uv[5], m as real, tx / tn, ty / tn, tz / tn, sg, gx, gy, gz, ps, col[0], col[1], col[2], col[3]]: TRI.push(x as f32)
-	if MAT[m * 20 + 11] > 0.5: MASK = true
+	if MAT[m * 24 + 11] > 0.5: MASK = true
 ico(levels int) real[>..]:
 	g := (1.0 + sqrt(5.0)) * 0.5; v := [-1.0, g, 0.0, 1.0, g, 0.0, -1.0, -g, 0.0, 1.0, -g, 0.0, 0.0, -1.0, g, 0.0, 1.0, g, 0.0, -1.0, -g, 0.0, 1.0, -g, g, 0.0, -1.0, g, 0.0, 1.0, -g, 0.0, -1.0, -g, 0.0, 1.0]
 	f := [0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8, 3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1]
@@ -132,7 +132,7 @@ matof(prim int) int:
 	while PMAT.len <= prim: PMAT.push(-1)
 	if PMAT[prim] >= 0: return PMAT[prim]
 	g := s3d::material_of(prim)
-	PMAT[prim] = mat(Mat { base: [g.base.x as real, g.base.y as real, g.base.z as real, g.base.w as real], glow: [g.emissive.x as real, g.emissive.y as real, g.emissive.z as real], metal: g.metallic as real, rough: g.roughness as real, spec: if g.ext { g.spec_f as real } else { 1.0 }, ior: if g.ext { g.ior as real } else { 1.5 }, tb: texof(g.base_tex), tmr: texof(g.mr_tex), tn: texof(g.normal_tex), te: texof(g.emissive_tex), ns: g.normal_scale as real, mode: g.alpha_mode, cut: g.alpha_cutoff as real, unlit: g.unlit, water: g.shading == 4 && g.shade_a.w > 0.5 })
+	PMAT[prim] = mat(Mat { base: [g.base.x as real, g.base.y as real, g.base.z as real, g.base.w as real], glow: [g.emissive.x as real, g.emissive.y as real, g.emissive.z as real], metal: g.metallic as real, rough: g.roughness as real, spec: if g.ext { g.spec_f as real } else { 1.0 }, ior: if g.ext { g.ior as real } else { 1.5 }, tb: texof(g.base_tex), tmr: texof(g.mr_tex), tn: texof(g.normal_tex), te: texof(g.emissive_tex), ns: g.normal_scale as real, mode: g.alpha_mode, cut: g.alpha_cutoff as real, unlit: g.unlit, water: g.shading == 4 && g.shade_a.w > 0.5, sss: if s3d::sss_skin(g) { sd := s3d::sss_dist(g); [sd.x as real, sd.y as real, sd.z as real] } else { [0.0, 0.0, 0.0] } })
 	PMAT[prim]
 from_scene():
 	clear(); c := s3d::view; EYE = v3(c.eye); TGT = v3(c.target); UP = v3(c.up); FOV = c.fov_y as real

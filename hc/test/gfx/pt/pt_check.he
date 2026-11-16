@@ -79,6 +79,14 @@ var BAD = 0
 plane(y real, r real, m int):
 	z := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
 	pathtrace::tri([-r, y, -r, -r, y, r, r, y, r][..], z[..], uv[..], cl[..], m); pathtrace::tri([-r, y, -r, r, y, r, r, y, -r][..], z[..], uv[..], cl[..], m)
+vdh(a real) real: h := 4.09712 + 4.20863 * a - sqrt(9.59217 + 41.6808 * a + 17.7126 * a * a); min(max(1.0 - h * h, 0.0), 1.0)
+rd(a real) real:
+	m1 ~= 0.0
+	for i 128:
+		mu := (i as real + 0.5) / 128.0; li ~= 0.0
+		for j 512: th := (j as real + 0.5) / 512.0 * 1.5707963267948966; sn := sin(th); cs := cos(th); li += log(1.0 - a * th * cs / sn) / (cs * cs + mu * mu * sn * sn)
+		m1 += mu * exp(-mu / 3.141592653589793 * li * 1.5707963267948966 / 512.0) / 128.0
+	1.0 - 2.0 * sqrt(max(1.0 - a, 0.0)) * m1
 fd(ci real, e real) real:
 	s2 := e * e * (1.0 - ci * ci)
 	if s2 >= 1.0: return 1.0
@@ -165,28 +173,30 @@ layer(name const byte[:], na bool, flip bool, want bool) bool:
 	pass := wd <= 0.002
 	print(str(name, ": ", np, " pixels, worst channel difference ", (wd * 1e6) as! int, " ppm of white (bar 2000): ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
 	pass == want
-direct(name const byte[:], sk real, pk real, cl int, want bool) bool:
-	m := pathtrace::Mat { base: [0.6, 0.5, 0.4, 1.0], rough: 0.5 }; pathtrace::clear(); plane(0.0, 10.0, pathtrace::mat(m))
+direct(name const byte[:], sk real, pk real, cl int, sm int, want bool) bool:
+	eb := if sm == 1 { [rd(vdh(0.8)), rd(vdh(0.5)), rd(vdh(0.2))] } else { [0.8, 0.5, 0.2] }; lk := if sm > 0 { 0.0 } else { 1.0 }
+	m := if sm > 0 { pathtrace::Mat { base: [eb[0], eb[1], eb[2], 1.0], rough: 0.5 } } else { pathtrace::Mat { base: [0.6, 0.5, 0.4, 1.0], rough: 0.5 } }; pathtrace::clear(); plane(0.0, 10.0, pathtrace::mat(if sm > 0 { pathtrace::Mat { base: [0.8, 0.5, 0.2, 1.0], rough: 0.5, sss: [0.02, 0.01, 0.005] } } else { m }))
 	sr := [3.0, 2.85, 2.6]; ts := [0.3, 0.8, 0.2]; tl := sqrt(0.77); lp := [0.5, 1.2, -0.3]
 	if cl > 0 { f f32[>..] ~= []; for k 1024 { f.push((0.3 + 0.5 * ((k % 32) as real + 0.5) / 32.0) as f32) } halves(f[..], pathtrace::CLD); pathtrace::CSN = 32; pathtrace::CSK = 0.8; pathtrace::CLU = [0.05, 0.0, 0.0, 0.5]; pathtrace::CLV = [0.0, 0.0, 0.05, 0.5] }
-	pathtrace::light(lp[0], lp[1], lp[2], 5.0 * pk, 5.0 * pk, 5.0 * pk, 10.0); pathtrace::EYE = [0.0, 2.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::FURN = 0.0; pathtrace::SUN = [sr[0] * sk, sr[1] * sk, sr[2] * sk]; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
-	acc := pathtrace::render(W, H, 64)
+	pathtrace::light(lp[0], lp[1], lp[2], 5.0 * pk * lk, 5.0 * pk * lk, 5.0 * pk * lk, 10.0); pathtrace::EYE = [0.0, 2.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::FURN = 0.0; pathtrace::SUN = [sr[0] * sk, sr[1] * sk, sr[2] * sk]; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
+	acc := pathtrace::render(W, H, if sm > 0 { 256 } else { 64 })
 	if acc.len == 0: print(str(name, ": render failed")); return false
-	gs ~= 0.0; es ~= 0.0; wp ~= 0.0; np ~= 0; wl := [0.2126, 0.7152, 0.0722]; BAD += pathtrace::bad(acc[..]); MX = max(MX, pathtrace::MAXMS)
+	gs ~= 0.0; es ~= 0.0; wp ~= 0.0; np ~= 0; wl := [0.2126, 0.7152, 0.0722]; gc real[>..] ~= []; ec real[>..] ~= []; ep real[>..] ~= []; gc.resize(3, 0.0); ec.resize(3, 0.0); ep.resize(3, 0.0); BAD += pathtrace::bad(acc[..]); MX = max(MX, pathtrace::MAXMS)
 	for y H:
 		for x W:
-			ok ~= true; ey ~= 0.0
+			ok ~= true; ey ~= 0.0; for c 3 { ep[c] = 0.0 }
 			for s 16:
 				dx, dy, dz := ray(x, y, s % 4, s / 4)
 				if dy >= 0.0: ok = false; continue
 				t := -2.0 / dy; px := dx * t; pz := 4.0 + dz * t
 				if abs(px) > 9.0 || abs(pz) > 9.0: ok = false; continue
-				a := bsdf(m, -dx, -dy, -dz, ts[0] / tl, ts[1] / tl, ts[2] / tl); lx := lp[0] - px; ly := lp[1]; lz := lp[2] - pz; dd := sqrt(lx * lx + ly * ly + lz * lz); q := min(max(1.0 - dd * dd / 100.0, 0.0), 1.0); fo := 5.0 * q * q / (1.0 + dd * dd); b := bsdf(m, -dx, -dy, -dz, lx / dd, ly / dd, lz / dd)
+				a := bsdf(m, -dx, -dy, -dz, ts[0] / tl, ts[1] / tl, ts[2] / tl); lx := lp[0] - px; ly := lp[1]; lz := lp[2] - pz; dd := sqrt(lx * lx + ly * ly + lz * lz); q := min(max(1.0 - dd * dd / 100.0, 0.0), 1.0); fo := 5.0 * lk * q * q / (1.0 + dd * dd); b := bsdf(m, -dx, -dy, -dz, lx / dd, ly / dd, lz / dd)
 				cu := (if cl == 3 { -px } else { px }) * 0.05 + 0.5; cf := if cl == 1 || cl == 3 { 0.2 + 0.8 * (0.3 + 0.5 * cu) } else { 1.0 }
-				for c 3: ey += wl[c] * (a[c] * sr[c] * cf + b[c] * fo) / 16.0
-			if ok: i := y * W + x; gy := acc[i * 8 + 3] as real / acc[i * 8 + 5] as real; gs += gy; es += ey; wp = max(wp, abs(gy / ey - 1.0)); np++
-	d := gs / es - 1.0; pass := abs(d) < 0.001 && wp < 0.02
-	print(str(name, ": ", np, " pixels, total ", (d * 1e6) as! int, " ppm, worst pixel ", (wp * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+				for c 3: ey += wl[c] * (a[c] * sr[c] * cf + b[c] * fo) / 16.0; ep[c] += (a[c] * sr[c] * cf + b[c] * fo) / 16.0
+			if ok: i := y * W + x; gy := acc[i * 8 + 3] as real / acc[i * 8 + 5] as real; gs += gy; es += ey; wp = max(wp, abs(gy / ey - 1.0)); np++; for c 3 { gc[c] += acc[i * 8 + c] as real / acc[i * 8 + 5] as real; ec[c] += ep[c] }
+	d := gs / es - 1.0; wc ~= 0.0; for c 3 { wc = max(wc, abs(gc[c] / ec[c] - 1.0)) }
+	pass := if sm > 0 { abs(d) < 0.002 && wc < 0.004 } else { abs(d) < 0.001 && wp < 0.02 }
+	print(str(name, ": ", np, " pixels, total ", (d * 1e6) as! int, " ppm, ", if sm > 0 { "worst channel " } else { "worst pixel " }, ((if sm > 0 { wc } else { wp }) * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
 	pass == want
 main():
 	lp byte[>..] ~= []; arg(1, lp)
@@ -200,9 +210,9 @@ main():
 	ok = furnace("P1 furnace, gold metal rough 0.5", g, g, true) && ok
 	pathtrace::PDFK = 1.02; ok = furnace("P1 control, white metal with the specular pdf x 1.02", c, c, false) && ok; pathtrace::PDFK = 1.0
 	ok = furnace("P1 control, white dielectric base x 1.01", b2, b, false) && ok
-	ok = direct("P2 sun and point light", 1.0, 1.0, 0, true) && ok
-	ok = direct("P2 control, sun x 1.01", 1.01, 1.0, 0, false) && ok
-	ok = direct("P2 control, point light x 1.01", 1.0, 1.01, 0, false) && ok
+	ok = direct("P2 sun and point light", 1.0, 1.0, 0, 0, true) && ok
+	ok = direct("P2 control, sun x 1.01", 1.01, 1.0, 0, 0, false) && ok
+	ok = direct("P2 control, point light x 1.01", 1.0, 1.01, 0, 0, false) && ok
 	ok = water("P5 water furnace", 0, 1.0, 0.0, 1.0, true) && ok
 	ok = water("P5 control, absorption 0.01 per m", 0, 1.0, 1.0, 1.0, false) && ok
 	ok = water("P5 control, refraction weight x 1.02", 0, 1.0, 0.0, 1.02, false) && ok
@@ -220,9 +230,15 @@ main():
 	ok = layer("P11 cloud layer", false, false, true) && ok
 	ok = layer("P11 control, layer without its alpha", true, false, false) && ok
 	ok = layer("P11 control, layer flipped top to bottom", false, true, false) && ok
-	ok = direct("P11 cloud shadow on the P2 scene", 1.0, 1.0, 1, true) && ok
-	ok = direct("P11 control, reference without the cloud factor", 1.0, 1.0, 2, false) && ok
-	ok = direct("P11 control, map mirrored in x", 1.0, 1.0, 3, false) && ok
+	ok = direct("P11 cloud shadow on the P2 scene", 1.0, 1.0, 1, 0, true) && ok
+	ok = direct("P11 control, reference without the cloud factor", 1.0, 1.0, 2, 0, false) && ok
+	ok = direct("P11 control, map mirrored in x", 1.0, 1.0, 3, 0, false) && ok
+	ok = direct("P12 skin slab", 1.0, 0.0, 0, 1, true) && ok
+	ok = direct("P12 control, sun x 1.01", 1.01, 0.0, 0, 1, false) && ok
+	ok = direct("P12 control, reference with the plain base color", 1.0, 0.0, 0, 2, false) && ok
+	sb := pathtrace::Mat { rough: 0.7, sss: [0.2, 0.1, 0.05] }; sb2 := pathtrace::Mat { base: [0.9, 0.9, 0.9, 1.0], rough: 0.7, sss: [0.2, 0.1, 0.05] }; bw := pathtrace::Mat { rough: 0.7 }
+	ok = furnace("P12 skin furnace, white, roughness 0.7", sb, bw, true) && ok
+	ok = furnace("P12 control, skin base 0.9 against 1.0", sb2, bw, false) && ok
 	if !gfx::open_headless(64, 64): print("P10: no gfx device"); ok = false
 	else { ok = sky("P10 engine sky", 1.0, 1.0, true) && ok; ok = sky("P10 control, reference x 1.01", 1.01, 1.0, false) && ok; ok = sky("P10 control, x axis mirrored", 1.0, -1.0, false) && ok; gfx::close() }
 	print(str("P4 longest dispatch ", MX as! int, " ms (bar 1000), bad samples ", BAD, " (bar 0): ", if MX < 1000.0 && BAD == 0 { "PASS" } else { "FAIL" }, if cpu { " (dispatch time reported)" } else { "" }))

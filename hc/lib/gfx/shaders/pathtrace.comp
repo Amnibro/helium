@@ -65,7 +65,7 @@ vec4 tsamp(float tf, vec2 uv, bool srgb) {
 vec2 tuv(int q, vec2 b) { return vec2(tri[q].w, tri[q + 1].w) * (1.0 - b.x - b.y) + vec2(tri[q + 2].w, tri[q + 3].x) * b.x + tri[q + 3].yz * b.y; }
 bool pass_ok(int p, vec2 b) {
 	int q = p * 7;
-	int m = int(tri[q + 3].w) * 5;
+	int m = int(tri[q + 3].w) * 6;
 	vec4 mm = mat[m + 2];
 	if (mm.w < 0.5) return true;
 	float a = mat[m].a * tri[q + 6].a * tsamp(mat[m + 3].x, tuv(q, b), false).a;
@@ -135,7 +135,7 @@ vec3 sunw(vec3 p, vec3 st, out vec3 wl) {
 	float t1 = trace(p, l, 1e30, false);
 	if (t1 < 0.0) return vec3(0.0);
 	int q = hit_p * 7;
-	if (mat[int(tri[q + 3].w) * 5 + 4].y < 0.5) return vec3(0.0);
+	if (mat[int(tri[q + 3].w) * 6 + 4].y < 0.5) return vec3(0.0);
 	vec3 s = p + l * t1;
 	vec3 nw = wnorm(q, hit_b, s);
 	vec3 gn = tri[q + 5].xyz;
@@ -206,7 +206,7 @@ vec3 radiance(vec3 o, vec3 d) {
 		float w0 = 1.0 - hb.x - hb.y;
 		vec3 n = normalize(tri[q].xyz * w0 + tri[q + 1].xyz * hb.x + tri[q + 2].xyz * hb.y);
 		vec2 uv = tuv(q, hb);
-		int mb = int(tri[q + 3].w) * 5;
+		int mb = int(tri[q + 3].w) * 6;
 		vec4 m0 = mat[mb];
 		vec4 m1 = mat[mb + 1];
 		vec4 m2 = mat[mb + 2];
@@ -251,6 +251,63 @@ vec3 radiance(vec3 o, vec3 d) {
 		vec3 ms = ms_factor(f0, ms_e(nv, rough, eb.x), par[11].w > 0.5);
 		vec3 ef = ms * (f0 * (eb.x - eb.y) + vec3(f90 * eb.y));
 		vec3 kd = max(1.0 - ef, vec3(0.0));
+		float ws = dot(ef, vec3(0.2126, 0.7152, 0.0722));
+		float wd = dot(kd * alb, vec3(0.2126, 0.7152, 0.0722));
+		float ps = ws + wd > 0.0 ? ws / (ws + wd) : 0.0;
+		vec4 m5 = mat[mb + 5];
+		if (m5.x > 0.0) {
+			if (rnd() < ps) { tp /= ps; alb = vec3(0.0); ps = 1.0; }
+			else {
+				vec3 ka = clamp(alb, 0.0, 1.0);
+				vec3 hv = 4.09712 + 4.20863 * ka - sqrt(9.59217 + 41.6808 * ka + 17.7126 * ka * ka);
+				vec3 al = clamp(1.0 - hv * hv, 0.0, 1.0);
+				vec3 sg = 1.0 / (m5.xyz * (1.9 - ka + 3.5 * (ka - 0.8) * (ka - 0.8)));
+				tp *= kd / (1.0 - ps);
+				vec3 c1;
+				vec3 c2;
+				onb(-gn, c1, c2);
+				float e1 = rnd();
+				float er = sqrt(e1);
+				float eh = 6.28318530717959 * rnd();
+				vec3 wk = c1 * (er * cos(eh)) + c2 * (er * sin(eh)) - gn * sqrt(max(0.0, 1.0 - e1));
+				vec3 wo = offs(p, -gn, tri[q + 5].w);
+				bool ex = false;
+				float sc = sg[min(int(rnd() * 3.0), 2)];
+				vec3 lp = vec3(0.0);
+				for (int i = 0; i < 1024; i++) {
+					float tw = trace(wo, wk, 1e30, false);
+					float tt = tw < 0.0 ? 1e30 : tw;
+					float tf = -log(1.0 - rnd()) / sc;
+					if (tf >= tt) { lp -= sg * tt; p = wo + wk * tt; ex = true; break; }
+					lp += log(sg) - sg * tf;
+					tp *= al;
+					wo += wk * tf;
+					wk = hgs(wk, 0.0);
+					float pq = min(max(tp.x, max(tp.y, tp.z)), 1.0);
+					if (rnd() >= pq) break;
+					tp /= pq;
+				}
+				if (!ex) break;
+				vec3 ep = exp(lp - max(lp.x, max(lp.y, lp.z)));
+				tp *= ep / dot(ep, vec3(1.0 / 3.0));
+				q = hit_p * 7;
+				hb = hit_b;
+				w0 = 1.0 - hb.x - hb.y;
+				gn = tri[q + 5].xyz;
+				if (dot(gn, wk) < 0.0) gn = -gn;
+				n = normalize(tri[q].xyz * w0 + tri[q + 1].xyz * hb.x + tri[q + 2].xyz * hb.y);
+				if (dot(n, gn) < 0.0) n = -n;
+				v = n;
+				nv = 1.0;
+				alb = vec3(1.0);
+				f0 = vec3(0.0);
+				f90 = 0.0;
+				ms = vec3(1.0);
+				kd = vec3(1.0);
+				ps = 0.0;
+				dl = false;
+			}
+		}
 		vec3 po = offs(p, gn, tri[q + 5].w);
 		if (par[7].w > 0.5 && inw) {
 			vec3 wl;
@@ -269,9 +326,6 @@ vec3 radiance(vec3 o, vec3 d) {
 			vec3 l = dl / dd;
 			if (dot(gn, l) > 0.0 && trace(po, l, dd, true) < 0.0) L += tp * bsdf(n, v, l, alb, f0, f90, rough, ms, kd) * (lit[i * 2 + 1].rgb * range_falloff(dd, lit[i * 2 + 1].w));
 		}
-		float ws = dot(ef, vec3(0.2126, 0.7152, 0.0722));
-		float wd = dot(kd * alb, vec3(0.2126, 0.7152, 0.0722));
-		float ps = ws + wd > 0.0 ? ws / (ws + wd) : 0.0;
 		vec3 b1;
 		vec3 b2;
 		onb(n, b1, b2);

@@ -3938,6 +3938,10 @@ under it, and the sun disc shows in reflections and refractions of the surface. 
 leaving a surface starts off it by 256 ulps of the hit point plus 2^-18 of the triangle's
 largest coordinate, because the intersection is only as precise as the triangle's vertices
 (a 400 m sea triangle needs 1.5 mm; P6 lost 6 % of its samples to re-hits before this).
+Skin materials (`sss_skin`: shading 1, opaque, not `ext`) carry their scatter distances into
+`Mat.sss`, and the diffuse share of their light takes a random walk under the surface (P12).
+The walk samples one color channel's free flight for its whole length and weights the path by
+the balance of all three channels at the end, so a long walk's weight stays below 3.
 
 * **P1 furnace.** A sphere (81920 triangles, smooth normals) under a uniform white sky, 1024
   spp, 128 x 128, four materials: white dielectric at roughness 0.2 and 0.7, white metal at 0.3,
@@ -4038,7 +4042,7 @@ largest coordinate, because the intersection is only as precise as the triangle'
 | P2 controls, sun x 1.01 / point x 1.01 | 8592 / 1405 ppm: fail | same |
 | P3 Cornell: mean z, mean z^2, \|z\| > 4, total | 0.0055, 0.855, 2, 72 ppm (98 ms) | same (5.4 s) |
 | P3 control, light x 1.01 | mean z 0.391: fails | same |
-| P4 longest dispatch, bad samples | 62 ms, 0 | 699 ms (reported), 0 |
+| P4 longest dispatch, bad samples | 249 ms, 0 | 2139 ms (reported), 0 |
 | P5 water furnace: total, worst band | -521 ppm, 2367 ppm | -558 ppm, 2383 ppm |
 | P5 controls, absorption 0.01 / refraction x 1.02 | -123910 / 36450 ppm: fail | same to 0.1 % |
 | P6 Beer-Lambert: total, worst pixel | 169 ppm, 7395 ppm | same |
@@ -4055,6 +4059,10 @@ largest coordinate, because the intersection is only as precise as the triangle'
 | P11 layer controls, no alpha / flipped | 683892 / 194046 ppm: fail | same |
 | P11 cloud shadow: total / worst pixel | -176 / 4901 ppm | -175 / 4901 ppm |
 | P11 shadow controls, no factor / mirrored (worst pixel) | 475328 / 436923 ppm: fail | same |
+| P12 skin slab: total, worst channel | -897 ppm, 3622 ppm | -897 ppm, 3627 ppm |
+| P12 slab controls, sun x 1.01 / plain base (worst channel) | 10402 / 6176 ppm: fail | 10404 / 6172 ppm: fail |
+| P12 skin furnace: total, worst bin | 250 ppm, 977 ppm | 250 ppm, 978 ppm |
+| P12 control, skin base 0.9 | -23425 ppm: fails | -23424 ppm: fails |
 
 The CPU and GPU results agree to the printed digit because both use the same seeds and
 the same shader; only rounding in the last place differs. The furnace error grows with
