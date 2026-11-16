@@ -1,0 +1,138 @@
+import std;
+import math;
+import gfx;
+import ttf;
+import gfx.sdf_font;
+fn sdf_ttf_dt1(f real[>..]&, d real[>..]&, v int[>..]&, z real[>..]&, n int) {
+	var k = 0;
+	v[0] = 0;
+	z[0] = -1e30;
+	z[1] = 1e30;
+	for q in 1..n {
+		var s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2.0 * q - 2.0 * v[k]);
+		while s <= z[k] {
+			k--;
+			s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2.0 * q - 2.0 * v[k]);
+		}
+		k++;
+		v[k] = q;
+		z[k] = s;
+		z[k + 1] = 1e30;
+	}
+	k = 0;
+	for q in 0..n {
+		while z[k + 1] < q { k++; }
+		let dq = q - v[k];
+		d[q] = dq * dq + f[v[k]];
+	}
+}
+fn sdf_ttf_dt(g f32[>..]&, w int, h int) {
+	let m = max(w, h);
+	var f real[>..] = [];
+	var d real[>..] = [];
+	var v int[>..] = [];
+	var z real[>..] = [];
+	f.resize(m, 0.0);
+	d.resize(m, 0.0);
+	v.resize(m, 0);
+	z.resize(m + 1, 0.0);
+	for x in w {
+		for y in h { f[y] = g[y * w + x]; }
+		sdf_ttf_dt1(f, d, v, z, h);
+		for y in h { g[y * w + x] = d[y] as f32; }
+	}
+	for y in h {
+		for x in w { f[x] = g[y * w + x]; }
+		sdf_ttf_dt1(f, d, v, z, w);
+		for x in w { g[y * w + x] = d[x] as f32; }
+	}
+}
+fn sdf_use_ttf(bytes const byte[:]) bool {
+	var info ttf::Info = ttf::Info { .. };
+	info.d.append(bytes);
+	info.fo = ttf::font_offset(bytes, 0);
+	if info.fo < 0 { return false; }
+	if !ttf::init(info) { return false; }
+	let hg = ttf::glyph_index(info, 72);
+	let hb = ttf::bbox(info, hg, 1.0 as f32, 1.0 as f32, 0.0 as f32, 0.0 as f32);
+	var cap = -(hb.y0 as real);
+	if !(cap > 0.0) { cap = ttf::vmetrics(info).x as real * 0.7; }
+	let U = SDF_CAP_H as real / cap;
+	let Q = 4;
+	let S f32 = (U * Q) as f32;
+	let C = SDF_CELL * Q;
+	let penx = 8 * Q;
+	let basey = 35 * Q;
+	var pix byte[>..] = [];
+	pix.resize(SDF_ATLAS_W * SDF_ATLAS_H * 4, 0);
+	for k in 95 {
+		let g = ttf::glyph_index(info, k + 32);
+		SDF_ADV[k] = (ttf::hmetrics(info, g).x as real * U) as f32;
+		SDF_OFF[k] = 0.0;
+		if k == 0 || g == 0 { continue; }
+		let b = ttf::bbox(info, g, S, S, 0.0 as f32, 0.0 as f32);
+		let gw = (b.x1 - b.x0) as int;
+		let gh = (b.y1 - b.y0) as int;
+		if !(gw > 0) || !(gh > 0) { continue; }
+		var cov byte[>..] = [];
+		cov.resize(gw * gh, 0);
+		ttf::glyph_bitmap(info, cov, 0, gw, gh, gw, S, S, g);
+		var fin f32[>..] = [];
+		var fout f32[>..] = [];
+		fin.resize(C * C, 1e20);
+		fout.resize(C * C, 1e20);
+		for Y in C {
+			for X in C {
+				let px = X - penx - (b.x0 as int);
+				let py = Y - basey - (b.y0 as int);
+				let inside = px >= 0 && px < gw && py >= 0 && py < gh && cov[py * gw + px] >= 128;
+				if inside { fin[Y * C + X] = 0.0; } else { fout[Y * C + X] = 0.0; }
+			}
+		}
+		sdf_ttf_dt(fin, C, C);
+		sdf_ttf_dt(fout, C, C);
+		let col = k % SDF_COLS;
+		let row = k / SDF_COLS;
+		for cy in SDF_CELL {
+			for cx in SDF_CELL {
+				let X = cx * Q + 2;
+				let Y = cy * Q + 2;
+				let px = X - penx - (b.x0 as int);
+				let py = Y - basey - (b.y0 as int);
+				let inside = px >= 0 && px < gw && py >= 0 && py < gh && cov[py * gw + px] >= 128;
+				var d = 0.0;
+				if inside {
+					d = -(sqrt(fout[Y * C + X] as real) - 0.5) / Q;
+				} else {
+					d = (sqrt(fin[Y * C + X] as real) - 0.5) / Q;
+				}
+				let reg = clamp(0.5 - (d - 0.35) / (2.0 * SDF_SPREAD), 0.0, 1.0);
+				let bold = clamp(0.5 - (d - 1.25) / (2.0 * SDF_SPREAD), 0.0, 1.0);
+				let rv = round(reg * 255.0) as int;
+				let bv = round(bold * 255.0) as int;
+				let ro = ((row * SDF_CELL + cy) * SDF_ATLAS_W + col * SDF_CELL + cx) * 4;
+				let bo = (((row + 5) * SDF_CELL + cy) * SDF_ATLAS_W + col * SDF_CELL + cx) * 4;
+				for c in 4 {
+					pix[ro + c] = rv as byte;
+					pix[bo + c] = bv as byte;
+				}
+			}
+		}
+	}
+	SDF_KERN.clear();
+	for a in 95 {
+		for b2 in 95 {
+			let kv = ttf::kern(info, ttf::glyph_index(info, a + 32), ttf::glyph_index(info, b2 + 32));
+			SDF_KERN.push((kv as real * U) as f32);
+		}
+	}
+	SDF_TTF_PIX.clear();
+	SDF_TTF_PIX.append(pix[..]);
+	if SDF_READY { gfx::update_texture(SDF_TEX, pix[..]); }
+	true
+}
+fn sdf_use_ttf_file(path const byte[:]) bool {
+	var buf byte[>..] = [];
+	if !read_file(path, buf) { return false; }
+	sdf_use_ttf(buf[..])
+}
