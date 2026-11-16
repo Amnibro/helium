@@ -2,6 +2,8 @@ into pt_check.he
 lang he
 use std
 use os
+use gfx
+use gfx.envmap
 use gfx.hwrt
 use gfx.pathtrace
 
@@ -100,6 +102,28 @@ sea(name const byte[:], dt real, want bool) bool:
 	pass := wd <= 0.0001 && mv == 0.0
 	print(str(name, ": 4096 points, worst height difference ", (wd * 1e6) as! int, " um (bar 100), x and z moved ", mv, ": ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
 	pass == want
+sky(name const byte[:], ik real, mx real, want bool) bool:
+	e f32[>..] ~= []
+	for j 512: for i 1024 { ph := ((i as real + 0.5) / 1024.0 - 0.5) * 6.283185307179586; la := (0.5 - (j as real + 0.5) / 512.0) * 3.141592653589793; for v [0.5 + 0.4 * cos(la) * cos(ph), 0.5 + 0.4 * sin(la), 0.5 + 0.4 * cos(la) * sin(ph), 1.0] { e.push(v as f32) } }
+	envmap::set_equirect(e[..], 1024, 512); envmap::intensity = 0.8 as f32; envmap::rotation = 0.7 as f32
+	pathtrace::clear(); m := pathtrace::mat(pathtrace::Mat {}); z := [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
+	pathtrace::tri([5000.0, 5000.0, 5000.0, 5000.001, 5000.0, 5000.0, 5000.0, 5000.0, 5000.001][..], z[..], uv[..], cl[..], m)
+	if !pathtrace::sky_cube(envmap::cube_n): print(str(name, ": no cube read back")); return false
+	sun := pathtrace::SUN; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::FURN = -1.0; pathtrace::FOV = 1.7; wd ~= 0.0; c := cos(0.7); sn := sin(0.7)
+	for k 6:
+		ax := [0.0, 0.0, 0.0]; ax[k / 2] = if k % 2 == 0 { 1.0 } else { -1.0 }; up := if k / 2 == 1 { [0.0, 0.0, 1.0] } else { [0.0, 1.0, 0.0] }
+		pathtrace::EYE = [0.0, 0.0, 0.0]; pathtrace::TGT = ax; pathtrace::UP = up
+		a := pathtrace::render(64, 64, 1024)
+		if a.len == 0: print(str(name, ": render failed")); pathtrace::SUN = sun; return false
+		rx := ax[1] * up[2] - ax[2] * up[1]; ry := ax[2] * up[0] - ax[0] * up[2]; rz := ax[0] * up[1] - ax[1] * up[0]; vx := ry * ax[2] - rz * ax[1]; vy := rz * ax[0] - rx * ax[2]; vz := rx * ax[1] - ry * ax[0]; th := tan(0.85)
+		for i 4096:
+			u := ((i % 64) as real + 0.5) / 32.0 - 1.0; v := 1.0 - ((i / 64) as real + 0.5) / 32.0; dx ~= rx * u * th + vx * v * th + ax[0]; dy ~= ry * u * th + vy * v * th + ax[1]; dz ~= rz * u * th + vz * v * th + ax[2]; dl := sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl
+			q := [(c * dx + sn * dz) * mx, dy, c * dz - sn * dx]; n := a[i * 8 + 5] as real
+			for ch 3: wd = max(wd, abs(a[i * 8 + ch] as real / n - (0.5 + 0.4 * q[ch]) * 0.8 * ik))
+	pathtrace::SUN = sun; envmap::on = false; envmap::intensity = 1.0 as f32; envmap::rotation = 0.0 as f32; pathtrace::clear()
+	pass := wd <= 0.002
+	print(str(name, ": 6 x 4096 pixels, worst channel difference ", (wd * 1e6) as! int, " ppm of white (bar 2000): ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
 water(name const byte[:], kind int, sk real, ak real, tk real, want bool) bool:
 	san := [0.3, 0.06, 0.045]; ss := [0.02, 0.04, 0.06]; srn := [3.0, 2.85, 2.6]; ts := [0.0, 0.5, -sqrt(0.75)]; g := 0.5; e := 1.0 / 1.33
 	pathtrace::clear(); plane(0.0, 400.0, pathtrace::mat(pathtrace::Mat { water: true })); pathtrace::EYE = [0.0, 3.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::TK = tk; pathtrace::ETA = 1.33; pathtrace::UNDER = false; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
@@ -174,6 +198,8 @@ main():
 	ok = water("P8 control, absorption x 1.05", 3, 1.0, 1.05, 1.0, false) && ok
 	ok = sea("P9 sea lift", 0.0, true) && ok
 	ok = sea("P9 control, reference at time + 0.01 s", 0.01, false) && ok
+	if !gfx::open_headless(64, 64): print("P10: no gfx device"); ok = false
+	else { ok = sky("P10 engine sky", 1.0, 1.0, true) && ok; ok = sky("P10 control, reference x 1.01", 1.01, 1.0, false) && ok; ok = sky("P10 control, x axis mirrored", 1.0, -1.0, false) && ok; gfx::close() }
 	print(str("P4 longest dispatch ", MX as! int, " ms (bar 1000), bad samples ", BAD, " (bar 0): ", if MX < 1000.0 && BAD == 0 { "PASS" } else { "FAIL" }, if cpu { " (dispatch time reported)" } else { "" }))
 	ok = ok && BAD == 0 && (cpu || MX < 1000.0)
 	print(if ok { "pathtrace: ok" } else { "pathtrace: FAILED" })

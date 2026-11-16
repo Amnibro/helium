@@ -8,6 +8,7 @@ layout(std430, set = 0, binding = 3) readonly buffer Tex { uint tex[]; };
 layout(std430, set = 0, binding = 4) buffer Acc { vec4 acc[]; };
 layout(std430, set = 0, binding = 5) readonly buffer Par { vec4 par[]; };
 layout(std430, set = 0, binding = 6) readonly buffer Lit { vec4 lit[]; };
+layout(std430, set = 0, binding = 7) readonly buffer Sky { vec4 skyc[]; };
 #include "lighting.glsl"
 #include "ms.glsl"
 #include "water.glsl"
@@ -117,7 +118,19 @@ vec3 sunw(vec3 p, vec3 st, out vec3 wl) {
 	if (ci <= 0.0 || ct <= 0.0 || trace(offs(s, dot(gn, ts) > 0.0 ? gn : -gn, tri[q + 5].w), ts, 1e30, true) >= 0.0) return vec3(0.0);
 	return par[7].rgb * ((1.0 - fdiel(ci, e)) * ci / ct) * exp(-st * t1);
 }
-vec3 env(vec3 d) { return par[11].x > 0.5 ? vec3(par[11].y) : sky_color(d, normalize(par[6].xyz), par[8].rgb, par[9].rgb, par[10].rgb, par[7].rgb) * par[8].w; }
+vec4 cube_tx(int f, int x, int y, int n) { return skyc[(f * n + clamp(y, 0, n - 1)) * n + clamp(x, 0, n - 1)]; }
+vec3 cube(vec3 d) {
+	int n = int(par[17].x);
+	vec3 r = vec3(par[17].z * d.x + par[17].w * d.z, d.y, par[17].z * d.z - par[17].w * d.x);
+	vec3 a = abs(r);
+	int f = a.x >= a.y && a.x >= a.z ? (r.x > 0.0 ? 0 : 1) : a.y >= a.z ? (r.y > 0.0 ? 2 : 3) : (r.z > 0.0 ? 4 : 5);
+	vec2 c = f == 0 ? vec2(-r.z, -r.y) / a.x : f == 1 ? vec2(r.z, -r.y) / a.x : f == 2 ? vec2(r.x, r.z) / a.y : f == 3 ? vec2(r.x, -r.z) / a.y : f == 4 ? vec2(r.x, -r.y) / a.z : vec2(-r.x, -r.y) / a.z;
+	vec2 u = (c * 0.5 + 0.5) * float(n) - 0.5;
+	ivec2 i = ivec2(floor(u));
+	vec2 t = u - vec2(i);
+	return mix(mix(cube_tx(f, i.x, i.y, n), cube_tx(f, i.x + 1, i.y, n), t.x), mix(cube_tx(f, i.x, i.y + 1, n), cube_tx(f, i.x + 1, i.y + 1, n), t.x), t.y).rgb * par[17].y;
+}
+vec3 env(vec3 d) { return par[11].x > 0.5 ? vec3(par[11].y) : par[17].x > 0.5 ? cube(d) : sky_color(d, normalize(par[6].xyz), par[8].rgb, par[9].rgb, par[10].rgb, par[7].rgb) * par[8].w; }
 vec3 radiance(vec3 o, vec3 d) {
 	vec3 L = vec3(0.0);
 	vec3 tp = vec3(1.0);
