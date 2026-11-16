@@ -1318,6 +1318,13 @@ and the shoulders, and its roots are drawn thicker so the scalp does not show th
 A fringe ends above the brows, and long loose hair is combed to the sides from the
 hairline down (`face`, the half width kept clear, in head units), so the eyes stay clear.
 
+### Soft puffs
+
+A soft puff material (`shading = 6`) is a standard surface whose alpha fades out
+where the surface turns away from the camera, so round shapes such as smoke,
+clouds and pollen balls get soft edges instead of a hard outline. Use it with
+`alpha_mode = gltf::ALPHA_BLEND`.
+
 ### Foliage
 
 Leaves, needles and grass blades are thin, so light goes through them. A foliage

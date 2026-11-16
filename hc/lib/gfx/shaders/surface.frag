@@ -142,6 +142,8 @@ float at_n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.
 void at_setup(vec3 p) { vec2 q = p.xz + p.y * vec2(0.71, -0.53); float l = (at_n(q * 0.031) * 0.7 + at_n(q * 0.11) * 0.3) * 8.0; float ia = floor(l); at_t = smoothstep(0.3, 0.7, fract(l)); at_a = sin(vec2(3.0, 7.0) * ia); at_b = sin(vec2(3.0, 7.0) * (ia + 1.0)); at_on = true; }
 vec4 ats(sampler2D s, vec2 u) { if (!at_on) return smp(s, u); vec2 dx = dFdx(u) * xo2.z; vec2 dy = dFdy(u) * xo2.z; return mix(textureGrad(s, u + at_a, dx, dy), textureGrad(s, u + at_b, dx, dy), at_t); }
 vec4 atsa(sampler2DArray s, vec2 u, float l, vec2 dx, vec2 dy) { if (!at_on) return smpa(s, vec3(u, l)); return mix(textureGrad(s, vec3(u + at_a, l), dx * xo2.z, dy * xo2.z), textureGrad(s, vec3(u + at_b, l), dx * xo2.z, dy * xo2.z), at_t); }
+float wfall_st() { return smoothstep(0.7, 0.3, abs(normalize(in_nrm).y)); }
+vec2 wfall_p() { return vec2(in_uv.x * 7.0, in_uv.y * 3.7 - cluster.w * 2.2); }
 vec3 sp_w = vec3(0.0, 1.0, 0.0);
 vec3 sp_g = vec3(0.0, 1.0, 0.0);
 vec3 sp_dx = vec3(0.0);
@@ -969,7 +971,7 @@ void main() {
 	int model = int(misc.y + 0.5);
 	bool is_water = model == 4;
 	if (is_water) model = 0;
-	bool is_puff = model == 5;
+	bool is_puff = model == 6;
 	if (is_puff) model = 0;
 #ifndef SURF_LITE
 	if (misc.z > 0.5 && x_to[12].z >= 0.0 && x_ior.z > 0.0 && abs(in_tan.w) > 0.5) {
@@ -1097,17 +1099,13 @@ void main() {
 		t = dot(t, t) > 1e-16 ? normalize(t) : normalize(cross(abs(n.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), n));
 		b = cross(n, t) * (dot(cross(n, t), -bv) < 0.0 ? -1.0 : 1.0);
 	}
-	float wst = 0.0;
-	float wv = 0.0;
-	vec2 wfp = vec2(0.0);
 	if (is_water) {
 		vec3 ww = water_wave(in_world.xz, cluster.w, shade_b.xyz, 11);
 		sea_h = ww.z;
-		wst = smoothstep(0.7, 0.3, abs(n.y));
-		wv = clamp(in_uv.y, 0.0, 1.0);
+		float wst = wfall_st();
 		vec3 ws = normalize(cross(vec3(0.0, 1.0, 0.0), n) + vec3(1e-5, 0.0, 0.0));
 		vec3 wu = cross(n, ws);
-		wfp = vec2(in_uv.x * 7.0, in_uv.y * 3.7 - cluster.w * 2.2);
+		vec2 wfp = wfall_p();
 		vec2 wg = ww.xy;
 		vec2 fg = water_grad(wfp, cluster.w * 0.3);
 		n = normalize(n + mix(vec3(-wg.x, 0.0, -wg.y), (wu * fg.y - ws * fg.x) * 0.7, wst));
@@ -1453,7 +1451,7 @@ void main() {
 		float zw = dot(in_world - eye.xyz, view_dir.xyz);
 		float zs = textureLod(tex_trans, clamp(wuv + n.xz * 0.02, vec2(0.0), vec2(1.0)), 0.0).a;
 		wdz = zs > 0.0 ? max(zs - zw, 0.0) : 7.0;
-		wdz = mix(wdz, 0.35, wst);
+		wdz = mix(wdz, 0.35, wfall_st());
 		x.thick = min(wdz, 2.0);
 		tint.rgb = exp(-shade_a.rgb * max(wdz, 0.02));
 	}
@@ -1490,6 +1488,9 @@ void main() {
 	if (is_water && !sea_under) {
 		rgb += shade_c.rgb * (vec3(1.0) - tint.rgb) * sea_lit;
 		float nz = water_grad(in_world.xz * 3.1, cluster.w * 0.7).x * 7.0 + 0.5;
+		float wst = wfall_st();
+		float wv = clamp(in_uv.y, 0.0, 1.0);
+		vec2 wfp = wfall_p();
 		float aer = smoothstep(0.3, 1.0, wv * wv);
 		float fs = water_grad(wfp * vec2(2.7, 0.4 + 1.1 * aer), cluster.w * 0.5).x * 5.0 + 0.55;
 		float foam = max((shade_b.w * smoothstep(0.32, 0.0, wdz + 0.14 * nz) + shade_c.w * smoothstep(0.3, 0.7, sea_h / max(shade_b.y / shade_b.x * 2.94427, 1e-6)) * clamp(0.5 + 0.5 * nz, 0.4, 1.0)) * (1.0 - wst), wst * smoothstep(1.0 - 0.65 * aer, 1.25 - 0.5 * aer, fs) * (0.55 + 0.45 * aer));
