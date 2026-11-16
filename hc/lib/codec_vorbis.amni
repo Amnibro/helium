@@ -708,93 +708,142 @@ fn slope(n int) f32[>..] {
 	}
 	r
 }
+var tab_n0 int = 0;
+var tab_n1 int = 0;
+var fc0 f32[>..];
+var fs0 f32[>..];
+var fc1 f32[>..];
+var fs1 f32[>..];
+var wc0 f32[>..];
+var ws0 f32[>..];
+var wc1 f32[>..];
+var ws1 f32[>..];
 var fre f32[>..];
 var fim f32[>..];
-var wcs f32[>..];
-var wsn f32[>..];
-fn fft(re f32[>..]&, im f32[>..]&, n int) {
+fn ftab(n int, sine bool) f32[>..] {
+	var r f32[>..] = [];
+	let h = n / 4;
+	let cnt = h / 2;
+	for k in cnt {
+		let a = 2.0 * PI * (k as real) / (h as real);
+		if sine { r.push((0.0 - sin(a)) as f32); } else { r.push(cos(a) as f32); }
+	}
+	r
+}
+fn wtab(n int, sine bool) f32[>..] {
+	var r f32[>..] = [];
+	let h = n / 4;
+	for k in h {
+		let a = PI / ((n / 2) as real) * ((k as real) + 0.125);
+		if sine { r.push(sin(a) as f32); } else { r.push(cos(a) as f32); }
+	}
+	r
+}
+fn tables(n int) {
+	if tab_n0 == n || tab_n1 == n { return; }
+	if tab_n0 == 0 {
+		fc0 = ftab(n, false);
+		fs0 = ftab(n, true);
+		wc0 = wtab(n, false);
+		ws0 = wtab(n, true);
+		tab_n0 = n;
+	} else {
+		fc1 = ftab(n, false);
+		fs1 = ftab(n, true);
+		wc1 = wtab(n, false);
+		ws1 = wtab(n, true);
+		tab_n1 = n;
+	}
+}
+fn fft(re f32[:], im f32[:], n int, c const f32[:], s const f32[:]) {
 	var j = 0;
 	for i in 1..n {
-		var bt = n >> 1;
-		while (j & bt) != 0 {
-			j = j ^ bt;
-			bt = bt >> 1;
+		var bit = n >> 1;
+		while (j & bit) != 0 {
+			j = j ^ bit;
+			bit = bit >> 1;
 		}
-		j = j ^ bt;
+		j = j ^ bit;
 		if i < j {
-			let t = re[i];
+			let tr = re[i];
+			let ti = im[i];
 			re[i] = re[j];
-			re[j] = t;
-			let u = im[i];
 			im[i] = im[j];
-			im[j] = u;
+			re[j] = tr;
+			im[j] = ti;
 		}
 	}
 	var sp = 2;
 	while sp <= n {
-		let half = sp / 2;
-		for k in half {
-			let ang = TAU * (k as real) / (sp as real);
-			let wr = cos(ang) as f32;
-			let wi = (-sin(ang)) as f32;
-			var i = k;
-			while i < n {
-				let b = i + half;
-				let tr = re[b] * wr - im[b] * wi;
-				let ti = re[b] * wi + im[b] * wr;
-				re[b] = re[i] - tr;
-				im[b] = im[i] - ti;
-				re[i] = re[i] + tr;
-				im[i] = im[i] + ti;
-				i += sp;
+		let hs = sp / 2;
+		let step = n / sp;
+		var i = 0;
+		while i < n {
+			for k in hs {
+				let wr = c[k * step];
+				let wi = s[k * step];
+				let a = i + k;
+				let b = a + hs;
+				let xr = re[b] * wr - im[b] * wi;
+				let xi = re[b] * wi + im[b] * wr;
+				let ar = re[a];
+				let ai = im[a];
+				re[b] = ar - xr;
+				im[b] = ai - xi;
+				re[a] = ar + xr;
+				im[a] = ai + xi;
 			}
+			i += sp;
 		}
 		sp = sp * 2;
 	}
 }
-fn imdct(x const f32[:], xat int, n int, out f32[>..]&) {
-	while out.len < n { out.push(0.0); }
-	let m = n / 2;
-	let h = m / 2;
-	let q = m / 4;
+fn imdct_core(x const f32[:], xat int, n int, out f32[>..]&, c const f32[:], s const f32[:], wcs const f32[:], wss const f32[:]) {
+	let mm = n / 2;
+	let h = mm / 2;
+	let q = mm / 4;
 	while fre.len < h {
 		fre.push(0.0);
 		fim.push(0.0);
 	}
-	while wcs.len < h {
-		wcs.push(0.0);
-		wsn.push(0.0);
-	}
 	for k in h {
-		let w = PI / (m as real) * ((k as real) + 0.125);
-		let c = cos(w);
-		let s = sin(w);
-		wcs[k] = c as f32;
-		wsn[k] = s as f32;
-		let ev = x[xat + 2 * k] as real;
-		let od = -(x[xat + m - 1 - 2 * k] as real);
-		fre[k] = (od * s - ev * c) as f32;
-		fim[k] = (od * c + ev * s) as f32;
+		let ev = x[xat + 2 * k];
+		let od = 0.0 - x[xat + mm - 1 - 2 * k];
+		let cw = wcs[k];
+		let sw = wss[k];
+		fre[k] = od * sw - ev * cw;
+		fim[k] = od * cw + ev * sw;
 	}
-	fft(fre, fim, h);
+	fft(fre, fim, h, c, s);
 	for k in h {
-		let vr = wcs[k] * fre[k] + wsn[k] * fim[k];
-		let vi = wsn[k] * fre[k] - wcs[k] * fim[k];
+		let cw = wcs[k];
+		let sw = wss[k];
+		let vr = cw * fre[k] + sw * fim[k];
+		let vi = sw * fre[k] - cw * fim[k];
 		if k < q {
 			let fi = 2 * k;
-			let ri = h - 1 - 2 * k;
-			out[ri] = -vi;
+			let ri = h - 1 - fi;
+			out[ri] = 0.0 - vi;
 			out[h + fi] = vi;
 			out[2 * h + ri] = vr;
 			out[3 * h + fi] = vr;
 		} else {
 			let fi = 2 * (k - q);
 			let ri = h - 1 - fi;
-			out[fi] = -vr;
+			out[fi] = 0.0 - vr;
 			out[h + ri] = vr;
 			out[2 * h + fi] = vi;
 			out[3 * h + ri] = vi;
 		}
+	}
+}
+fn imdct(x const f32[:], xat int, n int, out f32[>..]&) {
+	while out.len < n { out.push(0.0); }
+	tables(n);
+	if tab_n0 == n {
+		imdct_core(x, xat, n, out, fc0, fs0, wc0, ws0);
+	} else {
+		imdct_core(x, xat, n, out, fc1, fs1, wc1, ws1);
 	}
 }
 fn imdct_into(x const f32[:], out f32[>..]&) {
@@ -908,65 +957,68 @@ var flr f32[>..];
 var ibuf f32[>..];
 var ovl f32[>..];
 var prev int = 0;
-fn clamp1(v f32) f32 { if v > 1.0 { 1.0 } else if v < -1.0 { -1.0 } else { v } }
-fn wv(big bool, i int) f32 { if big { win1[i] } else { win0[i] } }
+fn clampf(v f32) f32 {
+	if v > 1.0 { 1.0 } else if v < -1.0 { -1.0 } else { v }
+}
+fn put(out f32[>..]&, at int, v f32) {
+	out[at] = clampf(v);
+}
 fn packet(k int, out f32[>..]&) int {
 	if pk_len[k] == 0 { return 0; }
 	bstart(k, 0);
-	if bits(1) != 0 { return 0; }
+	if bits(1) == 1 { return 0; }
 	let md = bits(ilog(nmodes - 1));
 	if md >= nmodes { return 0; }
-	let bf = md_block[md];
-	let n = if bf == 1 { bs1 } else { bs0 };
-	if bf == 1 { bits(2); }
+	let blk = md_block[md];
+	let n = if blk == 1 { bs1 } else { bs0 };
+	if blk == 1 { bits(2); }
 	let n2 = n / 2;
 	let mp = md_map[md];
 	let half1 = bs1 / 2;
-	let chn = chans;
-	let need = chn * half1;
-	while flr.len < need { flr.push(0.0); }
-	while rv.len < need { rv.push(0.0); }
-	while ovl.len < need { ovl.push(0.0); }
-	while dnd.len < chn { dnd.push(false); }
-	for ch in chn {
-		let fl = smfloor[mp * 16 + mux[mp * 255 + ch]];
-		floor_read(fl, ch);
+	while flr.len < chans * half1 { flr.push(0.0); }
+	while rv.len < chans * half1 { rv.push(0.0); }
+	while ovl.len < chans * half1 { ovl.push(0.0); }
+	while dnd.len < chans { dnd.push(false); }
+	for ch in chans {
+		let sm = mux[mp * 255 + ch];
+		let f = smfloor[mp * 16 + sm];
+		floor_read(f, ch);
 		dnd[ch] = !fused[ch];
 		if fused[ch] {
-			floor_curve(fl, ch, n2, flr, ch * half1);
+			floor_curve(f, ch, n2, flr, ch * half1);
 		} else {
-			for i in n2 { flr[ch * half1 + i] = 0.0; }
+			for t in n2 { flr[ch * half1 + t] = 0.0; }
 		}
 	}
 	let ncp = mp_ncp[mp];
 	let cpo = mp_cp[mp];
-	for s in ncp {
-		let mg = cmag[cpo + s];
-		let an = cang[cpo + s];
-		if dnd[mg] != dnd[an] {
-			dnd[mg] = false;
-			dnd[an] = false;
+	for i in ncp {
+		let m = cmag[cpo + i];
+		let a = cang[cpo + i];
+		if dnd[m] != dnd[a] {
+			dnd[m] = false;
+			dnd[a] = false;
 		}
 	}
-	for ch in chn {
-		for i in n2 { rv[ch * half1 + i] = 0.0; }
+	for ch in chans {
+		for t in n2 { rv[ch * half1 + t] = 0.0; }
 	}
 	for s in mp_sub[mp] {
-		var cs int[>..] = [];
-		for ch in chn {
-			if mux[mp * 255 + ch] == s { cs.push(ch); }
+		var chl int[>..] = [];
+		for ch in chans {
+			if mux[mp * 255 + ch] == s { chl.push(ch); }
 		}
-		residue_read(smres[mp * 16 + s], cs, n2);
+		residue_read(smres[mp * 16 + s], chl, n2);
 	}
-	for st in ncp {
-		let s = ncp - 1 - st;
-		let mg = cmag[cpo + s];
-		let an = cang[cpo + s];
-		for i in n2 {
-			let m = rv[mg * half1 + i];
-			let a = rv[an * half1 + i];
-			var nm = m;
-			var na = a;
+	for jj in ncp {
+		let i = ncp - 1 - jj;
+		let mb = cmag[cpo + i] * half1;
+		let ab = cang[cpo + i] * half1;
+		for t in n2 {
+			let m = rv[mb + t];
+			let a = rv[ab + t];
+			var nm f32 = m;
+			var na f32 = m;
 			if m > 0.0 {
 				if a > 0.0 {
 					nm = m;
@@ -984,52 +1036,55 @@ fn packet(k int, out f32[>..]&) int {
 					na = m;
 				}
 			}
-			rv[mg * half1 + i] = nm;
-			rv[an * half1 + i] = na;
+			rv[mb + t] = nm;
+			rv[ab + t] = na;
 		}
 	}
-	for ch in chn {
+	for ch in chans {
 		if !dnd[ch] {
-			for i in n2 { flr[ch * half1 + i] = flr[ch * half1 + i] * rv[ch * half1 + i]; }
+			for t in n2 { flr[ch * half1 + t] = flr[ch * half1 + t] * rv[ch * half1 + t]; }
 		}
 	}
-	var frames f32[>..] = [];
-	let fc = if prev != 0 { prev / 4 + n / 4 } else { 0 };
-	for i in fc * chn { frames.push(0.0); }
-	for ch in chn {
+	var frames = 0;
+	if prev != 0 { frames = prev / 4 + n / 4; }
+	let ol = out.len;
+	out.resize(ol + frames * chans, 0.0);
+	let start = (bs1 - bs0) / 4;
+	let h0 = bs0 / 2;
+	for ch in chans {
 		imdct(flr, ch * half1, n, ibuf);
 		let ob = ch * half1;
 		if prev != 0 {
 			if prev == n {
-				let big = (n == bs1);
 				for i in n2 {
-					frames[i * chn + ch] = clamp1(ovl[ob + i] * wv(big, n2 - 1 - i) + ibuf[i] * wv(big, i));
+					let a = ovl[ob + i];
+					let b = ibuf[i];
+					var v f32 = 0.0;
+					if n == bs1 {
+						v = a * win1[n2 - 1 - i] + b * win1[i];
+					} else {
+						v = a * win0[n2 - 1 - i] + b * win0[i];
+					}
+					put(out, ol + i * chans + ch, v);
 				}
-			} else if prev == bs1 {
-				let start = (bs1 - bs0) / 4;
-				let h0 = bs0 / 2;
-				for i in start { frames[i * chn + ch] = clamp1(ovl[ob + i]); }
+			} else if prev > n {
+				for i in start { put(out, ol + i * chans + ch, ovl[ob + i]); }
 				for i in h0 {
-					frames[(start + i) * chn + ch] = clamp1(ovl[ob + start + i] * win0[h0 - 1 - i] + ibuf[i] * win0[i]);
+					let v = ovl[ob + start + i] * win0[h0 - 1 - i] + ibuf[i] * win0[i];
+					put(out, ol + (start + i) * chans + ch, v);
 				}
 			} else {
-				let start = (bs1 - bs0) / 4;
-				let h0 = bs0 / 2;
 				for i in h0 {
-					frames[i * chn + ch] = clamp1(ovl[ob + i] * win0[h0 - 1 - i] + ibuf[start + i] * win0[i]);
+					let v = ovl[ob + i] * win0[h0 - 1 - i] + ibuf[start + i] * win0[i];
+					put(out, ol + i * chans + ch, v);
 				}
-				var j = h0;
-				while start + j < half1 {
-					frames[j * chn + ch] = clamp1(ibuf[start + j]);
-					j++;
-				}
+				for j in h0..frames { put(out, ol + j * chans + ch, ibuf[start + j]); }
 			}
 		}
 		for i in n2 { ovl[ob + i] = ibuf[n2 + i]; }
 	}
 	prev = n;
-	if fc > 0 { out.append(frames); }
-	fc
+	frames
 }
 fn decode(data const byte[:], pcm f32[>..]&) int, int, bool {
 	pcm.clear();
@@ -1038,45 +1093,51 @@ fn decode(data const byte[:], pcm f32[>..]&) int, int, bool {
 	if !pages() { return 0, 0, false; }
 	if !headers() { return 0, 0, false; }
 	prev = 0;
+	tab_n0 = 0;
+	tab_n1 = 0;
 	win0 = slope(bs0);
 	win1 = slope(bs1);
 	ovl.clear();
+	flr.clear();
+	rv.clear();
+	fy.clear();
+	fused.clear();
+	dnd.clear();
 	var total = 0;
 	var skip = 0;
-	var first_gran = 0;
+	var firstg = 0;
 	var seen = false;
-	var last_g = -1;
-	var have_last = false;
+	var lastg = -1;
 	for k in 3..pk_at.len {
-		let c = packet(k, pcm);
-		total += c;
+		let fr = packet(k, pcm);
+		total += fr;
 		let g = pk_gran[k];
 		if g != -1 {
 			if !seen {
 				seen = true;
 				if !pk_last[k] && total > g {
 					skip = total - g;
-					first_gran = 0;
+					firstg = 0;
 				} else {
-					first_gran = if g - total > 0 { g - total } else { 0 };
+					firstg = if g - total > 0 { g - total } else { 0 };
 				}
 			}
-			last_g = g;
-			have_last = true;
+			lastg = g;
 		}
 	}
-	let ch = chans;
-	let nfr = pcm.len / ch;
-	if skip > nfr { skip = nfr; }
-	var keep = nfr - skip;
-	if have_last {
-		let lim = last_g - first_gran;
-		if lim >= 0 && lim < keep { keep = lim; }
+	var avail = total - skip;
+	if avail < 0 { avail = 0; }
+	var keep = avail;
+	if lastg >= 0 {
+		let lim = lastg - firstg;
+		if lim >= 0 && lim < avail { keep = lim; }
 	}
-	if skip > 0 {
-		for i in keep * ch { pcm[i] = pcm[skip * ch + i]; }
+	if skip > 0 || keep < avail {
+		var tmp f32[>..] = [];
+		tmp.append(pcm[skip * chans..(skip + keep) * chans]);
+		pcm.clear();
+		pcm.append(tmp);
 	}
-	pcm.resize(keep * ch, 0.0);
 	return chans, rate, true;
 }
 fn is_vorbis(b const byte[:]) bool {
