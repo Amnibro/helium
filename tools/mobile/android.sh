@@ -30,7 +30,7 @@ EOW
 IFS=, read -ra AL <<<"$ABIS"
 for a in "${AL[@]}"; do
 	B="$C/$a"; mkdir -p "$B" "$P/app/src/main/jniLibs/$a"
-	cmake -S "$C/wrap" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI=$a -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static >"$B/cmake.log" 2>&1 || { tail -30 "$B/cmake.log"; exit 1; }
+	cmake -S "$C/wrap" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI=$a -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 >"$B/cmake.log" 2>&1 || { tail -30 "$B/cmake.log"; exit 1; }
 	nice -n 10 cmake --build "$B" --target main >>"$B/cmake.log" 2>&1 || { tail -30 "$B/cmake.log"; exit 1; }
 	cp "$B/libmain.so" "$P/app/src/main/jniLibs/$a/libmain.so"
 	"$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" "$P/app/src/main/jniLibs/$a/libmain.so"
