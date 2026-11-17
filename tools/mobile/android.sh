@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-usage() { echo "usage: tools/mobile/android.sh MAIN.amni --name NAME --id com.example.app [--out DIR] [--assets DIR] [--abis arm64-v8a,x86_64] [--ver 1.0.0] [--code 1] [--release KEYSTORE.properties] [--portrait] [--c FILE.c]..."; exit 2; }
+usage() { echo "usage: tools/mobile/android.sh MAIN.amni --name NAME --id com.example.app [--out DIR] [--assets DIR] [--res DIR] [--abis arm64-v8a,x86_64] [--ver 1.0.0] [--code 1] [--release KEYSTORE.properties] [--portrait] [--c FILE.c]..."; exit 2; }
 [ $# -ge 1 ] || usage
 R=$(cd "$(dirname "$0")/../.." && pwd); MAIN=$(realpath "$1"); shift
-NAME="" PKG="" OUT="$PWD/dist" ASSETS="" ABIS="arm64-v8a,x86_64" VER="1.0.0" CODE=1 PROPS="" ORIENT=sensorLandscape EXTRA=()
-while [ $# -gt 0 ]; do case "$1" in --name) NAME=$2; shift 2;; --id) PKG=$2; shift 2;; --out) OUT=$(realpath -m "$2"); shift 2;; --assets) ASSETS=$(realpath "$2"); shift 2;; --abis) ABIS=$2; shift 2;; --ver) VER=$2; shift 2;; --code) CODE=$2; shift 2;; --release) PROPS=$(realpath "$2"); shift 2;; --portrait) ORIENT=sensorPortrait; shift;; --c) EXTRA+=("$(realpath "$2")"); shift 2;; *) usage;; esac; done
+NAME="" PKG="" OUT="$PWD/dist" ASSETS="" RES="" ABIS="arm64-v8a,x86_64" VER="1.0.0" CODE=1 PROPS="" ORIENT=sensorLandscape EXTRA=()
+while [ $# -gt 0 ]; do case "$1" in --name) NAME=$2; shift 2;; --id) PKG=$2; shift 2;; --out) OUT=$(realpath -m "$2"); shift 2;; --assets) ASSETS=$(realpath "$2"); shift 2;; --res) RES=$(realpath "$2"); shift 2;; --abis) ABIS=$2; shift 2;; --ver) VER=$2; shift 2;; --code) CODE=$2; shift 2;; --release) PROPS=$(realpath "$2"); shift 2;; --portrait) ORIENT=sensorPortrait; shift;; --c) EXTRA+=("$(realpath "$2")"); shift 2;; *) usage;; esac; done
 [ -n "$NAME" ] && [ -n "$PKG" ] || usage
 HCN="${HCN:-$R/build/hcn}" SDK="${ANDROID_HOME:-$HOME/Android/Sdk}" NDK="${ANDROID_NDK:-$(ls -d "$SDK"/ndk/* | sort -V | tail -1)}" API="${API:-26}"
 GFX="${GOOSE_GFX:-$HOME/.goose/pkg/github.com/aardappel/goose_gfx/v1}"
@@ -12,6 +12,7 @@ GFX="${GOOSE_GFX:-$HOME/.goose/pkg/github.com/aardappel/goose_gfx/v1}"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT; P="$W/android"; mkdir -p "$OUT"
 cp -r "$R/tools/mobile/android" "$P"; mkdir -p "$P/app/build/gen-java" "$P/app/build/gen-assets"; cp -r "$P/java/." "$P/app/build/gen-java/"
 [ -z "$ASSETS" ] || { mkdir -p "$P/app/build/gen-assets/helium"; cp -r "$ASSETS/." "$P/app/build/gen-assets/helium/"; }
+[ -z "$RES" ] || { mkdir -p "$P/app/src/main/res"; for d in "$RES"/drawable* "$RES"/mipmap-*; do [ -d "$d" ] && cp -r "$d" "$P/app/src/main/res/"; done; sed -i 's|<application android:label="${label}"|<application android:label="${label}" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"|' "$P/app/src/main/AndroidManifest.xml"; }
 C="${XDG_CACHE_HOME:-$HOME/.cache}/helium-android/$PKG"; mkdir -p "$C/wrap"
 (cd "$(dirname "$MAIN")" && HC_LIB="$R/hc/lib" "$HCN" "$(basename "$MAIN")" "$C/main.c" --static) || { echo "hc failed on $MAIN"; exit 1; }
 cp "$R/hc/hrt.h" "$C/hrt.h"
@@ -36,7 +37,7 @@ for a in "${AL[@]}"; do
 done
 echo "sdk.dir=$SDK" >"$P/local.properties"
 TASK=assembleDebug; KIND=debug
-if [ -n "$PROPS" ]; then TASK="assembleRelease bundleRelease"; KIND=release; printf '\nandroid { signingConfigs { create("rel") { val p = java.util.Properties().apply { file("%s").inputStream().use { load(it) } }; storeFile = file(p.getProperty("storeFile")); storePassword = p.getProperty("storePassword"); keyAlias = p.getProperty("keyAlias"); keyPassword = p.getProperty("keyPassword") } }; buildTypes { release { signingConfig = signingConfigs.getByName("rel"); isMinifyEnabled = false } } }\n' "$PROPS" >>"$P/app/build.gradle.kts"; fi
+if [ -n "$PROPS" ]; then TASK="assembleRelease bundleRelease"; KIND=release; printf '\nandroid { signingConfigs { create("rel") { val p = file("%s").readLines().filter { it.contains("=") }.associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }; storeFile = file(p.getValue("storeFile")); storePassword = p.getValue("storePassword"); keyAlias = p.getValue("keyAlias"); keyPassword = p.getValue("keyPassword") } }; buildTypes { release { signingConfig = signingConfigs.getByName("rel"); isMinifyEnabled = false } } }\n' "$PROPS" >>"$P/app/build.gradle.kts"; fi
 (cd "$P" && chmod +x gradlew && ./gradlew -q --no-daemon -Phe.pkg="$PKG" -Phe.name="$NAME" -Phe.sdl="$GFX/third_party/SDL/android-project/app/src/main/java" -Phe.abis="$ABIS" -Phe.ver="$VER" -Phe.code="$CODE" -Phe.orient="$ORIENT" $TASK)
 SAFE=$(echo "$NAME" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-*$//')
 cp "$(find "$P/app/build/outputs/apk/$KIND" -name '*.apk' | head -1)" "$OUT/$SAFE-$VER.apk"
