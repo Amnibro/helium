@@ -246,24 +246,28 @@ fn stage(o Opts) byte[>..] {
 	}
 	w
 }
-=== -11dce1ea0319de40
+=== 4426f9bc917b3c45
+let SDL_FLAGS = "-DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_CAMERA=OFF -DSDL_RENDER=OFF -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_HIDAPI=OFF";
 let MAC_B = "build/helium-ios";
-fn ssh_cmd(mac const byte[:], cmd const byte[:]) byte[>..] {
-	str("ssh ", quote(mac), " ", quote(str("export PATH=/opt/homebrew/bin:$PATH; ", cmd)))
+fn ssh_cmd(host const byte[:], cmd const byte[:]) byte[>..] {
+	str("ssh ", quote(host), " ", quote(str("export PATH=/opt/homebrew/bin:$PATH; ", cmd)))
 }
-fn rsync_cmd(excludes const byte[:], src const byte[:], mac const byte[:], dest const byte[:]) byte[>..] {
-	str("rsync -a --delete ", excludes, " --rsync-path=", quote(str("mkdir -p ", quote(dest), " && rsync")), " ", quote(src), " ", quote(str(mac, ":", dest, "/")))
+fn rsync_cmd(excludes const byte[:], src const byte[:], host const byte[:], dst const byte[:]) byte[>..] {
+	str("rsync -a --delete ", excludes, " ", quote(src), " ", quote(str(host, ":", dst)))
 }
 fn mac_sdl(o Opts, v const byte[:]) bool {
 	let s = str(MAC_B, "/sdl-", v);
-	if run_command(ssh_cmd(o.mac, str("test -f ", quote(str(s, "/libs-iphoneos/libSDL3.a"))))) == 0 {
+	let lib = str(s, "/libs-iphoneos/libSDL3.a");
+	let stamp = str(s, "/libs-iphoneos/flags.txt");
+	let check = str("test -f ", quote(lib), " && test \"$(cat ", quote(stamp), " 2>/dev/null)\" = ", quote(SDL_FLAGS));
+	if run_command(ssh_cmd(o.mac, check)) == 0 {
 		return true;
 	}
 	if !sh("SDL source", rsync_cmd("--exclude .git --exclude test --exclude android-project", str(o.sdl, "/"), o.mac, str(s, "/src"))) {
 		return false;
 	}
-	let build = str("cd ", quote(s), " && cmake -S src -B b-iphoneos -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_CAMERA=OFF -DSDL_RENDER=OFF -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF && nice -n 10 cmake --build b-iphoneos -j 4 && mkdir -p libs-iphoneos && cp b-iphoneos/libSDL3.a libs-iphoneos/");
-	sh("SDL build", ssh_cmd(o.mac, build))
+	let b = str("cd ", quote(s), " && rm -rf b-iphoneos libs-iphoneos && cmake -S src -B b-iphoneos -G Ninja ", SDL_FLAGS, " && nice -n 10 cmake --build b-iphoneos -j 4 && mkdir -p libs-iphoneos && cp b-iphoneos/libSDL3.a libs-iphoneos/ && printf %s ", quote(SDL_FLAGS), " > libs-iphoneos/flags.txt");
+	sh("SDL build", ssh_cmd(o.mac, b))
 }
 === -6a1cdfcafaade1c4
 fn mac_build(o Opts, w const byte[:]) bool {
