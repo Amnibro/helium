@@ -993,6 +993,7 @@ recursive impure(n int) bool:
 	if k == N_CALL || k == N_ASSIGN || k == N_INCDEC || k == N_RET || k == N_BREAK || k == N_CONT: return true
 	if k == N_ID || k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_NULL || k == N_FN: return false
 	if k == N_AS: return impure(x.a)
+	if k == N_VDECL: return impure(x.b)
 	if impure(x.a) || impure(x.b) || impure(x.c): return true
 	for i x.n:
 		if impure(kid(n, i)): return true

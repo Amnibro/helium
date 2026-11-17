@@ -60,5 +60,17 @@ for f in sorted(os.listdir(D)):
         else: fails.append(tag + ': unknown directive')
     send('textDocument/didClose', {'textDocument': {'uri': uri(f)}}, False); diags(uri(f))
 req('shutdown', None); send('exit', None, False); rc = p.wait(timeout=10)
+# A local declaration keeps its namespace's name id in a field that tree walks once followed as a node index; inside
+# a namespace that id lands on an unrelated node for most file sizes, and the query recursed until the stack ran out.
+import tempfile; td = tempfile.mkdtemp(); bad = []
+body = '\tlet a0 = l;\n' + ''.join('\t' * (i + 1) + 'if a%d > 0 {\n' % i + '\t' * (i + 2) + 'let a%d = a%d;\n' % (i + 1, i) for i in range(8)) + ''.join('\t' * (i + 1) + '}\n' for i in reversed(range(8)))
+for n in range(0, 96, 3):
+    src = ('namespace geo;\n' + ''.join('var V%d int;\n' % i for i in range(n)) + 'fn f(l int) {\n' + body + '}\n').encode(); g = os.path.join(td, 'g.amni'); q = os.path.join(td, 'q')
+    open(g, 'wb').write(src); open(q, 'wb').write(b'diag\n' + g.encode() + b'\n1\n' + g.encode() + b'\t' + str(len(src)).encode() + b'\n' + src + b'{}')
+    r = subprocess.run([HC, '--query', q, q + '.out'], env=env, capture_output=True, timeout=60)
+    try: good = r.returncode == 0 and json.load(open(q + '.out'))['diagnostics'] == []
+    except (OSError, ValueError, KeyError, TypeError): good = False
+    if not good: bad.append(n)
+check(not bad, 'namespaced --query with nested locals failed at %s globals' % bad)
 for x in fails: print('FAIL', x)
 print('lsptest: %d pass, %d fail' % (ok[0], len(fails) + (rc != 0))); sys.exit(1 if fails or rc else 0)
