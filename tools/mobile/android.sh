@@ -2,7 +2,7 @@
 set -euo pipefail
 usage() { echo "usage: tools/mobile/android.sh MAIN.amni --name NAME --id com.example.app [--out DIR] [--assets DIR] [--res DIR] [--abis arm64-v8a,x86_64] [--ver 1.0.0] [--code 1] [--release KEYSTORE.properties] [--portrait] [--c FILE.c]..."; exit 2; }
 [ $# -ge 1 ] || usage
-R=$(cd "$(dirname "$0")/../.." && pwd); MAIN=$(realpath "$1"); shift
+R=$(cd "$(dirname "$0")/../.." && pwd); MAIN=$(realpath -s "$1"); shift
 NAME="" PKG="" OUT="$PWD/dist" ASSETS="" RES="" ABIS="arm64-v8a,x86_64" VER="1.0.0" CODE=1 PROPS="" ORIENT=sensorLandscape EXTRA=()
 while [ $# -gt 0 ]; do case "$1" in --name) NAME=$2; shift 2;; --id) PKG=$2; shift 2;; --out) OUT=$(realpath -m "$2"); shift 2;; --assets) ASSETS=$(realpath "$2"); shift 2;; --res) RES=$(realpath "$2"); shift 2;; --abis) ABIS=$2; shift 2;; --ver) VER=$2; shift 2;; --code) CODE=$2; shift 2;; --release) PROPS=$(realpath "$2"); shift 2;; --portrait) ORIENT=sensorPortrait; shift;; --c) EXTRA+=("$(realpath "$2")"); shift 2;; *) usage;; esac; done
 [ -n "$NAME" ] && [ -n "$PKG" ] || usage
