@@ -1,0 +1,45 @@
+name: @NAME@
+options:
+  bundleIdPrefix: @PREFIX@
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: "@TEAM@"
+    CODE_SIGN_STYLE: Automatic
+    PRODUCT_BUNDLE_IDENTIFIER: @ID@
+    MARKETING_VERSION: "@VER@"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    OTHER_LDFLAGS: ["$(SRCROOT)/sdl/libs-$(PLATFORM_NAME)/libSDL3.a", "-framework", "CoreMedia", "-framework", "CoreVideo", "-framework", "CoreAudio", "-framework", "AudioToolbox", "-framework", "AVFoundation", "-framework", "CoreBluetooth", "-framework", "CoreGraphics", "-framework", "CoreMotion", "-framework", "Foundation", "-framework", "GameController", "-framework", "Metal", "-framework", "QuartzCore", "-framework", "UIKit", "-weak_framework", "CoreHaptics"]
+    ENABLE_BITCODE: "NO"
+    DEAD_CODE_STRIPPING: "YES"
+targets:
+  @NAME@:
+    type: application
+    platform: iOS
+    sources:
+      - path: app
+      - path: src/main.c
+        compilerFlags: ["-w", "-O3", "-fwrapv", "-Dmain=SDL_main"]
+      - path: src/helium_ios.c
+      - path: assets
+        type: folder
+        buildPhase: resources
+    info:
+      path: app/Info.plist
+      properties:
+        CFBundleDisplayName: @NAME@
+        CFBundleExecutable: @NAME@
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: @ORIENT@
+        UISupportedInterfaceOrientations~ipad: @ORIENT@
+        UILaunchScreen:
+          UIColorName: LaunchBackground

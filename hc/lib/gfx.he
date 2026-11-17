@@ -339,17 +339,19 @@ submit() bool:
 	c := CMD; CMD = 0; s_submit(c) || sdl_fail("submitting commands")
 var HF0 uint = 0
 var HF1 uint = 0
+var HFR uint = 0
 fence_wait(f uint): if f != 0 { U8S[3] = f; s_waitf(DEV, true, pu(3), 1); s_relf(DEV, f) }
+fence_drop(): if HFR != 0 { s_relf(DEV, HFR); HFR = 0 }
 submit_paced():
 	if CMD == 0: return
-	c := CMD; CMD = 0; f := s_submitf(c)
+	c := CMD; CMD = 0; f := s_submitf(c); fence_drop()
 	if f == 0: sdl_fail("submitting commands"); return
-	fence_wait(HF0); HF0 = HF1; HF1 = f
+	if HF0 != 0 { U8S[3] = HF0; s_waitf(DEV, true, pu(3), 1); HFR = HF0 } HF0 = HF1; HF1 = f
 finish() bool:
 	c := cmd(); if c == 0: return false
-	CMD = 0; f := s_submitf(c)
-	if f == 0: return sdl_fail("submitting commands")
-	U8S[3] = f; ok := s_waitf(DEV, true, pu(3), 1); s_relf(DEV, f); ok || sdl_fail("waiting for the GPU")
+	CMD = 0
+	if !s_submit(c): return sdl_fail("submitting commands")
+	s_idle(DEV) || sdl_fail("waiting for the GPU")
 flush_raw():
 	if !need("flush"): return
 	if PASS != 0 || CPASS != 0: misuse("flush inside a pass: end the pass first"); return
@@ -432,7 +434,7 @@ open(title const byte[:], width int, height int, flags int = 0) bool: start(true
 open_headless(width int, height int, flags int = 0) bool: start(false, "", width, height, flags)
 close_raw():
 	if DEV != 0:
-		if PASS != 0 { s_epass(PASS) } if CPASS != 0 { s_ecomp(CPASS) } PASS = 0; CPASS = 0; submit(); s_idle(DEV); fence_wait(HF0); fence_wait(HF1); HF0 = 0; HF1 = 0; release_pipelines(); release_resources()
+		if PASS != 0 { s_epass(PASS) } if CPASS != 0 { s_ecomp(CPASS) } PASS = 0; CPASS = 0; submit(); s_idle(DEV); fence_drop(); fence_wait(HF0); fence_wait(HF1); HF0 = 0; HF1 = 0; release_pipelines(); release_resources()
 		if WIN != 0 { s_unclaim(DEV, WIN) } s_rmdev(DEV)
 	if WIN != 0: s_relm(WIN, false); s_showc(); s_rmwin(WIN)
 	if VIDI: s_quit(32)

@@ -1,0 +1,316 @@
+=== -29766c71251790b6
+import os;
+=== -3cf1499c5119a5c2
+struct Opts {
+	main byte[],
+	name byte[],
+	id byte[],
+	assets byte[],
+	icons byte[],
+	ver byte[],
+	team byte[],
+	out byte[],
+	mac byte[],
+	release byte[],
+	root byte[],
+	hcn byte[],
+	sdl byte[],
+	portrait bool,
+	ok bool,
+}
+=== -1ac9a8b7444aea8e
+fn env_or(name const byte[:], dflt const byte[:]) byte[>..] {
+	var v byte[>..] = [];
+	if env(name, v) && v.len > 0 {
+		return v;
+	}
+	str(dflt)
+}
+=== -56743fb9daad7ef6
+fn abs_path(p const byte[:]) byte[>..] {
+	if starts_with(p, "/") {
+		return str(p);
+	}
+	let pwd = env_or("PWD", "");
+	str(pwd, "/", p)
+}
+=== 7158bb3477d09d8e
+fn dir_of(p const byte[:]) byte[>..] {
+	var last = -1;
+	for c, i in p {
+		if c == '/' { last = i; }
+	}
+	if last < 0 {
+		return str(".");
+	}
+	str(p[..last])
+}
+fn base_of(p const byte[:]) byte[>..] {
+	var last = -1;
+	for c, i in p {
+		if c == '/' { last = i; }
+	}
+	str(p[last + 1..])
+}
+=== -130b4428964e9cbe
+fn fill(t const byte[:], key const byte[:], value const byte[:]) byte[>..] {
+	var r byte[>..] = [];
+	if key.len == 0 {
+		r.append(t);
+		return r;
+	}
+	var i = 0;
+	while i < t.len {
+		if starts_with(t[i..], key) {
+			r.append(value);
+			i += key.len;
+		} else {
+			r.push(t[i]);
+			i += 1;
+		}
+	}
+	r
+}
+=== -487a3c459e8d5014
+fn sh(step const byte[:], cmd const byte[:]) bool {
+	print("ios: ", step);
+	if run_command(cmd) == 0 {
+		return true;
+	}
+	write_stderr(str("ios: ", step, " failed\n"));
+	false
+}
+=== 374ee1f7af5171d1
+fn opts_of() Opts {
+	var ok = true;
+	var portrait = false;
+	var prog byte[>..] = [];
+	var main_p byte[>..] = [];
+	var name byte[>..] = [];
+	var id byte[>..] = [];
+	var assets byte[>..] = [];
+	var icons byte[>..] = [];
+	var ver byte[>..] = str("1.0.0");
+	var team byte[>..] = env_or("APPLE_TEAM_ID", "");
+	var out byte[>..] = abs_path("dist-ios");
+	var mac byte[>..] = [];
+	var release byte[>..] = [];
+	var pend byte[>..] = [];
+	var n = 0;
+	for a, i in args() {
+		n += 1;
+		if i == 0 {
+			prog.append(a);
+			continue;
+		}
+		if i == 1 {
+			main_p.append(abs_path(a));
+			continue;
+		}
+		if pend.len > 0 {
+			if pend == "--name" { name.clear(); name.append(a); }
+			else if pend == "--id" { id.clear(); id.append(a); }
+			else if pend == "--ver" { ver.clear(); ver.append(a); }
+			else if pend == "--team" { team.clear(); team.append(a); }
+			else if pend == "--mac" { mac.clear(); mac.append(a); }
+			else if pend == "--release" { release.clear(); release.append(a); }
+			else if pend == "--assets" { assets.clear(); assets.append(abs_path(a)); }
+			else if pend == "--icons" { icons.clear(); icons.append(abs_path(a)); }
+			else if pend == "--out" { out.clear(); out.append(abs_path(a)); }
+			pend.clear();
+			continue;
+		}
+		if a == "--portrait" {
+			portrait = true;
+		} else if a == "--name" || a == "--id" || a == "--ver" || a == "--team" || a == "--mac" || a == "--release" || a == "--assets" || a == "--icons" || a == "--out" {
+			pend.append(a);
+		} else {
+			ok = false;
+		}
+	}
+	if pend.len > 0 { ok = false; }
+	if n < 2 { ok = false; }
+	if name.len == 0 || id.len == 0 { ok = false; }
+	let p1 = dir_of(abs_path(prog));
+	let p2 = dir_of(p1);
+	let p3 = dir_of(p2);
+	let p4 = dir_of(p3);
+	let root = env_or("HELIUM_ROOT", p4);
+	let hcn = env_or("HCN", str(root, "/build/hcn"));
+	let sdl = str(env_or("GOOSE_GFX", str(env_or("HOME", ""), "/.goose/pkg/github.com/aardappel/goose_gfx/v1")), "/third_party/SDL");
+	Opts {
+		main: main_p,
+		name: name,
+		id: id,
+		assets: assets,
+		icons: icons,
+		ver: ver,
+		team: team,
+		out: out,
+		mac: mac,
+		release: release,
+		root: root,
+		hcn: hcn,
+		sdl: sdl,
+		portrait: portrait,
+		ok: ok,
+	}
+}
+=== 30b21d5a5eeff16f
+fn quote(s const byte[:]) byte[>..] {
+	var r byte[>..] = [];
+	r.push('\'');
+	for c in s {
+		if c == '\'' {
+			r.append("'\\''");
+		} else {
+			r.push(c);
+		}
+	}
+	r.push('\'');
+	r
+}
+fn define_val(text const byte[:], name const byte[:], out byte[>..]&) bool {
+	let idx = find(text, name);
+	if idx < 0 {
+		return false;
+	}
+	let start = idx + name.len;
+	var e = start;
+	while e < text.len && text[e] != '\n' { e += 1; }
+	out.append(trim(text[start..e]));
+	true
+}
+fn sdl_version(sdl const byte[:]) byte[>..] {
+	var text byte[>..] = [];
+	if !read_file(str(sdl, "/include/SDL3/SDL_version.h"), text) {
+		return [];
+	}
+	var a byte[>..] = [];
+	var b byte[>..] = [];
+	var c byte[>..] = [];
+	if !define_val(text, "#define SDL_MAJOR_VERSION", a) { return []; }
+	if !define_val(text, "#define SDL_MINOR_VERSION", b) { return []; }
+	if !define_val(text, "#define SDL_MICRO_VERSION", c) { return []; }
+	str(a, ".", b, ".", c)
+}
+=== 0f68dd423e5f9de6
+fn project_yml(o Opts) byte[>..] {
+	var t byte[>..] = [];
+	if !read_file(str(o.root, "/tools/mobile/ios/project.yml.in"), t) {
+		return [];
+	}
+	var prefix = o.id[..];
+	var last = -1;
+	for c, i in o.id {
+		if c == '.' { last = i; }
+	}
+	if last >= 0 { prefix = o.id[..last]; }
+	var r = fill(t, "@NAME@", o.name);
+	var r2 = fill(r, "@ID@", o.id);
+	var r3 = fill(r2, "@PREFIX@", prefix);
+	var r4 = fill(r3, "@TEAM@", o.team);
+	var r5 = fill(r4, "@VER@", o.ver);
+	let orient = if o.portrait { "[UIInterfaceOrientationPortrait]" } else { "[UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]" };
+	fill(r5, "@ORIENT@", orient)
+}
+=== -531cbeef8f2e5576
+fn stage(o Opts) byte[>..] {
+	let w = str(o.out, "/", o.id);
+	let qw = quote(w);
+	if !sh("staging", str("rm -rf ", qw, " && mkdir -p ", quote(str(w, "/src")), " ", quote(str(w, "/assets")), " ", quote(str(w, "/app")))) {
+		return [];
+	}
+	let mdir = dir_of(o.main);
+	let mbase = base_of(o.main);
+	if !sh("compiling", str("cd ", quote(mdir), " && HC_LIB=", quote(str(o.root, "/hc/lib")), " ", quote(o.hcn), " ", quote(mbase), " ", quote(str(w, "/src/main.c")), " --static")) {
+		return [];
+	}
+	if !sh("runtime", str("cp ", quote(str(o.root, "/hc/hrt.h")), " ", quote(str(o.root, "/tools/mobile/ios/helium_ios.c")), " ", quote(str(w, "/src")))) {
+		return [];
+	}
+	if o.assets.len > 0 {
+		if !sh("assets", str("cp -R ", quote(str(o.assets, "/.")), " ", quote(str(w, "/assets")))) {
+			return [];
+		}
+	}
+	if o.icons.len > 0 {
+		if !sh("icons", str("cp -R ", quote(o.icons), " ", quote(str(w, "/app/Assets.xcassets")))) {
+			return [];
+		}
+	}
+	let y = project_yml(copy(o));
+	if y.len == 0 || !write_file(str(w, "/project.yml"), y) {
+		print("ios: project.yml failed");
+		return [];
+	}
+	w
+}
+=== -11dce1ea0319de40
+let MAC_B = "build/helium-ios";
+fn ssh_cmd(mac const byte[:], cmd const byte[:]) byte[>..] {
+	str("ssh ", quote(mac), " ", quote(str("export PATH=/opt/homebrew/bin:$PATH; ", cmd)))
+}
+fn rsync_cmd(excludes const byte[:], src const byte[:], mac const byte[:], dest const byte[:]) byte[>..] {
+	str("rsync -a --delete ", excludes, " --rsync-path=", quote(str("mkdir -p ", quote(dest), " && rsync")), " ", quote(src), " ", quote(str(mac, ":", dest, "/")))
+}
+fn mac_sdl(o Opts, v const byte[:]) bool {
+	let s = str(MAC_B, "/sdl-", v);
+	if run_command(ssh_cmd(o.mac, str("test -f ", quote(str(s, "/libs-iphoneos/libSDL3.a"))))) == 0 {
+		return true;
+	}
+	if !sh("SDL source", rsync_cmd("--exclude .git --exclude test --exclude android-project", str(o.sdl, "/"), o.mac, str(s, "/src"))) {
+		return false;
+	}
+	let build = str("cd ", quote(s), " && cmake -S src -B b-iphoneos -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_CAMERA=OFF -DSDL_RENDER=OFF -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF && nice -n 10 cmake --build b-iphoneos -j 4 && mkdir -p libs-iphoneos && cp b-iphoneos/libSDL3.a libs-iphoneos/");
+	sh("SDL build", ssh_cmd(o.mac, build))
+}
+=== -6a1cdfcafaade1c4
+fn mac_build(o Opts, w const byte[:]) bool {
+	let v = sdl_version(o.sdl);
+	if v.len == 0 {
+		print("ios: no SDL source at ", o.sdl);
+		return false;
+	}
+	if !mac_sdl(copy(o), v) {
+		return false;
+	}
+	let d = str(MAC_B, "/", o.id);
+	if !sh("upload", rsync_cmd("--exclude build --exclude sdl --exclude '*.xcodeproj'", str(w, "/"), o.mac, d)) {
+		return false;
+	}
+	let proj = str("cd ", quote(d), " && ln -s -f -n ", quote(str("../sdl-", v)), " sdl && xcodegen generate -q");
+	if !sh("project", ssh_cmd(o.mac, proj)) {
+		return false;
+	}
+	if o.release.len > 0 {
+		if !sh("release", ssh_cmd(o.mac, str("nice -n 10 ~/build/amni-ios-release/release.sh ", quote(o.release)))) {
+			return false;
+		}
+		print("ios: ", o.name, " sent to TestFlight");
+		return true;
+	}
+	let xb = str("cd ", quote(d), " && nice -n 10 xcodebuild build -project ", quote(str(o.name, ".xcodeproj")), " -scheme ", quote(o.name), " -destination generic/platform=iOS -configuration Release -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO -quiet");
+	if !sh("build", ssh_cmd(o.mac, xb)) {
+		return false;
+	}
+	print("ios: built ", d, "/build/dd/Build/Products/Release-iphoneos/", o.name, ".app (unsigned) on ", o.mac);
+	true
+}
+=== 598c4a23b44a69ec
+fn main() {
+	let o = opts_of();
+	if !o.ok {
+		print("usage: ios MAIN.amni --name NAME --id com.example.app [--assets DIR] [--icons DIR.xcassets] [--ver 1.0.0] [--team TEAMID] [--out DIR] [--portrait] [--mac HOST [--release CASE]]");
+		return;
+	}
+	let w = stage(copy(o));
+	if w.len == 0 {
+		return;
+	}
+	if o.mac.len == 0 {
+		print("ios: staged ", w, " (run with --mac HOST to build it on a Mac with Xcode, xcodegen, cmake and ninja)");
+		return;
+	}
+	mac_build(copy(o), w);
+}

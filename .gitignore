@@ -9,3 +9,4 @@ samples/*.ppm
 samples/*.pgm
 samples/*.png
 samples/*.gsx
+/tools/mobile/out/
