@@ -1,0 +1,562 @@
+=== 2afda5ea1ce1b2ef
+import os;
+import math;
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.scene3d;
+=== -66e863c741110f60
+let W = 1280;
+let H = 720;
+let PI real = 3.141592653589793;
+var seed u32 = 2463534242;
+var outdir byte[>..];
+=== -493ba278e6f309e9
+fn rnd() f32 {
+	seed = seed ^ (seed << 13);
+	seed = seed ^ (seed >> 17);
+	seed = seed ^ (seed << 5);
+	((seed as real) / 4294967296.0) as f32
+}
+=== 269c49b36a426409
+fn v3(x real, y real, z real) float3 {
+	float3 { x as f32, y as f32, z as f32 }
+}
+=== 219027310cd07127
+fn cyl(vfirst int, a float3, b float3, ra f32, rb f32, sides int) {
+	let ax = linalg::unit3(b - a);
+	let helper = if abs(ax.y) < 0.9 { v3(1.0, 0.0, 0.0) } else { v3(0.0, 0.0, 1.0) };
+	let p = linalg::unit3(linalg::cross3(ax, helper));
+	let q = linalg::cross3(ax, p);
+	let base = gltf::verts.len / gltf::VERTEX_FLOATS - vfirst;
+	let tg = float4 { ax.x, ax.y, ax.z, 1.0 };
+	for i in 0..sides + 1 {
+		let u = (i as real) / (sides as real);
+		let t = u * 2.0 * PI;
+		let o = p * (cos(t) as f32) + q * (sin(t) as f32);
+		shapes::vertex(a + o * ra, o, u as f32, 0.0, tg);
+		shapes::vertex(b + o * rb, o, u as f32, 1.0, tg);
+	}
+	for i in sides {
+		let k = base + 2 * i;
+		gltf::indices.push(k as u32);
+		gltf::indices.push((k + 2) as u32);
+		gltf::indices.push((k + 3) as u32);
+		gltf::indices.push(k as u32);
+		gltf::indices.push((k + 3) as u32);
+		gltf::indices.push((k + 1) as u32);
+	}
+}
+=== 360356fc4a64122c
+fn tree() int {
+	seed = 2463534242;
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	cyl(vfirst, v3(0.0, 0.0, 0.0), v3(0.0, 6.0, 0.0), 0.28, 0.12, 12);
+	for k in 9 {
+		let y = 2.6 + 0.4 * (k as real);
+		let a = (k as real) * 2.4;
+		let dir = linalg::unit3(v3(cos(a), 0.55 + 0.1 * (rnd() as real), sin(a)));
+		let len = 2.2 + 0.6 * (rnd() as real);
+		let start = v3(0.0, y, 0.0);
+		cyl(vfirst, start, start + dir * (len as f32), 0.09, 0.03, 6);
+	}
+	let nb = gltf::indices.len - ifirst;
+	let hw f32 = 0.11;
+	let hl f32 = 0.15;
+	for l in 2400 {
+		var d = v3(0.0, 0.0, 0.0);
+		loop {
+			let rx = 2.0 * (rnd() as real) - 1.0;
+			let ry = 2.0 * (rnd() as real) - 1.0;
+			let rz = 2.0 * (rnd() as real) - 1.0;
+			d = v3(rx, ry, rz);
+			let dl = sqrt(rx * rx + ry * ry + rz * rz);
+			if dl >= 0.05 && dl <= 1.0 { break; }
+		}
+		let dir = linalg::unit3(d);
+		let f = 0.45 + 0.55 * pow(rnd() as real, 1.0 / 3.0);
+		let center = v3(0.0, 6.0, 0.0) + dir * v3(3.0 * f, 3.5 * f, 3.0 * f);
+		let jx = 1.6 * (rnd() as real) - 0.8;
+		let jy = 1.6 * (rnd() as real) - 0.8;
+		let jz = 1.6 * (rnd() as real) - 0.8;
+		let n = linalg::unit3(dir + v3(jx, jy, jz));
+		let s = linalg::unit3(linalg::cross3(n, v3(0.3, 1.0, 0.2)));
+		let t = linalg::cross3(n, s);
+		let tg = float4 { s.x, s.y, s.z, 1.0 };
+		let at = gltf::verts.len / gltf::VERTEX_FLOATS;
+		shapes::vertex(center - t * hl, n, 0.5, 0.0, tg);
+		shapes::vertex(center + s * hw, n, 1.0, 0.5, tg);
+		shapes::vertex(center + t * hl, n, 0.5, 1.0, tg);
+		shapes::vertex(center - s * hw, n, 0.0, 0.5, tg);
+		let kk = 0.7 + 0.6 * (rnd() as real);
+		let h = rnd() as real;
+		let cr = (kk * (0.85 + 0.3 * h)) as f32;
+		let cg = kk as f32;
+		let cb = (kk * (0.9 - 0.2 * h)) as f32;
+		for j in 4 {
+			let o = (at + j) * gltf::VERTEX_FLOATS + gltf::AT_COL;
+			gltf::verts[o] = cr;
+			gltf::verts[o + 1] = cg;
+			gltf::verts[o + 2] = cb;
+			gltf::verts[o + 3] = 1.0;
+		}
+		let c = at - vfirst;
+		gltf::indices.push(c as u32);
+		gltf::indices.push((c + 1) as u32);
+		gltf::indices.push((c + 2) as u32);
+		gltf::indices.push(c as u32);
+		gltf::indices.push((c + 2) as u32);
+		gltf::indices.push((c + 3) as u32);
+	}
+	let nl = gltf::indices.len - ifirst - nb;
+	var lo = v3(1e30, 1e30, 1e30);
+	var hi = v3(-1e30, -1e30, -1e30);
+	let nv = gltf::verts.len / gltf::VERTEX_FLOATS;
+	for i in vfirst..nv {
+		let o = i * gltf::VERTEX_FLOATS + gltf::AT_POS;
+		let x = gltf::verts[o];
+		let y = gltf::verts[o + 1];
+		let z = gltf::verts[o + 2];
+		lo.x = min(lo.x, x);
+		lo.y = min(lo.y, y);
+		lo.z = min(lo.z, z);
+		hi.x = max(hi.x, x);
+		hi.y = max(hi.y, y);
+		hi.z = max(hi.z, z);
+	}
+	let bark = shapes::material(v3(0.25, 0.17, 0.11), 0.0, 0.9);
+	var leaf = shapes::material(v3(0.16, 0.36, 0.09), 0.0, 0.7);
+	leaf.double_sided = true;
+	leaf.shading = 5;
+	leaf.shade_a = float4 { 0.8, 1.0, 0.4, 0.5 };
+	leaf.shade_b = float4 { 0.3, 0.0, 0.0, 0.0 };
+	shapes::finish_groups(vfirst, ifirst, lo, hi, [bark, leaf], [nb, nl])
+}
+=== -6ceb7caea166daa4
+fn shot(rt gfx::Texture) byte[>..] {
+	for i in 2 {
+		s3d::render(rt);
+		gfx::flush();
+	}
+	copy(gfx::read_pixels(rt))
+}
+=== -b7bf9d1f61e258d
+fn aim(eye float3, target float3, up float3) {
+	s3d::view.eye = eye;
+	s3d::view.target = target;
+	s3d::view.up = up;
+	s3d::view.fov_y = 0.9;
+	s3d::view.near = 0.1;
+	s3d::view.far = 800.0;
+}
+=== -544ac7dfe6d9b273
+fn save(rt gfx::Texture, name const byte[:]) {
+	guard outdir.len > 0 else { return; }
+	var path byte[>..] = [];
+	path.append(outdir);
+	path.append("/");
+	path.append(name);
+	path.append(".png");
+	gfx::save_png(rt, path);
+}
+=== -684f1f820d6711c1
+fn mask(a const byte[:], b const byte[:]) byte[>..] {
+	var m byte[>..] = [];
+	for i in W * H {
+		let dr = abs((a[4 * i] as int) - (b[4 * i] as int));
+		let dg = abs((a[4 * i + 1] as int) - (b[4 * i + 1] as int));
+		let db = abs((a[4 * i + 2] as int) - (b[4 * i + 2] as int));
+		let d = max(dr, max(dg, db));
+		if d > 7 { m.push(1); } else { m.push(0); }
+	}
+	m
+}
+=== -51f8d013dc684fa9
+fn count(m const byte[:]) int {
+	var n = 0;
+	for v in m { if v != 0 { n += 1; } }
+	n
+}
+=== 16fa629e977ecf26
+fn block_err(m1 const byte[:], m2 const byte[:]) real {
+	var num = 0.0;
+	var den = 0.0;
+	for by in H / 8 {
+		for bx in W / 8 {
+			var c1 = 0;
+			var c2 = 0;
+			for y in 8 {
+				for x in 8 {
+					let i = (by * 8 + y) * W + bx * 8 + x;
+					if m1[i] != 0 { c1 += 1; }
+					if m2[i] != 0 { c2 += 1; }
+				}
+			}
+			let f1 = (c1 as real) / 64.0;
+			let f2 = (c2 as real) / 64.0;
+			num += abs(f1 - f2);
+			den += max(f1, f2);
+		}
+	}
+	if den == 0.0 { 0.0 } else { num / den }
+}
+=== 1bc972f1c6716854
+fn luma(px const byte[:], i int) real {
+	0.2126 * (px[4 * i] as real) + 0.7152 * (px[4 * i + 1] as real) + 0.0722 * (px[4 * i + 2] as real)
+}
+=== 08f69f9042623532
+fn mean_luma(px const byte[:], m1 const byte[:], m2 const byte[:]) real {
+	var sum = 0.0;
+	var n = 0;
+	for i in W * H {
+		if m1[i] != 0 || m2[i] != 0 {
+			sum += luma(px, i);
+			n += 1;
+		}
+	}
+	if n == 0 { 0.0 } else { sum / (n as real) }
+}
+=== -699a4eb69e5ee203
+fn block_psnr(a const byte[:], b const byte[:], m1 const byte[:], m2 const byte[:]) real {
+	var x0 = W;
+	var x1 = -1;
+	var y0 = H;
+	var y1 = -1;
+	for y in H {
+		for x in W {
+			let i = y * W + x;
+			if m1[i] != 0 || m2[i] != 0 {
+				x0 = min(x0, x);
+				x1 = max(x1, x);
+				y0 = min(y0, y);
+				y1 = max(y1, y);
+			}
+		}
+	}
+	guard x1 >= 0 else { return 99.0; }
+	var sum = 0.0;
+	var n = 0;
+	for by in (y0 / 8)..(y1 / 8 + 1) {
+		for bx in (x0 / 8)..(x1 / 8 + 1) {
+			for c in 3 {
+				var sa = 0;
+				var sb = 0;
+				for y in 8 {
+					for x in 8 {
+						let i = ((by * 8 + y) * W + bx * 8 + x) * 4 + c;
+						sa += a[i] as int;
+						sb += b[i] as int;
+					}
+				}
+				let d = ((sa - sb) as real) / 64.0;
+				sum += d * d;
+				n += 1;
+			}
+		}
+	}
+	let mse = sum / (n as real);
+	if mse < 1e-12 { 99.0 } else { 10.0 * log(65025.0 / mse) / log(10.0) }
+}
+=== -55fb40c6917284aa
+fn within(x real, lo real, hi real) bool {
+	x >= lo && x <= hi
+}
+=== -01f2138a5f303ab
+fn median(xs const real[:]) real {
+	guard xs.len > 0 else { return 1e9; }
+	var c real[>..] = [];
+	c.append(xs);
+	sort(c) { a, b => a < b };
+	c[c.len / 2]
+}
+=== -62ecc211dd4b91c1
+fn depths(px const byte[:]) real[>..] {
+	var out real[>..] = [];
+	for i in W * H {
+		let lo = px[8 * i + 6] as int;
+		let hi = px[8 * i + 7] as int;
+		let h = lo | (hi << 8);
+		let e = (h >> 10) & 31;
+		let f = h & 1023;
+		let v0 = if e == 0 {
+			(f as real) * pow(2.0, -24.0)
+		} else if e == 31 {
+			65504.0
+		} else {
+			((1024 + f) as real) * pow(2.0, (e - 25) as real)
+		};
+		if (h >> 15) != 0 { out.push(-v0); } else { out.push(v0); }
+	}
+	out
+}
+=== 528d701463d41a7c
+fn main() {
+	if !gfx::open_headless(W, H) {
+		print("impostor: skipped");
+		return;
+	}
+	let argv = args();
+	for a, ai in argv {
+		if ai == 1 { outdir.append(a); }
+	}
+	fn sun_at(deg real) {
+		let e = deg * PI / 180.0;
+		s3d::atmosphere(v3(0.6 * cos(e), sin(e), 0.8 * cos(e)), 3.5, 1.0, 0.3);
+	}
+	s3d::init(W, H);
+	s3d::temporal = 0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::look.bloom = 0.0;
+	s3d::sun.shadows = true;
+	s3d::sun.shadow_far = 160.0;
+	sun_at(40.0);
+	let rt = gfx::render_target(W, H, gfx::RGBA8);
+	let asset = tree();
+	let ground = s3d::add(shapes::plane(400.0, shapes::material(v3(0.35, 0.33, 0.3), 0.0, 0.9)));
+	s3d::place(ground, gfx::mat4_identity);
+	s3d::items[ground].visible = false;
+	let one = s3d::add_instances(asset, [gfx::mat4_identity]);
+	let imp = s3d::impostor(asset);
+	let center = v3(0.0, 4.8, 0.0);
+	fn shot_none() byte[>..] {
+		s3d::instances[one].visible = false;
+		shot(rt)
+	}
+	fn shot_mesh() byte[>..] {
+		s3d::instances[one].visible = true;
+		s3d::instances[one].imp = -1;
+		shot(rt)
+	}
+	fn shot_imp() byte[>..] {
+		s3d::instances[one].visible = true;
+		s3d::instances[one].imp = imp;
+		s3d::instances[one].imp_distance = 0.0;
+		s3d::instances[one].imp_band = 0.0;
+		shot(rt)
+	}
+	var ok1 = true;
+	var worst = 0.0;
+	var lo_ratio = 1e9;
+	var hi_ratio = -1e9;
+	var worst_luma = 0.0;
+	var low_psnr = 1e9;
+	var dm real[>..] = [];
+	var dc real[>..] = [];
+	for d in [70, 120] {
+		let dr = d as real;
+		for mode in 2 {
+			for k in 7 {
+				let th = (17.0 + 360.0 * (k as real) / 7.0) * PI / 180.0;
+				var eye = v3(0.0, 0.0, 0.0);
+				if mode == 0 {
+					eye = v3(dr * sin(th), 1.7, dr * cos(th));
+				} else {
+					let a25 = 25.0 * PI / 180.0;
+					eye = center + v3(dr * cos(a25) * sin(th), dr * sin(a25), dr * cos(a25) * cos(th));
+				}
+				aim(eye, center, v3(0.0, 1.0, 0.0));
+				let p0 = shot_none();
+				let pm = shot_mesh();
+				let i2 = d == 70 && mode == 0;
+				var nm byte[>..] = [];
+				if i2 { nm = copy(gfx::read_pixels(s3d::nd)); }
+				if k == 0 {
+					let again = shot_mesh();
+					save(rt, str("i1_mesh_", d, "_", mode));
+				}
+				let pi = shot_imp();
+				if k == 0 { save(rt, str("i1_imp_", d, "_", mode)); }
+				var ni byte[>..] = [];
+				var nc byte[>..] = [];
+				if i2 {
+					ni = copy(gfx::read_pixels(s3d::nd));
+					s3d::imps[imp].tier = 5;
+					let ctl = shot(rt);
+					nc = copy(gfx::read_pixels(s3d::nd));
+					s3d::imps[imp].tier = 1;
+				}
+				let mm = mask(p0, pm);
+				let mi = mask(p0, pi);
+				let be = block_err(mm, mi);
+				let cm = count(mm);
+				let ci = count(mi);
+				let ratio = if cm == 0 { 0.0 } else { (ci as real) / (cm as real) };
+				let lm = mean_luma(pm, mm, mi);
+				let li = mean_luma(pi, mm, mi);
+				let lerr = abs(li / lm - 1.0);
+				let ps = block_psnr(pm, pi, mm, mi);
+				let pass = be <= 0.2 && within(ratio, 0.85, 1.15) && lerr <= 0.1 && ps >= 25.0;
+				let st = if pass { " ok" } else { " FAIL" };
+				print("I1 view ", d, " ", mode, " ", k, ": err ", be, " count ", ratio, " luma ", lerr, " psnr ", ps, st);
+				ok1 = ok1 && pass;
+				worst = max(worst, be);
+				lo_ratio = min(lo_ratio, ratio);
+				hi_ratio = max(hi_ratio, ratio);
+				worst_luma = max(worst_luma, lerr);
+				low_psnr = min(low_psnr, ps);
+				if i2 {
+					let da = depths(nm);
+					let db = depths(ni);
+					let dn = depths(nc);
+					var e1 real[>..] = [];
+					var e2 real[>..] = [];
+					for i in W * H {
+						if mm[i] != 0 && mi[i] != 0 {
+							e1.push(abs(da[i] - db[i]));
+							e2.push(abs(da[i] - dn[i]));
+						}
+					}
+					dm.push(median(e1));
+					dc.push(median(e2));
+				}
+			}
+		}
+	}
+	let st1 = if ok1 { " ok" } else { " FAIL" };
+	print("I1 picture: worst err ", worst, " count ", lo_ratio, "..", hi_ratio, " luma ", worst_luma, " psnr ", low_psnr, st1);
+	var ok2 = true;
+	var dmax = 0.0;
+	var cmin = 1e9;
+	for x in dm {
+		dmax = max(dmax, x);
+		if x > 0.5 { ok2 = false; }
+	}
+	for x in dc {
+		cmin = min(cmin, x);
+		if !(x > 1.0) { ok2 = false; }
+	}
+	let st2 = if ok2 { " ok" } else { " FAIL" };
+	print("I2 depth: median ", dmax, " control ", cmin, st2);
+	fn shadow_mask(q const byte[:], base const byte[:]) byte[>..] {
+		var m byte[>..] = [];
+		for y in H {
+			for x in W {
+				let nx = ((x as real) + 0.5) / (W as real) * 2.0 - 1.0;
+				let ny = 1.0 - ((y as real) + 0.5) / (H as real) * 2.0;
+				let gx = -nx * tan(0.45) * (W as real) / (H as real) * 150.0;
+				let gz = ny * tan(0.45) * 150.0;
+				let onfar = sqrt(gx * gx + gz * gz) > 4.0;
+				let i = y * W + x;
+				if onfar && luma(q, i) < 0.85 * luma(base, i) { m.push(1); } else { m.push(0); }
+			}
+		}
+		m
+	}
+	sun_at(30.0);
+	s3d::sun.shadow_far = 220.0;
+	s3d::items[ground].visible = true;
+	aim(v3(0.0, 150.0, 0.0001), v3(0.0, 0.0, 0.0), v3(0.0, 0.0, 1.0));
+	let q0 = shot_none();
+	let qm = shot_mesh();
+	save(rt, "i3_mesh");
+	let qi = shot_imp();
+	save(rt, "i3_imp");
+	s3d::instances[one].shadow = false;
+	let qc = shot_imp();
+	s3d::instances[one].shadow = true;
+	let sm = shadow_mask(qm, q0);
+	let si = shadow_mask(qi, q0);
+	let sc = shadow_mask(qc, q0);
+	let be3 = block_err(si, sm);
+	let cm3 = count(sm);
+	let r3 = if cm3 == 0 { 0.0 } else { (count(si) as real) / (cm3 as real) };
+	let k3 = if cm3 == 0 { 0.0 } else { (count(sc) as real) / (cm3 as real) };
+	let ok3 = be3 <= 0.25 && within(r3, 0.8, 1.25) && k3 < 0.1;
+	let st3 = if ok3 { " ok" } else { " FAIL" };
+	print("I3 shadow: err ", be3, " count ", r3, " control ", k3, st3);
+	s3d::items[ground].visible = false;
+	sun_at(40.0);
+	s3d::sun.shadow_far = 160.0;
+	s3d::instances[one].visible = false;
+	seed = 7;
+	var mats gfx::mat4[>..] = [];
+	for i in 45 {
+		for j in 45 {
+			let px = 12.0 * (i as real) + 6.0 * (2.0 * (rnd() as real) - 1.0) / 2.0;
+			let pz = 12.0 * (j as real) - 264.0 + 6.0 * (2.0 * (rnd() as real) - 1.0) / 2.0;
+			let turn = 2.0 * PI * (rnd() as real);
+			let sz = 0.85 + 0.3 * (rnd() as real);
+			let tr = gfx::translate(v3(px, 0.0, pz));
+			let ro = gfx::rotate(v3(0.0, 1.0, 0.0), turn as f32);
+			let sk = gfx::scale(v3(sz, sz, sz));
+			mats.push(gfx::mul(tr, gfx::mul(ro, sk)));
+		}
+	}
+	let forest = s3d::add_instances(asset, mats);
+	s3d::items[ground].visible = true;
+	aim(v3(-8.0, 1.7, 0.0), v3(100.0, 1.7, 0.0), v3(0.0, 1.0, 0.0));
+	fn run(use_imp bool) real, int {
+		if use_imp {
+			s3d::instances[forest].imp = imp;
+			s3d::instances[forest].imp_distance = 50.0;
+			s3d::instances[forest].imp_band = 14.0;
+		} else {
+			s3d::instances[forest].imp = -1;
+		}
+		for w in 140 {
+			s3d::render(rt);
+			gfx::flush();
+		}
+		let tri = s3d::instance_triangles(forest);
+		var best = 1e9;
+		for rep in 2 {
+			let t0 = clock();
+			for f in 20 {
+				s3d::render(rt);
+				gfx::flush();
+			}
+			let rp = gfx::read_pixels(rt);
+			let dt = (clock() - t0) / 20.0;
+			best = min(best, dt);
+		}
+		return best, tri;
+	}
+	let tm, trm = run(false);
+	save(rt, "i4_mesh");
+	let ti, tri = run(true);
+	save(rt, "i4_imp");
+	let ok4 = (tri as real) <= 0.15 * (trm as real) && ti <= 0.5 * tm;
+	let st4 = if ok4 { " ok" } else { " FAIL" };
+	print("I4 cost: tris ", tri, " / ", trm, " frame ", ti * 1000.0, " / ", tm * 1000.0, " ms", st4);
+	s3d::instances[forest].visible = false;
+	s3d::items[ground].visible = false;
+	s3d::instances[one].visible = true;
+	let th5 = 17.0 * PI / 180.0;
+	var lo5 = 1e9;
+	var hi5 = -1e9;
+	var worst5 = 0.0;
+	var ok5 = true;
+	for s in 45 {
+		let d = 40.0 + 0.5 * (s as real);
+		aim(v3(d * sin(th5), 5.0, d * cos(th5)), center, v3(0.0, 1.0, 0.0));
+		let r0 = shot_none();
+		let rm = shot_mesh();
+		s3d::instances[one].visible = true;
+		s3d::instances[one].imp = imp;
+		s3d::instances[one].imp_distance = 50.0;
+		s3d::instances[one].imp_band = 14.0;
+		let ri = shot(rt);
+		if s == 34 { save(rt, "i5_band"); }
+		let mm = mask(r0, rm);
+		let mi = mask(r0, ri);
+		let cm = count(mm);
+		let ratio = if cm == 0 { 0.0 } else { (count(mi) as real) / (cm as real) };
+		let lerr = abs(mean_luma(ri, mm, mi) / mean_luma(rm, mm, mi) - 1.0);
+		let pass = within(ratio, 0.85, 1.15) && lerr <= 0.12;
+		ok5 = ok5 && pass;
+		lo5 = min(lo5, ratio);
+		hi5 = max(hi5, ratio);
+		worst5 = max(worst5, lerr);
+	}
+	let st5 = if ok5 { " ok" } else { " FAIL" };
+	print("I5 hand-over: count ", lo5, "..", hi5, " luma ", worst5, st5);
+	if ok1 && ok2 && ok3 && ok4 && ok5 {
+		print("impostor: ok");
+	} else {
+		print("impostor: FAILED");
+	}
+}

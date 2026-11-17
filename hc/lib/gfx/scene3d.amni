@@ -34,6 +34,7 @@ import gfx.sparks;
 import gfx.fx;
 import gfx.rt;
 import gfx.envmap;
+import gfx.impostor;
 import gfx.clusters;
 import gfx.bc;
 import gfx.ktx2;
@@ -59,7 +60,7 @@ struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32,
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0, shadow bool = true, remap int = -1 }
-struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0, shadow bool = true }
+struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[3] = [0, 0, 0], na int[3] = [0, 0, 0], iv int[3] = [0, 0, 0], nv int[3] = [0, 0, 0], smax f32 = 1.0, shadow bool = true, imp int = -1, imp_distance f32 = 0.0, imp_band f32 = 0.0 }
 struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Sea { reflect bool = true, steps int = 24, under bool = true, march int = 24, shafts f32 = 1.0, scatter float3 = float3 { 0.012, 0.07, 0.08 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
@@ -67,6 +68,9 @@ struct Clouds { on bool = false, cover f32 = 0.5, base f32 = 1500.0, thick f32 =
 struct CloudU { inv_view_proj gfx::mat4, eye float4, to_sun float4, sun_rgb float4, slab float4, wind float4, env float4, env_rot float4, amb_hi float4, amb_lo float4 }
 struct CloudShadowU { area float4, to_sun float4, slab float4, wind float4 }
 struct Batch { prim int, item int, node int, joint_base int, model gfx::mat4, depth f32, mode int, prev_model gfx::mat4, prev_joint_base int, vis bool, trans bool, wb int, pwb int, inst int, lod int, ml int }
+struct Impostor { asset int, n int, tile int, a gfx::Texture, b gfx::Texture, c float3, r f32, e float3, prim int, node int, shell f32 = 0.05, steps int = 28, tier int = 1, bias f32 = 0.0 }
+struct ImpU { view_proj gfx::mat4, cur_vp gfx::mat4, prev_vp gfx::mat4, inst float4, ray float4, box_c float4, box_e float4, knobs float4 }
+struct ImpDownU { k float4 }
 
 struct DrawU { model gfx::mat4, model_normal gfx::mat4, view_proj gfx::mat4, prev_model gfx::mat4, deform float4, misc float4, cur_vp gfx::mat4, prev_vp gfx::mat4, weights float4[16], prev_weights float4[16], inst float4, sway_o float4, wind float4, wind_t float4, push float4[4], prev_push float4[4], water float4, water_t float4 }
 struct FrameU {
@@ -512,6 +516,19 @@ var inst_t0 f32[>..] = [];
 var inst_t1 f32[>..] = [];
 var inst_t2 f32[>..] = [];
 var inst_t3 f32[>..] = [];
+var inst_t4 f32[>..] = [];
+var inst_t5 f32[>..] = [];
+var imps Impostor[>..] = [];
+var pipe_imp gfx::Pipeline;
+var pipe_imp_depth gfx::Pipeline;
+var pipe_imp_nd gfx::Pipeline;
+var pipe_imp_bake gfx::Pipeline;
+var pipe_imp_bake_two gfx::Pipeline;
+var pipe_imp_down gfx::Pipeline;
+var imp_kind = -1;
+var imp_back gfx::Pipeline;
+var pipe_fade gfx::Pipeline[>..] = [];
+var last_vp gfx::mat4 = gfx::mat4_identity;
 var inst_dirty = true;
 var inst_all = false;
 var meshlets = false;
@@ -706,7 +723,7 @@ fn instance_list(set int, lod int) int[>..] {
 fn instance_triangles(set int) int {
 	var n = 0;
 	let s = instances[set];
-	for b in batch { if b.inst == set { n += gltf::prims[b.prim].icount / 3 * s.nv[b.lod]; } }
+	for b in batch { if b.inst == set { n += (if b.lod == 2 { 12 } else { gltf::prims[b.prim].icount / 3 }) * s.nv[b.lod]; } }
 	n
 }
 fn handheld(c Camera, t f32, amount f32) Camera {
@@ -1788,8 +1805,8 @@ fn gather_instances() {
 			for k in s.count { sm = max(sm, inst_c[s.first + k].w); }
 			instances[si].smax = if s.r > 0.0 { sm / s.r } else { 1.0 };
 		}
-		if !s.shadow && instance_cull { let bl = instances[si].lo; let bh = instances[si].hi; let slack = (if s.sway > 0.0 { reach } else { 0.0 }) + 2.0 * s.sway * wind.strength * s.r * instances[si].smax; var gone = false; for p in fr { if p.x * (if p.x > 0.0 { bh.x } else { bl.x }) + p.y * (if p.y > 0.0 { bh.y } else { bl.y }) + p.z * (if p.z > 0.0 { bh.z } else { bl.z }) + p.w < -slack { gone = true; } } if gone { instances[si].ia = [0, 0]; instances[si].na = [0, 0]; instances[si].iv = [0, 0]; instances[si].nv = [0, 0]; continue; } }
-		inst_t0.clear(); inst_t1.clear(); inst_t2.clear(); inst_t3.clear();
+		if !s.shadow && instance_cull { let bl = instances[si].lo; let bh = instances[si].hi; let slack = (if s.sway > 0.0 { reach } else { 0.0 }) + 2.0 * s.sway * wind.strength * s.r * instances[si].smax; var gone = false; for p in fr { if p.x * (if p.x > 0.0 { bh.x } else { bl.x }) + p.y * (if p.y > 0.0 { bh.y } else { bl.y }) + p.z * (if p.z > 0.0 { bh.z } else { bl.z }) + p.w < -slack { gone = true; } } if gone { instances[si].ia = [0, 0, 0]; instances[si].na = [0, 0, 0]; instances[si].iv = [0, 0, 0]; instances[si].nv = [0, 0, 0]; continue; } }
+		inst_t0.clear(); inst_t1.clear(); inst_t2.clear(); inst_t3.clear(); inst_t4.clear(); inst_t5.clear();
 		let grow = 1.0 + 2.0 * s.sway * wind.strength;
 		let more = if s.sway > 0.0 { reach } else { 0.0 };
 		let far2 = s.lod_distance * s.lod_distance;
@@ -1799,34 +1816,25 @@ fn gather_instances() {
 			let far = s.lod_asset >= 0 && dx * dx + dy * dy + dz * dz >= far2;
 			var see = true;
 			if instance_cull { let r = c.w * grow + more; for p in fr { if p.x * c.x + p.y * c.y + p.z * c.z + p.w < -r { see = false; } } }
-			if far { inst_t1.push(k as f32); if see { inst_t3.push(k as f32); } } else { inst_t0.push(k as f32); if see { inst_t2.push(k as f32); } }
+			let h = if s.imp < 0 { 0.0 } else { min(max((linalg::f(sqrt((dx * dx + dy * dy + dz * dz) as real)) - s.imp_distance) / max(s.imp_band, 1.0e-3), 0.0), 1.0) };
+			if s.imp >= 0 && h >= 0.5 { inst_t4.push(k as f32); } else if far { inst_t1.push(k as f32); } else { inst_t0.push(k as f32); }
+			if see && h < 1.0 { if far { inst_t3.push(k as f32 + h * 0.75); } else { inst_t2.push(k as f32 + h * 0.75); } }
+			if see && h > 0.0 { inst_t5.push(k as f32 + (1.0 - h) * 0.75); }
 		}
-		instances[si].ia = [inst_ids.len, inst_ids.len + inst_t0.len];
-		instances[si].na = [inst_t0.len, inst_t1.len];
-		inst_ids.append(inst_t0[..]); inst_ids.append(inst_t1[..]);
-		instances[si].iv = [inst_ids.len, inst_ids.len + inst_t2.len];
-		instances[si].nv = [inst_t2.len, inst_t3.len];
-		inst_ids.append(inst_t2[..]); inst_ids.append(inst_t3[..]);
+		instances[si].ia = [inst_ids.len, inst_ids.len + inst_t0.len, inst_ids.len + inst_t0.len + inst_t1.len];
+		instances[si].na = [inst_t0.len, inst_t1.len, inst_t4.len];
+		inst_ids.append(inst_t0[..]); inst_ids.append(inst_t1[..]); inst_ids.append(inst_t4[..]);
+		instances[si].iv = [inst_ids.len, inst_ids.len + inst_t2.len, inst_ids.len + inst_t2.len + inst_t3.len];
+		instances[si].nv = [inst_t2.len, inst_t3.len, inst_t5.len];
+		inst_ids.append(inst_t2[..]); inst_ids.append(inst_t3[..]); inst_ids.append(inst_t5[..]);
 		let bl = instances[si].lo;
 		let bh = instances[si].hi;
 		let d = linalg::dot3(linalg::v3((bl.x + bh.x) * 0.5 - view.eye.x, (bl.y + bh.y) * 0.5 - view.eye.y, (bl.z + bh.z) * 0.5 - view.eye.z), forward());
 		for l in if s.lod_asset >= 0 { 2 } else { 1 } {
-			if instances[si].na[l] == 0 { continue; }
-			let asset = if l == 0 { s.asset } else { s.lod_asset };
-			motion::rest(asset);
-			motion::update(asset, gfx::mat4_identity);
-			let a = gltf::assets[asset];
-			for k in a.nodes.count {
-				let ni = a.nodes.first + k;
-				let n = gltf::nodes[ni];
-				if n.mesh < 0 || n.skin >= 0 { continue; }
-				let mesh = gltf::meshes[n.mesh];
-				for pk in mesh.prims.count {
-					let pi = mesh.prims.first + pk;
-					batch.push(Batch { pi, -1, ni, -1, motion::world[ni], d, material_of(pi).alpha_mode, motion::world[ni], -1, instances[si].nv[l] > 0, material_of(pi).trans > 0.0, -1, -1, si, l, -1 });
-				}
-			}
+			if instances[si].na[l] == 0 && instances[si].nv[l] == 0 { continue; }
+			batch.append(asset_batches(if l == 0 { s.asset } else { s.lod_asset }, si, l, d, instances[si].nv[l] > 0)[..]);
 		}
+		if s.imp >= 0 && (instances[si].na[2] > 0 || instances[si].nv[2] > 0) { let im = imps[s.imp]; batch.push(Batch { im.prim, -1, im.node, -1, gfx::mat4_identity, d, gltf::ALPHA_OPAQUE, gfx::mat4_identity, -1, instances[si].nv[2] > 0, false, -1, -1, si, 2, -1 }); }
 	}
 	while inst_ids.len < 4 || inst_ids.len % 4 != 0 { inst_ids.push(0.0); }
 	if inst_ids.len > idbuf_cap {
@@ -2083,6 +2091,7 @@ fn forward() float3 { linalg::unit3(linalg::v3(view.target.x - view.eye.x, view.
 
 fn mw(pool f32[:], base int, j int, n int) f32 { if base >= 0 && j < n && j < motion::MAX_WEIGHTS && base + j < pool.len { pool[base + j] } else { 0.0 } }
 fn draw_uniforms(b Batch, vp gfx::mat4) DrawU {
+	last_vp = vp;
 	let pr = gltf::prims[b.prim];
 	var w float4[16] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 16];
 	var pw float4[16] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 16];
@@ -2117,6 +2126,7 @@ fn bind_geometry() {
 }
 
 fn draw_prim(b Batch) {
+	if b.lod == 2 { imp_draw(b); return; }
 	if b.ml >= 0 {
 		gfx::bind_index_buffer(ml_out_buf, 4);
 		gfx::draw_indexed_indirect(ml_args_buf, (b.ml * 2 + (if inst_all { 1 } else { 0 })) * 32);
@@ -2125,6 +2135,100 @@ fn draw_prim(b Batch) {
 	}
 	let pr = gltf::prims[b.prim];
 	gfx::draw_indexed(pr.icount, if b.inst < 0 { 1 } else if inst_all { instances[b.inst].na[b.lod] } else { instances[b.inst].nv[b.lod] }, pr.ifirst, pr.vfirst, 0);
+}
+fn asset_batches(asset int, si int, l int, d f32, vis bool) Batch[>..] {
+	var out Batch[>..] = [];
+	motion::rest(asset);
+	motion::update(asset, gfx::mat4_identity);
+	let a = gltf::assets[asset];
+	for k in a.nodes.count {
+		let ni = a.nodes.first + k;
+		let n = gltf::nodes[ni];
+		if n.mesh < 0 || n.skin >= 0 { continue; }
+		let mesh = gltf::meshes[n.mesh];
+		for pk in mesh.prims.count { let pi = mesh.prims.first + pk; out.push(Batch { pi, -1, ni, -1, motion::world[ni], d, material_of(pi).alpha_mode, motion::world[ni], -1, vis, material_of(pi).trans > 0.0, -1, -1, si, l, -1 }); }
+	}
+	out
+}
+fn imp_pipes() {
+	if pipe_imp.id != 0 { return; }
+	let vs = embed_shader("shaders/surface.vert");
+	let iv = embed_shader("shaders/impostor.vert");
+	let bf = embed_shader("shaders/impostor_bake.frag");
+	let sd = surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, true);
+	var sa = sd;
+	sa.alpha_to_coverage = MSAA > 1;
+	pipe_imp = gfx::pipeline(iv, embed_shader("shaders/impostor.frag"), sa);
+	let ff = if lite { embed_shader("shaders/surface_lite_fade.frag") } else { embed_shader("shaders/surface_fade.frag") };
+	pipe_fade = [gfx::pipeline(vs, ff, sd), gfx::pipeline(vs, ff, surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true)), gfx::pipeline(vs, ff, gfx::PipelineDesc { cull: gfx::CULL_BACK, depth_test: true, depth_write: true, depth_compare: gfx::COMPARE_LESS_EQUAL, alpha_to_coverage: true }), gfx::pipeline(vs, ff, gfx::PipelineDesc { cull: gfx::CULL_NONE, depth_test: true, depth_write: true, depth_compare: gfx::COMPARE_LESS_EQUAL, alpha_to_coverage: true })];
+	pipe_imp_depth = gfx::pipeline(iv, embed_shader("shaders/impostor_depth.frag"), sd);
+	pipe_imp_nd = gfx::pipeline(iv, embed_shader("shaders/impostor_normals.frag"), sd);
+	pipe_imp_bake = gfx::pipeline(vs, bf, sd);
+	pipe_imp_bake_two = gfx::pipeline(vs, bf, surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
+	pipe_imp_down = gfx::pipeline(embed_shader("shaders/screen.vert"), embed_shader("shaders/impostor_down.frag"));
+}
+fn impostor(asset int) int { impostor(asset, 12, 176) }
+fn impostor(asset int, n int, tile int) int {
+	imp_pipes();
+	guard render_begin() else { return -1; }
+	let lo, hi = asset_box(asset);
+	let c = linalg::mix3(lo, hi, 0.5);
+	let e = linalg::v3((hi.x - lo.x) * 0.5, (hi.y - lo.y) * 0.5, (hi.z - lo.z) * 0.5);
+	let r = linalg::f(sqrt(linalg::dot3(e, e) as real));
+	let bb = asset_batches(asset, -1, 0, 0.0, true);
+	var lp = 0;
+	for b, i in bb { let m = bmat(b); let q = bmat(bb[lp]); if (m.shading == 5 && q.shading != 5) || (m.shading == q.shading && gltf::prims[b.prim].icount > gltf::prims[bb[lp].prim].icount) { lp = i; } }
+	let big = (tile * 3) as i32;
+	let hd = gfx::TextureDesc { kind: gfx::TEXTURE_2D, format: gfx::RGBA16F, usage: gfx::COLOR_TARGET | gfx::SAMPLED, width: big, height: big };
+	let ta = gfx::texture(hd);
+	let tb = gfx::texture(hd);
+	let td = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D, format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: big, height: big });
+	var ad = gfx::TextureDesc { kind: gfx::TEXTURE_2D_ARRAY, format: gfx::RGBA8_SRGB, usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: tile as i32, height: tile as i32, depth: (n * n) as i32, mips: mip_count(tile, tile) as i32 };
+	let oa = gfx::texture(ad);
+	ad.format = gfx::RGBA8;
+	let ob = gfx::texture(ad);
+	let keep = view_proj;
+	for j in n {
+		for i in n {
+			view_proj = imp::bake_proj(imp::view_dir(i, j, n), c, r);
+			ext_pushed = false;
+			guard gfx::begin_pass(gfx::PassDesc { color: [ta, tb, none(), none()], depth: td, color_value: f4(0.0, 0.0, 0.0, 0.0), .. }) else { continue; }
+			for b in bb { gfx::bind(if bmat(b).double_sided { pipe_imp_bake_two } else { pipe_imp_bake }); bind_geometry(); draw_lit(b); }
+			gfx::end_pass();
+			guard gfx::begin_pass(gfx::PassDesc { color: [oa, ob, none(), none()], layer: (j * n + i) as i32, .. }) else { continue; }
+			gfx::bind(pipe_imp_down);
+			gfx::bind_texture(gfx::FRAGMENT, 0, ta, smp_point);
+			gfx::bind_texture(gfx::FRAGMENT, 1, tb, smp_point);
+			gfx::uniforms(gfx::FRAGMENT, 0, ImpDownU { k: f4(3.0, 0.0, 0.0, 0.0) });
+			gfx::draw(3);
+			gfx::end_pass();
+		}
+	}
+	view_proj = keep;
+	gfx::generate_mips(oa);
+	gfx::generate_mips(ob);
+	for t in [ta, tb, td] { gfx::release(t); }
+	imps.push(Impostor { asset: asset, n: n, tile: tile, a: oa, b: ob, c: c, r: r, e: e, prim: bb[lp].prim, node: bb[lp].node, .. });
+	imps.len - 1
+}
+fn impostor_release(h int) { gfx::release(imps[h].a); gfx::release(imps[h].b); imps[h].a = none(); imps[h].b = none(); for s, si in instances { if s.imp == h { instances[si].imp = -1; } } }
+fn imp_draw(b Batch) {
+	let s = instances[b.inst];
+	let n = if inst_all { s.na[2] } else { s.nv[2] };
+	if imp_kind < 0 || n == 0 || s.imp < 0 { return; }
+	let im = imps[s.imp];
+	gfx::bind(if imp_kind == 0 { pipe_imp } else if imp_kind == 1 { pipe_imp_depth } else { pipe_imp_nd });
+	bind_geometry();
+	let sl = if imp_kind == 0 { 7 } else { 0 };
+	gfx::bind_texture(gfx::FRAGMENT, sl, im.a, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, sl + 1, im.b, smp_linear);
+	if imp_kind == 0 { for t in [0, 1, 3, 4] { gfx::bind_texture(gfx::FRAGMENT, t, white, smp_linear); } gfx::bind_texture(gfx::FRAGMENT, 2, flat_normal, smp_linear); }
+	let persp = last_vp.c0.w != 0.0 || last_vp.c1.w != 0.0 || last_vp.c2.w != 0.0;
+	let iz = linalg::inverse(last_vp).c2;
+	gfx::uniforms(gfx::VERTEX, 0, ImpU { view_proj: last_vp, cur_vp: view_proj_nj, prev_vp: prev_view_proj, inst: f4(s.first as f32, (if inst_all { s.ia[2] } else { s.iv[2] }) as f32, 0.0, 0.0), ray: if persp { f4(iz.x / iz.w, iz.y / iz.w, iz.z / iz.w, 1.0) } else { f4(iz.x, iz.y, iz.z, 0.0) }, box_c: x4(im.c, im.r), box_e: x4(im.e, im.n as f32), knobs: f4(im.shell, im.steps as f32, im.tier as f32, im.bias) });
+	gfx::draw(36, n, 0, 0);
+	gfx::bind(imp_back);
+	bind_geometry();
 }
 
 // ---- cameras
@@ -2832,6 +2936,8 @@ fn vsm_update() {
 		gfx::bind(pipe_vsm_clear);
 		gfx::draw(3);
 		gfx::bind(pipe_shadow);
+		imp_kind = 1;
+		imp_back = pipe_shadow;
 		bind_geometry();
 		let vp = gfx::mul(gfx::ortho(linalg::f(px as real * pm), linalg::f((px + 1) as real * pm), linalg::f(py as real * pm), linalg::f((py + 1) as real * pm), linalg::f(-vsm_zc - 1024.0), linalg::f(-vsm_zc + 1024.0)), frame_u.vsm_rot);
 		for c in vsm_ch.len {
@@ -2874,6 +2980,8 @@ fn shadow_pass() {
 		let cyc = if shadow_test_cycle_never { 2 } else if shadow_test_cycle_all || c == 0 { 1 } else { 2 };
 		guard gfx::begin_pass(gfx::PassDesc { depth: shadow_map, layer: c as i32, clear_depth: true, depth_value: 1.0, cycle: cyc as i32, .. }) else { return; }
 		gfx::bind(pipe_shadow);
+		imp_kind = 1;
+		imp_back = pipe_shadow;
 		bind_geometry();
 		let shift = if c == 0 { shadow_test_shift.x } else { if c == 1 { shadow_test_shift.y } else { shadow_test_shift.z } };
 		var vp = cascade_vp[c];
@@ -2914,6 +3022,7 @@ fn shelter_pass() {
 	inst_all = true;
 	guard gfx::begin_pass(gfx::PassDesc { color: [shelter_map, none(), none(), none()], depth: shelter_depth, color_value: f4(-1.0e30, 0.0, 0.0, 1.0), cycle: 1, .. }) else { return; }
 	gfx::bind(pipe_shelter);
+	imp_kind = -1;
 	bind_geometry();
 	for b in batch { let m = bmat(b); if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) { continue; } gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp)); gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m)); bind_slot(0, m.base_tex, true, white); draw_prim(b); }
 	gfx::end_pass();
@@ -3032,6 +3141,8 @@ fn local_shadow_pass() {
 		gfx::bind(pipe_vsm_clear);
 		gfx::draw(3);
 		gfx::bind(pipe_shadow);
+		imp_kind = 1;
+		imp_back = pipe_shadow;
 		bind_geometry();
 		let vp = local_vp[c];
 		for b in batch {
@@ -3086,6 +3197,7 @@ fn ao_pass() {
 		gfx::uniforms(gfx::FRAGMENT, 0, sky_u());
 		gfx::draw(3);
 	}
+	imp_kind = 2;
 	var current = -1;
 	bind_geometry();
 	for b in batch {
@@ -3094,6 +3206,7 @@ fn ao_pass() {
 		let want = if m.double_sided { 1 } else { 0 };
 		if want != current {
 			gfx::bind(if m.double_sided { pipe_normals_two } else { pipe_normals });
+			imp_back = if m.double_sided { pipe_normals_two } else { pipe_normals };
 			bind_geometry();
 			current = want;
 		}
@@ -3321,6 +3434,7 @@ fn draw_lit(b Batch) {
 	gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, view_proj));
 	gfx::uniforms(gfx::FRAGMENT, 0, frame_u);
 	var su = surface_of(m);
+	if b.lod == 2 { su.base = f4(1.0, 1.0, 1.0, 1.0); su.alpha = f4(0.0, 0.0, 0.0, MSAA as f32); su.tri = f4(0.0, 0.0, 0.0, 0.0); }
 	if m.ext { su.misc.w = linalg::f(sqrt((b.model.c0.x * b.model.c0.x + b.model.c0.y * b.model.c0.y + b.model.c0.z * b.model.c0.z) as real)); }
 	gfx::uniforms(gfx::FRAGMENT, 1, su);
 	if m.ext { gfx::uniforms(gfx::FRAGMENT, 2, ext_of(m)); ext_pushed = true; } else if !ext_pushed { gfx::uniforms(gfx::FRAGMENT, 2, ext_zero); ext_pushed = true; }
@@ -3444,11 +3558,14 @@ fn color_pass() {
 	// opaque and cut-out, single- then double-sided
 	for pass in if alpha_to_coverage { 4 } else { 2 } {
 		let pp = if pass == 0 { pipe_lit } else if pass == 1 { pipe_lit_two } else if pass == 2 { pipe_cut } else { pipe_cut_two };
-		var bound = false;
+		imp_back = pp;
+		imp_kind = 0;
+		var cur = gfx::Pipeline { id: 0 };
 		for b in batch {
 			if b.mode == gltf::ALPHA_BLEND || b.trans || !b.vis { continue; }
 			if lit_pipe(bmat(b)).id != pp.id { continue; }
-			if !bound { gfx::bind(pp); bind_geometry(); bound = true; }
+			let fp = if b.inst >= 0 && instances[b.inst].imp >= 0 { pipe_fade[pass] } else { pp };
+			if fp.id != cur.id { gfx::bind(fp); bind_geometry(); cur = fp; imp_back = fp; }
 			draw_lit(b);
 		}
 	}

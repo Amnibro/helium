@@ -106,6 +106,8 @@ HC_LIB=${HC_LIB:-$R/hc/lib} "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_l
 grep -q "^local: ok$" "$O/local_shadow_check.txt" || { say "gfxtest: FAILED: local shadow atlas bars"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$H" run "$R/hc/test/gfx/gi_dynamic_check.amni" > "$O/gi_dynamic_check.txt" 2>&1; grep -av "^WARNING" "$O/gi_dynamic_check.txt"; cat "$O/gi_dynamic_check.txt" >> "$RES"
 grep -q "^gi dynamic: ok$" "$O/gi_dynamic_check.txt" || { say "gfxtest: FAILED: dynamic GI bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$H" run "$R/hc/test/gfx/impostor_check.amni" "$O" > "$O/impostor_check.txt" 2>&1; grep -av "^WARNING" "$O/impostor_check.txt"; cat "$O/impostor_check.txt" >> "$RES"
+grep -q "^impostor: \(ok\|skipped\)$" "$O/impostor_check.txt" || { say "gfxtest: FAILED: impostor bars (I1-I5)"; exit 1; }
 grep -a "^gpu:" "$T/all.txt"; g=$(grep -a "^gpu: \(ok\|skipped\|FAILED\)" "$T/all.txt")
 case "$g" in
 	"gpu: ok"*) say "gfxtest: ok";;
