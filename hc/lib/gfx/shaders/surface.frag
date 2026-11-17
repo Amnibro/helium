@@ -3,6 +3,7 @@
 #include "ms.glsl"
 #include "skin_lut.glsl"
 
+#ifndef SURF_IMPOSTOR
 layout(location = 0) in vec3 in_world;
 layout(location = 1) in vec3 in_nrm;
 layout(location = 2) in vec4 in_tan;
@@ -10,6 +11,10 @@ layout(location = 3) in vec4 in_uv;
 layout(location = 4) in vec4 in_col;
 layout(location = 5) in vec4 in_cur;
 layout(location = 6) in vec4 in_prev;
+#ifdef SURF_FADE
+layout(location = 7) flat in float in_fade;
+#endif
+#endif
 
 layout(set = 2, binding = 0) uniform sampler2D tex_base;
 layout(set = 2, binding = 1) uniform sampler2D tex_mr;
@@ -124,6 +129,17 @@ layout(set = 3, binding = 1) uniform Surface {
 vec4 sp_tint(int k) { return k == 0 ? sp_t0 : k == 1 ? sp_t1 : k == 2 ? sp_t2 : sp_t3; }
 
 layout(location = 0) out vec4 out_rgba;
+#ifdef SURF_BAKE
+layout(location = 1) out vec4 out_nd;
+#endif
+#ifdef SURF_IMPOSTOR
+#define IMP_A tex_ext_l
+#define IMP_B tex_ext_s
+#define IMP_SAMPLES alpha.w
+#include "impostor.glsl"
+#elif defined(SURF_FADE)
+#include "fade.glsl"
+#endif
 
 vec2 pom_off = vec2(0.0);
 vec3 sss_d = vec3(0.0);
@@ -921,6 +937,11 @@ vec4 rt_refl(vec3 rp, vec3 n, vec3 gn, vec3 v, float rough) {
 }
 
 void main() {
+#ifdef SURF_IMPOSTOR
+	imp_main();
+#elif defined(SURF_FADE)
+	if (in_fade > 0.0 && imp_dither(gl_FragCoord.xy) < in_fade) discard;
+#endif
 	float cst = eye.w > 1.5 ? texture(tex_ao, gl_FragCoord.xy * screen.xy).g : 1.0;
 	if (misc.x > 0.0) { out_rgba = vec4(0.0, 0.0, 0.0, misc.x * (1.0 - sun_visibility(in_world, normalize(in_nrm)) * cst)); return; }
 	int model = int(misc.y + 0.5);
@@ -1020,6 +1041,9 @@ void main() {
 		tint = mix(tint, vec4(tc.rgb, tint.a), topf);
 	}
 	float oa = alpha.x > 1.5 ? tint.a : 1.0;
+#ifdef SURF_IMPOSTOR
+	oa = imp_cov;
+#endif
 	if (alpha.x > 0.5 && alpha.x < 1.5) {
 		if (alpha.w > 0.5) {
 			float cs = floor(clamp((tint.a - alpha.y) / max(length(vec2(dFdx(tint.a), dFdy(tint.a))), 1e-4) + 0.5, 0.0, 1.0) * alpha.w + 0.5);
@@ -1103,6 +1127,11 @@ void main() {
 		n = normalize(sn);
 		mr = sm;
 	}
+#ifdef SURF_BAKE
+	out_rgba = vec4(tint.rgb, 1.0);
+	out_nd = vec4(n, gl_FragCoord.z);
+	return;
+#endif
 	vec4 dk = vec4(1.0, 0.0, 1.0, 0.0);
 #ifndef SURF_LITE
 	if (decal.y > 0.5 && alpha.x < 1.5) {

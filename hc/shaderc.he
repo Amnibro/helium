@@ -2143,7 +2143,7 @@ recursive tpnode(e int, prec int):
 		TPO.push(op as byte); tpexpr(x.l, if op == '-' || op == '+' { 15 } else { 14 })
 		if pa: TPO.push(')')
 	else if k == E_BIN:
-		op := x.op; l := x.l; r := x.r; mp := tpprec(op); pa := mp < prec
+		op := x.op; l := x.l; r := x.r; mp := tpprec(op); pa := mp < prec || TPW && prec == 2 && mp == 10
 		if TPW && op == ',': serr(x.line, "the comma operator is not supported in WGSL output")
 		if pa: TPO.push('(')
 		if isassign(op):

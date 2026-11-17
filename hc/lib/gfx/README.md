@@ -853,6 +853,62 @@ s3d::pushers.push(float4 { player.x, player.y, player.z, 0.5 });
   a two-sided strip standing on the ground, `width` wide at the base and `tip` wide at
   the top.
 
+### Impostors for far copies (E24)
+
+```
+let imp = s3d::impostor(tree);
+s3d::instances[forest].imp = imp;
+s3d::instances[forest].imp_distance = 50.0;
+s3d::instances[forest].imp_band = 14.0;
+```
+
+* **Bake.** `s3d::impostor(asset)` renders the asset from 12 x 12 directions spread over
+  the upper half of the sphere around it (a hemi-octahedral grid) and returns a handle,
+  or -1 when nothing can be rendered. `s3d::impostor(asset, n, tile)` sets the grid size
+  and the texels per view. Each view is drawn at 3 x 3 samples per texel and filtered
+  into two texture arrays with mips: premultiplied albedo with coverage (sRGB), and
+  premultiplied normal with depth. The defaults take about 45 MiB of GPU memory.
+  `s3d::impostor_release(h)` frees them and detaches every set that used them.
+* **Drawing.** A set whose `imp` is a handle draws its far copies as impostors: one
+  12-triangle box per copy, in which the fragment shader marches the view ray through the
+  three nearest baked views, blended by their weights, against the baked depth. The hit is
+  shaded from the baked albedo and normal like any lit surface (sun and its shadows, SSAO,
+  GI, fog, the copy's color), and the marched depth is written, so impostors meet the
+  ground and each other where the meshes would.
+* **Hand-over.** `h = (distance - imp_distance) / imp_band`, clamped to 0..1. Copies
+  with `h` 0 draw the mesh (or `lod_asset` past `lod_distance`, so the impostor is a third
+  level of detail), copies with `h` 1 draw the impostor, and copies in the band draw both
+  and dissolve from one to the other with a screen-space dither. Shadow passes switch at
+  `h` 0.5 without a dissolve. Only mesh copies of a set with an impostor read the
+  dissolve: they draw with `surface_fade.frag` (`SURF_FADE`), made with the impostor
+  pipelines, and every other draw keeps the plain surface shader. That shader sits near
+  the register limit, and reading the dissolve in it cost up to 0.3 ms in the puddle and
+  skin tests.
+* **Shadows and depth.** Impostors cast sun shadows through the same march (nearest view,
+  depth pushed back by 0.07 of the radius against acne) and write view depth and normals
+  to the normals pass, so SSAO and screen-space effects see their shape, not the box.
+  These passes use the nearest view, a fixed 0.5 coverage cut and point-sampled texels.
+* **Edges under MSAA.** In the color pass the blended coverage becomes a sample mask
+  (alpha to coverage), so thin leaves fade at the edges the way the mesh's resolved
+  samples do instead of becoming a hard cutout.
+* **Knobs, per impostor (`s3d::imps[h]`).**
+  * `tier`: 1 (default) blends the three nearest views; 0 picks one of them per pixel
+    with a dither (cheaper, noisy without TAA); 2 uses the nearest view only (cheapest,
+    pops when the nearest view changes). Adding 4 writes the proxy box's depth instead of
+    the marched depth, as a control.
+  * `steps` (28): march steps at full resolution. The march halves them for each mip
+    level the impostor is minified by, for up to three levels, and never takes fewer than 7.
+  * `shell` (0.05): how thick each baked depth sample is, as a fraction of the bounding
+    sphere's diameter; it doubles with each of those mip levels.
+  * `bias` (0): added to the mip level; positive is softer and cheaper.
+  * Before marching, three coarse-mip samples along the ray's path through the box
+    discard pixels that only cross empty texels.
+* **Limits.** The bake is static: no wind sway or pushers on impostors (put
+  `imp_distance` past where sway shows), and skinned assets cannot be baked. Only the
+  upper hemisphere is baked, so views from below the asset reuse the horizon views.
+  Every impostor pixel is shaded with one material's settings: the asset's foliage
+  material when it has one, otherwise its largest primitive's.
+
 ### Caustics and sunlight under water (E7)
 
 ```
@@ -3034,6 +3090,44 @@ divided by the sum over blocks of the larger fraction.
   HLSL and WGSL, and `tools/hc/wgsltest.mjs` passes with them included.
 * **I7 nothing else changes.** `tools/hc/gfxtest.sh` passes: its CPU output and every
   existing bar and golden image are unchanged.
+
+Results (RX 9060 XT, RADV, `impostor_check.amni`):
+
+| Check | Measured | Bar | Result |
+| --- | --- | --- | --- |
+| I1 picture | worst block error 0.067; count 1.02 to 1.07 times; luminance within 7.4 %; PSNR 34.1 dB | <= 0.2; 0.85 to 1.15; +-10 %; >= 25 dB | pass |
+| I2 depth | median 0.31 m; control 2.44 m | <= 0.5 m; control > 1 m | pass |
+| I3 shadow | block error 0.051; count 1.03 times; control 0.0 times | <= 0.25; 0.8 to 1.25; < 0.1 | pass |
+| I4 cost | triangles 140,856 of 7,299,360 (1.9 %); frame 5.14 ms against 12.99 ms (0.40 times) | <= 15 %; <= 0.5 times | pass |
+| I5 hand-over | count 1.00 to 1.05 times; luminance within 2.5 % | 0.85 to 1.15; +-12 % | pass |
+| I6 every backend | all impostor shaders build to SPIR-V, MSL, HLSL and WGSL; `wgsltest.mjs`: 96 modules, 82 pipelines, 0 failures | passes | pass |
+| I7 nothing else changes | `gfxtest.sh` ok: CPU output byte for byte, every bar and golden passes; the plain surface shader compiles to byte-for-byte the same WGSL as before; puddle U5 0.195 to 0.271 ms more (before: 0.242 to 0.243), skin Y6 0.17 to 0.18 ms more (before: 0.11 to 0.21) | passes | pass |
+
+No bar changed after the first run. The first runs found real faults, fixed in the engine:
+the down pass wrote signed normals into an unsigned target, so impostors went dark on the
+sun side; impostor edges were a hard cutout while the mesh's leaves resolve through MSAA,
+so far coverage was 0.78 times the mesh's (now alpha to coverage); the normals pass took
+depth from a blended, filtered view, a 0.94 m median error (now the nearest view,
+point-sampled, and a 0.05 shell instead of 0.1); and the WGSL backend emitted
+`select(a < b, c < d, e > f)`, which WGSL reads as a template list (shaderc now
+parenthesizes comparisons inside call arguments). One harness change: I4 first failed at
+0.68 times (11.06 ms against 16.37 ms) while the same scene measured 0.47 times on its
+own. Frame times logged one by one start near 8.5 ms after the readback-heavy I1 to I3
+checks and settle near 5.5 ms over about 100 frames, most likely the GPU clocking back
+up; the warm-up before each timed run went from 4 frames to 140. The bar itself (best of
+2 x 20 frames) is unchanged. The shader also gained the empty-space test and fewer steps
+at coarse mips after that run. Low eye-height side views of the canopy come out a little
+lighter and softer than the mesh (the 7.4 % above), with faint vertical streaks when
+zoomed in; that is open.
+
+I7 failed on its first runs. Reading the dissolve in the shared surface shader, which
+sits at 252 of 256 vector registers, added 0.1 to 0.3 ms to the puddle U5 and skin Y6
+costs, over the U5 bar. The read cost the same wherever it went: first in the shader,
+after the cut-out test, or behind a uniform switch. The fix gives it its own build
+(`SURF_FADE`) used only by sets with an impostor. One full `gfxtest.sh` run then failed
+F6, T8 and W9 while another program loaded the GPU (F6 drew in 95.5 ms a frame instead
+of 9.5 ms). Run alone, those sections matched the build without impostors, and the
+next full run passed.
 
 ### Pre-registered bars (caustics, E7)
 
