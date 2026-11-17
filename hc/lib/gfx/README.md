@@ -2991,6 +2991,50 @@ Written before the first GPU run of `instance_checks` in `gfx_smoke.amni`.
 * **F7 nothing else changes.** As U5, with a new `scene_inst` (a field of instanced
   blades with wind over the test scene) matching native under webgputest's usual bar.
 
+### Pre-registered bars (impostors for far instances, E24 follow-on)
+
+Written before the first GPU run of `impostor_check.amni`. Every check uses one
+procedural tree: a tapered trunk and branches under about 2,400 double-sided leaves
+(foliage shading, per-leaf color variation), about 9.5 m tall, baked at the defaults
+(12 x 12 hemi-octahedral views, 176 x 176 texels per view, 3 x 3 samples per texel).
+The impostor tier is `high` unless a bar says otherwise. Renders are 1280 x 720,
+`fov_y` 0.9, temporal accumulation and bloom off, sun 40 degrees up with shadows on.
+A tree mask is the set of pixels whose 8-bit color differs from the same render
+without the tree by more than 7 in any channel. Block scores use 8 x 8 pixel blocks:
+the error is the sum over blocks of the absolute difference in masked fraction,
+divided by the sum over blocks of the larger fraction.
+* **I1 picture.** One tree against the sky, seen from 7 headings 17 degrees off the
+  bake grid (17 + 360k / 7 degrees) at two heights (eye 1.7 m above the ground, and
+  25 degrees above the canopy center), at 70 m and at 120 m: 28 views, each drawn with
+  the mesh and with the impostor. In every view the block error is **<= 0.2**, the
+  impostor's masked pixel count is **0.85 to 1.15 times** the mesh's, the mean
+  luminance over the union of both masks is within **+-10 %**, and the PSNR of the two
+  8-bit images, each reduced to 8 x 8 block means, over the bounding box of the union
+  of both masks is **>= 25 dB**.
+* **I2 depth.** The view-space depth the normals pass writes (the `nd` target, SSAO
+  on), at pixels inside both masks, for the 7 eye-height views at 70 m: the median
+  absolute difference between mesh and impostor is **<= 0.5 m**. Control: the same
+  impostor with the depth of its proxy box instead of its marched depth has a median
+  difference **> 1 m**.
+* **I3 shadow.** The tree on a ground plane, sun 30 degrees up, seen straight down from
+  150 m. The shadow mask is the set of ground pixels more than 4 m from the trunk whose
+  luminance is below 0.85 times the render without the tree. Impostor against mesh:
+  block error **<= 0.25** and pixel count **0.8 to 1.25 times**. Control: the impostor
+  with shadows off has a count below 0.1 times.
+* **I4 cost.** A forest of 2,025 trees (a 45 x 45 grid 12 m apart, jittered +-3 m,
+  random turn, scale 0.85 to 1.15) on a ground plane, eye 1.7 m up at the forest's
+  edge looking in. Impostors from 50 m with a 14 m band against meshes only: triangles
+  sent in the color pass (`s3d::instance_triangles` plus 12 per impostor drawn) are
+  **<= 15 %**, and the frame time (wall clock, best of 2 x 20 frames) is **<= 0.5
+  times**.
+* **I5 hand-over.** One tree with impostors from 50 m and a 14 m band; the eye walks
+  from 40 m to 62 m in 0.5 m steps at 5 m height. At every step, against meshes only:
+  masked pixel count **0.85 to 1.15 times** and mean luminance within **+-12 %**.
+* **I6 every backend.** The impostor shaders build through `shaderc` to SPIR-V, MSL,
+  HLSL and WGSL, and `tools/hc/wgsltest.mjs` passes with them included.
+* **I7 nothing else changes.** `tools/hc/gfxtest.sh` passes: its CPU output and every
+  existing bar and golden image are unchanged.
+
 ### Pre-registered bars (caustics, E7)
 
 Written before the first GPU run of `caustic_checks` in `gfx_smoke.amni`. Scene K: a
