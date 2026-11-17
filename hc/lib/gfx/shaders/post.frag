@@ -6,10 +6,12 @@ layout(location = 0) in vec2 in_uv;
 layout(set = 2, binding = 0) uniform sampler2D tex_hdr;
 layout(set = 2, binding = 1) uniform sampler2D tex_glow;
 layout(set = 2, binding = 2) uniform sampler3D tex_lut;
-layout(std430, set = 2, binding = 3) readonly buffer Expo { float expo[]; };
+layout(set = 2, binding = 3) uniform sampler2D tex_matte;
+layout(std430, set = 2, binding = 4) readonly buffer Expo { float expo[]; };
 layout(set = 3, binding = 0) uniform Grade { vec4 tone; vec4 mode; vec4 lens; vec4 color; vec4 frame; vec4 drops; }; // exposure, white point, bloom amount, desaturation
 layout(location = 0) out vec4 out_rgba;
 
+float cover = 1.0;
 float encode_srgb(float x) {
 	x = clamp(x, 0.0, 1.0);
 	return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
@@ -18,7 +20,7 @@ float hash_px(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx 
 vec4 graded(vec3 o) {
 	vec3 e = vec3(encode_srgb(o.r), encode_srgb(o.g), encode_srgb(o.b));
 	vec2 px = in_uv * frame.xy;
-	return vec4((mode.z > 0.0 ? mix(e, texture(tex_lut, e * ((mode.w - 1.0) / mode.w) + 0.5 / mode.w).rgb, mode.z) : e) + (hash_px(px) + hash_px(px + 17.3) - 1.0) / 255.0, 1.0) * vec4(vec3(drops.w > 0.0 && abs(in_uv.y - 0.5) * drops.w * frame.y > 0.5 * frame.x ? 0.0 : 1.0), 1.0);
+	return vec4((mode.z > 0.0 ? mix(e, texture(tex_lut, e * ((mode.w - 1.0) / mode.w) + 0.5 / mode.w).rgb, mode.z) : e) + (hash_px(px) + hash_px(px + 17.3) - 1.0) / 255.0, 1.0) * vec4(vec3(drops.w > 0.0 && abs(in_uv.y - 0.5) * drops.w * frame.y > 0.5 * frame.x ? 0.0 : 1.0), 1.0) * cover;
 }
 
 vec3 agx(vec3 c) {
@@ -76,6 +78,7 @@ void main() {
 		c = texture(tex_hdr, suv).rgb;
 		c += texture(tex_glow, suv).rgb * tone.z;
 	}
+	if (frame.w > 0.5) { cover = clamp(texture(tex_matte, suv).r, 0.0, 1.0); c /= max(cover, 0.05); }
 	if (lens.w > 0.0) {
 		vec2 tx = 1.0 / vec2(textureSize(tex_hdr, 0));
 		float lc = log(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4));

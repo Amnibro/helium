@@ -105,6 +105,7 @@ struct SsgiAU { size float4, tune float4, jit float4 }
 struct SsgiUpU { size float4, tune float4 }
 struct HizU { hz float4 }
 struct TemporalU { in_size float4, out_size float4, jitter float4, tune float4, reject float4 }
+struct MatteU { k float4 }
 
 var view Camera = Camera { eye: float3 { 0.0, 1.5, 5.0 }, target: float3 { 0.0, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 200.0 };
 var sun Sun = Sun { to_sun: float3 { 0.4, 0.8, 0.45 }, rgb: float3 { 3.0, 2.85, 2.6 }, shadows: true, shadow_far: 40.0, map_size: 2048 };
@@ -359,6 +360,7 @@ var pipe_down gfx::Pipeline;
 var pipe_up gfx::Pipeline;
 var pipe_grade gfx::Pipeline;
 var pipe_temporal gfx::Pipeline;
+var pipe_matte gfx::Pipeline;
 var pipe_hist gfx::ComputePipeline;
 var pipe_adapt gfx::ComputePipeline;
 var hist_buf gfx::Buffer;
@@ -376,6 +378,13 @@ var motion_tex gfx::Texture;
 var history gfx::Texture[>..] = [];
 var hist_cur = 0;
 var hist_valid = false;
+var see_through = false;
+var matte_layer gfx::Texture;
+var matte_cur gfx::Texture;
+var matte_hist gfx::Texture[>..] = [];
+var matte_at = 0;
+var matte_valid = false;
+var matte_live = false;
 var out_width int = 0;
 var out_height int = 0;
 var jitter float2 = float2 { 0.0, 0.0 };
@@ -823,7 +832,7 @@ fn motion_target() gfx::Texture { motion_tex }
 fn ao_target() gfx::Texture { ao }
 fn bent_target() gfx::Texture { bent }
 fn nd_target() gfx::Texture { nd }
-fn motion_wanted() bool { motion_vectors || temporal_on() || motion_blur > 0.0 }
+fn motion_wanted() bool { motion_vectors || temporal_on() || motion_blur > 0.0 || see_through }
 // The image bloom and grading read: the temporal result when it ran, else `hdr`.
 fn resolved() gfx::Texture { if temporal_used { history[hist_cur] } else { hdr } }
 fn temporal_on() bool { temporal != 0 || out_width != width || out_height != height }
@@ -841,6 +850,8 @@ fn drop_targets() {
 	drop_ssr();
 	for t in glow { gfx::release(t); }
 	for t in history { gfx::release(t); }
+	if matte_hist.len > 0 { gfx::release(matte_cur); for t in matte_hist { gfx::release(t); } matte_hist.clear(); }
+	matte_live = false;
 }
 
 fn make_targets(w int, h int) { make_targets(w, h, w, h); }
@@ -1014,6 +1025,7 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_up = gfx::pipeline(scr, embed_shader("shaders/glow_up.frag"), gfx::PipelineDesc { blend: gfx::BLEND_ADD });
 	pipe_grade = gfx::pipeline(scr, embed_shader("shaders/post.frag"));
 	pipe_temporal = gfx::pipeline(scr, embed_shader("shaders/temporal.frag"));
+	pipe_matte = gfx::pipeline(scr, embed_shader("shaders/matte.frag"));
 	pipe_hist = gfx::compute_pipeline(embed_shader("shaders/expo_hist.comp"));
 	pipe_adapt = gfx::compute_pipeline(embed_shader("shaders/expo_adapt.comp"));
 	pipe_ml_cull = gfx::compute_pipeline(embed_shader("shaders/meshlet_cull.comp"));
@@ -3040,7 +3052,7 @@ fn fullscreen(p gfx::Pipeline) { gfx::bind(p); }
 
 fn sky_u() SkyU {
 	let to_sun = linalg::unit3(sun.to_sun);
-	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(if sky.backdrop_on && !sky.draw { sky.backdrop } else { sky.horizon }, 0.0), ground: x4(sky.ground, 0.0), env: frame_u.env, env_rot: frame_u.env_rot, cloud: f4(if clouds_live() { 1.0 } else { 0.0 }, if clouds_live() && envmap::clear_on { 1.0 } else { 0.0 }, 0.0, 0.0) }
+	SkyU { inv_view_proj: linalg::inverse(view_proj_nj), prev_view_proj: prev_view_proj, to_sun: x4(to_sun, if sky.draw && !see_through { 0.0 } else { 1.0 }), sun_rgb: x4(sun.rgb, 0.0), zenith: x4(sky.zenith, 0.0), horizon: x4(if see_through { float3 { 0.0, 0.0, 0.0 } } else if sky.backdrop_on && !sky.draw { sky.backdrop } else { sky.horizon }, 0.0), ground: x4(sky.ground, 0.0), env: frame_u.env, env_rot: frame_u.env_rot, cloud: f4(if clouds_live() { 1.0 } else { 0.0 }, if clouds_live() && envmap::clear_on { 1.0 } else { 0.0 }, 0.0, 0.0) }
 }
 
 // Prepass: normal + depth (nd) for SSAO, and the motion target when it is wanted. Both
@@ -3418,7 +3430,7 @@ fn trans_capture() {
 }
 fn color_pass() {
 	inst_all = false;
-	let clear = x4(if sky.backdrop_on { sky.backdrop } else { sky.horizon }, 1.0);
+	let clear = x4(if see_through { float3 { 0.0, 0.0, 0.0 } } else if sky.backdrop_on { sky.backdrop } else { sky.horizon }, 1.0);
 	ext_pushed = false;
 	guard gfx::begin_pass(gfx::PassDesc { color: [if MSAA > 1 { color_ms } else { hdr }, none(), none(), none()], resolve: [if MSAA > 1 { hdr } else { none() }, none(), none(), none()], depth: depth_ms, color_value: clear, .. }) else { return; }
 	// with sky drawing off the sky pass writes the flat clear colour
@@ -3605,12 +3617,14 @@ fn lens_pass() {
 }
 fn temporal_draw() {
 	let into = 1 - hist_cur;
-	guard gfx::begin_pass(gfx::PassDesc { color: [history[into], none(), none(), none()], .. }) else { return; }
+	if temporal_draw(hdr, history[hist_cur], history[into], !hist_valid || temporal_reset) { hist_cur = into; }
+}
+fn temporal_draw(cur gfx::Texture, prev gfx::Texture, into gfx::Texture, fresh bool) bool {
+	guard gfx::begin_pass(gfx::PassDesc { color: [into, none(), none(), none()], .. }) else { return false; }
 	gfx::bind(pipe_temporal);
-	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_linear);
-	gfx::bind_texture(gfx::FRAGMENT, 1, history[hist_cur], smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 0, cur, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 1, prev, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 2, motion_tex, smp_point);
-	let fresh = !hist_valid || temporal_reset;
 	let up = out_width as f32 / width as f32;
 	gfx::uniforms(gfx::FRAGMENT, 0, TemporalU {
 		in_size: f4(width as f32, height as f32, 1.0 / width as f32, 1.0 / height as f32),
@@ -3622,7 +3636,32 @@ fn temporal_draw() {
 	});
 	gfx::draw(3);
 	gfx::end_pass();
-	hist_cur = into;
+	true
+}
+fn matte_pass() {
+	let layer = matte_layer;
+	matte_layer = none();
+	matte_live = false;
+	if !see_through || !mt_ran { matte_valid = false; return; }
+	if matte_hist.len == 0 {
+		matte_cur = gfx::render_target(width, height, gfx::RGBA16F);
+		for k in 2 { matte_hist.push(gfx::render_target(out_width, out_height, gfx::RGBA16F)); }
+		matte_valid = false;
+	}
+	guard gfx::begin_pass(gfx::PassDesc { color: [matte_cur, none(), none(), none()], .. }) else { return; }
+	gfx::bind(pipe_matte);
+	gfx::bind_texture(gfx::FRAGMENT, 0, motion_tex, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 1, if layer.id != 0 { layer } else { white }, smp_point);
+	gfx::uniforms(gfx::FRAGMENT, 0, MatteU { k: f4(if layer.id != 0 { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0) });
+	gfx::draw(3);
+	gfx::end_pass();
+	if temporal_on() {
+		let into = 1 - matte_at;
+		if !temporal_draw(matte_cur, matte_hist[matte_at], matte_hist[into], !matte_valid || !hist_valid || temporal_reset) { matte_valid = false; return; }
+		matte_at = into;
+		matte_valid = true;
+	}
+	matte_live = true;
 }
 
 fn temporal_pass() {
@@ -3729,8 +3768,9 @@ fn grade_pass(target gfx::Texture) {
 	gfx::bind_texture(gfx::FRAGMENT, 0, resolved(), if look.chroma > 0.0 { smp_linear } else { smp_point });
 	gfx::bind_texture(gfx::FRAGMENT, 1, if look.bloom > 0.0 { glow[0] } else { white }, smp_linear);
 	gfx::bind_texture(gfx::FRAGMENT, 2, lut_tex, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 3, if !matte_live { white } else if temporal_used { matte_hist[matte_at] } else { matte_cur }, smp_linear);
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, expo_buf);
-	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, if lut_n > 0 { clamp(look.lut, 0.0, 1.0) } else { 0.0 }, lut_n as f32), lens: f4(look.vignette, look.chroma, look.grain, look.sharpen), color: f4(look.saturation, look.contrast, look.warmth, 0.0), frame: f4(out_width as f32, out_height as f32, (frames % 1024) as f32, 0.0), drops: f4(look.lens_rain, world_time, 0.0, look.letterbox) });
+	gfx::uniforms(gfx::FRAGMENT, 0, GradeU { tone: f4(look.exposure, look.white, look.bloom, look.desaturate), mode: f4(look.curve as f32, if look.auto_exposure { 1.0 } else { 0.0 }, if lut_n > 0 { clamp(look.lut, 0.0, 1.0) } else { 0.0 }, lut_n as f32), lens: f4(look.vignette, look.chroma, look.grain, look.sharpen), color: f4(look.saturation, look.contrast, look.warmth, 0.0), frame: f4(out_width as f32, out_height as f32, (frames % 1024) as f32, if matte_live { 1.0 } else { 0.0 }), drops: f4(look.lens_rain, world_time, 0.0, look.letterbox) });
 	gfx::draw(3);
 	gfx::end_pass();
 }
@@ -3862,6 +3902,7 @@ fn render_begin() bool {
 }
 fn render_end(target gfx::Texture) {
 	lens_pass();
+	matte_pass();
 	temporal_pass();
 	ssr_capture();
 	glow_pass();

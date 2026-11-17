@@ -8801,6 +8801,62 @@ fn td_sweep(h0 f32, n int, minutes f32, size int, clouds f32) real, real {
 	}
 	return top, hr_mid(tf) - hr_mid(tn);
 }
+fn through_checks() bool {
+	sphere_grid();
+	s3d::sky = DEF_SKY; s3d::temporal = 0; s3d::see_through = false;
+	s3d::init(480, 360);
+	let t = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(t);
+	let base = gfx::read_pixels(t);
+	let n = base.len / 4;
+	var solid = 0;
+	for i in n { if base[i * 4 + 3] == 255 { solid += 1; } }
+	let x1 = n > 0 && solid == n;
+	print("gpu: through X1 default output: ", solid, " of ", n, " pixels have alpha 255 (bar all)", hr_pass(x1));
+	s3d::see_through = true;
+	s3d::render(t);
+	let got = gfx::read_pixels(t);
+	var m byte[>..] = [];
+	var clear = 0; var cover = 0; var lit = 0;
+	for i in n {
+		let a = got[i * 4 + 3];
+		if a == 255 { m.push(1 as byte); cover += 1; } else { m.push(0 as byte); }
+		if a == 0 { clear += 1; if got[i * 4] != 0 || got[i * 4 + 1] != 0 || got[i * 4 + 2] != 0 { lit += 1; } }
+	}
+	let share = cover as real / max(n, 1) as real;
+	var inner byte[>..] = [];
+	var deep = 0;
+	for i in n {
+		let x = i % 480; let y = i / 480;
+		var all = x > 0 && x < 479 && y > 0 && y < 359;
+		if all { for j in 9 { if m[i + (j % 3 - 1) + (j / 3 - 1) * 480] == 0 { all = false; } } }
+		if all { inner.push(1 as byte); deep += 1; } else { inner.push(0 as byte); }
+	}
+	let db = psnr_m(got[..], base[..], inner[..]);
+	let rim = psnr_m(got[..], base[..], m[..]);
+	let x2 = clear + cover == n && lit == 0 && share > 0.1 && share < 0.9 && db > 40.0;
+	print("gpu: through X2 see-through, no temporal: ", cover, " covered, ", clear, " clear, ", n - cover - clear, " in between (bar 0), ", lit, " clear pixels with colour (bar 0), covered share ", r3(share), " (bar 0.1 to 0.9), ", deep, " covered pixels away from an edge against the default frame ", r2(db), " dB (bar > 40; ", r2(rim), " dB with the edge pixels, which blend toward black instead of the sky)", hr_pass(x2));
+	s3d::temporal = 1; s3d::temporal_reset = true;
+	for _ in 24 { s3d::render(t); }
+	let tg = gfx::read_pixels(t);
+	var full = 0; var part = 0; var tl = 0;
+	for i in n {
+		let a = tg[i * 4 + 3];
+		if a == 255 { full += 1; } else if a > 0 { part += 1; } else if tg[i * 4] != 0 || tg[i * 4 + 1] != 0 || tg[i * 4 + 2] != 0 { tl += 1; }
+	}
+	let x3 = tg[3] == 0 && tl == 0 && part > 0 && part * 5 < cover && full <= cover && cover <= full + part;
+	print("gpu: through X3 see-through, temporal: corner alpha ", tg[3] as int, " (bar 0), ", full, " fully covered, ", part, " edge pixels (bar > 0, under a fifth of ", cover, "), ", tl, " clear pixels with colour (bar 0), no-temporal count between ", full, " and ", full + part, hr_pass(x3));
+	s3d::see_through = false; s3d::temporal_reset = true;
+	for _ in 2 { s3d::render(t); }
+	let back = gfx::read_pixels(t);
+	var again = 0;
+	for i in n { if back[i * 4 + 3] == 255 { again += 1; } }
+	let x4 = again == n;
+	print("gpu: through X4 switched off again: ", again, " of ", n, " pixels have alpha 255 (bar all)", hr_pass(x4));
+	s3d::temporal = 0; s3d::temporal_reset = true;
+	gfx::release(t);
+	x1 && x2 && x3 && x4
+}
 fn day_checks() bool {
 	half_table();
 	s3d::init(1280, 720);
@@ -9012,7 +9068,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "hairdo" { hairdo_checks() } else if only[..] == "updo" { updo_checks() } else if only[..] == "tails" { tail_checks() } else if only[..] == "drape" { drape_checks() } else if only[..] == "rise" { rise_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "knit" { knit_only() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else { shadow_checks() };
+		let ok = if only[..] == "hairdo" { hairdo_checks() } else if only[..] == "updo" { updo_checks() } else if only[..] == "tails" { tail_checks() } else if only[..] == "drape" { drape_checks() } else if only[..] == "rise" { rise_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "knit" { knit_only() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else if only[..] == "through" { through_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -9207,6 +9263,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("vfog", fog_checks()) { good = false; }
 	if !mark("sea", sea_checks()) { good = false; }
 	if !mark("day", day_checks()) { good = false; }
+	if !mark("through", through_checks()) { good = false; }
 	if !mark("lights", lights_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
