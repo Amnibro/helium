@@ -613,7 +613,7 @@ events_into(out Event[:]) int:
 fingers() Finger[>..]: o Finger[>..] ~= []; o.append(FINGERS[..]); o
 events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
 display_scale() f32: if WIN == 0 { 1.0 } else { k := s_dscale(WIN); if k > 0.0 { k } else { 1.0 } }
-touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS" || TOUCHF
+touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS" || p == "WebTouch" || TOUCHF
 platform() byte[>..]: ffi::cstr(s_platform())
 backgrounded() bool: BGF
 foregrounded() bool: FGF
