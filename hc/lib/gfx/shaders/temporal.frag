@@ -52,30 +52,27 @@ vec3 fetch_cur(ivec2 p) {
 	return max(texelFetch(tex_cur, clamp(p, ivec2(0), hi), 0).rgb, vec3(0.0));
 }
 
-// Catmull-Rom weights for the four taps around a sample at fraction t.
-vec4 catmull_rom(float t) {
-	float t2 = t * t;
-	float t3 = t2 * t;
-	return vec4(-0.5 * t3 + t2 - 0.5 * t, 1.5 * t3 - 2.5 * t2 + 1.0, -1.5 * t3 + 2.0 * t2 + 0.5 * t, 0.5 * t3 - 0.5 * t2);
-}
-
 vec3 history_at(vec2 uv) {
-	vec2 p = uv * out_size.xy - 0.5;
-	vec2 f = floor(p);
+	vec2 p = uv * out_size.xy;
+	vec2 f = floor(p - 0.5) + 0.5;
 	vec2 t = p - f;
-	vec4 wx = catmull_rom(t.x);
-	vec4 wy = catmull_rom(t.y);
-	ivec2 base = ivec2(f) - 1;
-	ivec2 hi = ivec2(out_size.xy) - 1;
-	vec3 sum = vec3(0.0);
-	for (int j = 0; j < 4; j++) {
-		vec3 row = vec3(0.0);
-		for (int i = 0; i < 4; i++) {
-			row += texelFetch(tex_hist, clamp(base + ivec2(i, j), ivec2(0), hi), 0).rgb * wx[i];
-		}
-		sum += row * wy[j];
-	}
-	return max(sum, vec3(0.0));
+	vec2 t2 = t * t;
+	vec2 t3 = t2 * t;
+	vec2 w0 = t2 - 0.5 * (t3 + t);
+	vec2 w1 = 1.5 * t3 - 2.5 * t2 + 1.0;
+	vec2 w3 = 0.5 * (t3 - t2);
+	vec2 w2 = 1.0 - w0 - w1 - w3;
+	vec2 w12 = w1 + w2;
+	vec2 tc0 = (f - 1.0) * out_size.zw;
+	vec2 tc12 = (f + w2 / max(w12, vec2(1e-5))) * out_size.zw;
+	vec2 tc3 = (f + 2.0) * out_size.zw;
+	vec3 s = textureLod(tex_hist, vec2(tc12.x, tc0.y), 0.0).rgb * (w12.x * w0.y)
+		+ textureLod(tex_hist, vec2(tc0.x, tc12.y), 0.0).rgb * (w0.x * w12.y)
+		+ textureLod(tex_hist, vec2(tc12.x, tc12.y), 0.0).rgb * (w12.x * w12.y)
+		+ textureLod(tex_hist, vec2(tc3.x, tc12.y), 0.0).rgb * (w3.x * w12.y)
+		+ textureLod(tex_hist, vec2(tc12.x, tc3.y), 0.0).rgb * (w12.x * w3.y);
+	float wt = w12.x * (w0.y + w12.y + w3.y) + (w0.x + w3.x) * w12.y;
+	return max(s / max(wt, 1e-5), vec3(0.0));
 }
 
 // Moves h toward the centre c until it lies inside the box c +/- e.

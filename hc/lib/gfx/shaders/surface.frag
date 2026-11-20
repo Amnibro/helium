@@ -141,6 +141,7 @@ bool at_on = false;
 float at_n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f); vec4 h = fract(sin(vec4(dot(i, vec2(127.1, 311.7)), dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7)), dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7)), dot(i + 1.0, vec2(127.1, 311.7)))) * 43758.5453); return mix(mix(h.x, h.y, f.x), mix(h.z, h.w, f.x), f.y); }
 void at_setup(vec3 p) { vec2 q = p.xz + p.y * vec2(0.71, -0.53); float l = (at_n(q * 0.031) * 0.7 + at_n(q * 0.11) * 0.3) * 8.0; float ia = floor(l); at_t = smoothstep(0.3, 0.7, fract(l)); at_a = sin(vec2(3.0, 7.0) * ia); at_b = sin(vec2(3.0, 7.0) * (ia + 1.0)); at_on = true; }
 vec4 ats(sampler2D s, vec2 u) { if (!at_on) return smp(s, u); vec2 dx = dFdx(u) * xo2.z; vec2 dy = dFdy(u) * xo2.z; return mix(textureGrad(s, u + at_a, dx, dy), textureGrad(s, u + at_b, dx, dy), at_t); }
+vec4 atsg(sampler2D s, vec2 u, vec2 dx, vec2 dy) { vec2 gx = dx * xo2.z; vec2 gy = dy * xo2.z; if (!at_on) return textureGrad(s, u, gx, gy); return mix(textureGrad(s, u + at_a, gx, gy), textureGrad(s, u + at_b, gx, gy), at_t); }
 vec4 atsa(sampler2DArray s, vec2 u, float l, vec2 dx, vec2 dy) { if (!at_on) return smpa(s, vec3(u, l)); return mix(textureGrad(s, vec3(u + at_a, l), dx * xo2.z, dy * xo2.z), textureGrad(s, vec3(u + at_b, l), dx * xo2.z, dy * xo2.z), at_t); }
 float wfall_st() { return smoothstep(0.7, 0.3, abs(normalize(in_nrm).y)); }
 vec2 wfall_p() { return vec2(in_uv.x * 7.0, in_uv.y * 3.7 - cluster.w * 2.2); }
@@ -657,12 +658,22 @@ float sun_visibility(vec3 p, vec3 n) {
 	if (soft > 0.0) {
 		const vec2 pd[12] = vec2[](vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621), vec2(0.962, -0.195), vec2(0.473, -0.480),
 			vec2(0.519, 0.767), vec2(0.185, -0.893), vec2(0.507, 0.064), vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
+		const vec2 pd4[4] = vec2[](vec2(-0.613, 0.617), vec2(0.752, -0.520), vec2(-0.870, -0.312), vec2(0.170, 0.903));
 		float ruv = max(soft * row0 * 0.5, 1.5 * texel);
-		float ang = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-		mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
 		float bias = 0.0008 * (1.0 + 0.25 * ruv / texel);
-		for (int i = 0; i < 12; i++) lit += texture(tex_shadow, vec4(uv + rot * pd[i] * ruv, float(c), ndc.z - bias));
-		return lit / 12.0;
+		float ang = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)) + (rain.w > 0.5 && rain.w < 11.5 ? rtr.w * 0.61803398875 : 0.0)));
+		mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
+		if (rain.w < 0.5 || rain.w >= 11.5) {
+			for (int i = 0; i < 12; i++) lit += texture(tex_shadow, vec4(uv + rot * pd[i] * ruv, float(c), ndc.z - bias));
+			return lit / 12.0;
+		}
+		int nt = int(rain.w);
+		if (nt <= 4) {
+			for (int i = 0; i < nt; i++) lit += texture(tex_shadow, vec4(uv + rot * pd4[i] * ruv, float(c), ndc.z - bias));
+			return lit / float(nt);
+		}
+		for (int i = 0; i < nt; i++) lit += texture(tex_shadow, vec4(uv + rot * pd[i] * ruv, float(c), ndc.z - bias));
+		return lit / float(nt);
 	}
 	for (int y = -1; y <= 1; y++)
 		for (int x = -1; x <= 1; x++)
@@ -677,7 +688,7 @@ float spec_occ(vec3 r, float n_v, float rough, vec3 gn, float occ, float aos, fl
 	float hz = clamp(1.0 + dot(r, gn), 0.0, 1.0);
 	float s = so_lag(n_v, aos, a);
 	if (refl.y > 1.5) {
-		vec4 bw = texelFetch(tex_bent, ivec2(gl_FragCoord.xy), 0);
+		vec4 bw = texture(tex_bent, gl_FragCoord.xy * screen.xy);
 		vec3 bn = normalize((vec4(bw.xyz, 0.0) * view_m).xyz);
 		float av = acos(sqrt(clamp(1.0 - bw.w, 0.0, 1.0)));
 		float as_ = 2.0 * atan(a);
@@ -967,9 +978,6 @@ void main() {
 	sp_dx = dFdx(in_world);
 	sp_dy = dFdy(in_world);
 	if (sp_p.w > 1.5) at_setup(in_world);
-	vec4 tint = base * vc * smp(tex_base, buv);
-	if (model == 2) tint.rgb *= eye_ring(buv);
-	// world-aligned layers: triplanar base and a top layer on up-facing surfaces
 	vec3 gw = normalize(in_nrm);
 	bool tp = tri.x > 0.0;
 	vec3 tw = pow(abs(gw), vec3(4.0));
@@ -981,7 +989,17 @@ void main() {
 	vec2 uy = in_world.xz * tri.x;
 	vec2 uz = in_world.xy * tri.x;
 	vec2 ut = in_world.xz * tri.z;
-	if (tp) tint = base * vc * (ats(tex_base, ux) * tw.x + ats(tex_base, uy) * tw.y + ats(tex_base, uz) * tw.z);
+	vec4 tint;
+	if (tp) {
+		vec4 tb = vec4(0.0);
+		if (sp_w.x > 0.0) tb += atsg(tex_base, ux, sp_dx.zy * tri.x, sp_dy.zy * tri.x) * sp_w.x;
+		if (sp_w.y > 0.0) tb += atsg(tex_base, uy, sp_dx.xz * tri.x, sp_dy.xz * tri.x) * sp_w.y;
+		if (sp_w.z > 0.0) tb += atsg(tex_base, uz, sp_dx.xy * tri.x, sp_dy.xy * tri.x) * sp_w.z;
+		tint = base * vc * tb;
+	} else {
+		tint = base * vc * smp(tex_base, buv);
+	}
+	if (model == 2) tint.rgb *= eye_ring(buv);
 	vec4 spf = vec4(0.0);
 	float spb = 1.0;
 	if (sp) {
@@ -1069,22 +1087,25 @@ void main() {
 	}
 	vec3 n0 = n;
 	float pd_fw = fwidth(in_world.x) + fwidth(in_world.z);
-	vec3 tn = smp(tex_normal, uvn).xyz * 2.0 - 1.0;
-	float tl = length(tn);
-	tn.xy *= params.z;
-	n = normalize(mat3(t, b, n) * tn);
-	vec4 mr = smp(tex_mr, xuv(uv_sets.y, xm_mr, xo0.zw));
+	float tl = 1.0;
+	vec4 mr = vec4(1.0);
 	if (tp) {
-		vec3 nx = ats(tex_normal, ux).xyz * 2.0 - 1.0;
-		vec3 ny = ats(tex_normal, uy).xyz * 2.0 - 1.0;
-		vec3 nz = ats(tex_normal, uz).xyz * 2.0 - 1.0;
-		nx.xy *= params.z; ny.xy *= params.z; nz.xy *= params.z;
-		nx = vec3(nx.xy + gw.zy, abs(nx.z) * gw.x);
-		ny = vec3(ny.xy + gw.xz, abs(ny.z) * gw.y);
-		nz = vec3(nz.xy + gw.xy, abs(nz.z) * gw.z);
-		n = normalize(nx.zyx * tw.x + ny.xzy * tw.y + nz.xyz * tw.z);
+		vec3 rn = vec3(0.0);
+		vec4 rm = vec4(0.0);
+		float rlen = 0.0;
+		if (sp_w.x > 0.0) { vec3 nx = atsg(tex_normal, ux, sp_dx.zy * tri.x, sp_dy.zy * tri.x).xyz * 2.0 - 1.0; rlen += length(nx) * sp_w.x; nx.xy *= params.z; rn += vec3(abs(nx.z) * gw.x, nx.y + gw.y, nx.x + gw.z) * sp_w.x; rm += atsg(tex_mr, ux, sp_dx.zy * tri.x, sp_dy.zy * tri.x) * sp_w.x; }
+		if (sp_w.y > 0.0) { vec3 ny = atsg(tex_normal, uy, sp_dx.xz * tri.x, sp_dy.xz * tri.x).xyz * 2.0 - 1.0; rlen += length(ny) * sp_w.y; ny.xy *= params.z; rn += vec3(ny.x + gw.x, abs(ny.z) * gw.y, ny.y + gw.z) * sp_w.y; rm += atsg(tex_mr, uy, sp_dx.xz * tri.x, sp_dy.xz * tri.x) * sp_w.y; }
+		if (sp_w.z > 0.0) { vec3 nz = atsg(tex_normal, uz, sp_dx.xy * tri.x, sp_dy.xy * tri.x).xyz * 2.0 - 1.0; rlen += length(nz) * sp_w.z; nz.xy *= params.z; rn += vec3(nz.x + gw.x, nz.y + gw.y, abs(nz.z) * gw.z) * sp_w.z; rm += atsg(tex_mr, uz, sp_dx.xy * tri.x, sp_dy.xy * tri.x) * sp_w.z; }
+		tl = rlen;
+		n = normalize(rn);
 		if (!gl_FrontFacing && alpha.z > 0.5) n = -n;
-		mr = ats(tex_mr, ux) * tw.x + ats(tex_mr, uy) * tw.y + ats(tex_mr, uz) * tw.z;
+		mr = rm;
+	} else {
+		vec3 tn = smp(tex_normal, uvn).xyz * 2.0 - 1.0;
+		tl = length(tn);
+		tn.xy *= params.z;
+		n = normalize(mat3(t, b, n) * tn);
+		mr = smp(tex_mr, xuv(uv_sets.y, xm_mr, xo0.zw));
 	}
 	if (topf > 0.0) {
 		vec3 nt = smpa(tex_ext_l, vec3(ut, top_lay.z)).xyz * 2.0 - 1.0;
@@ -1142,7 +1163,7 @@ void main() {
 	}
 #endif
 	vec3 nm = n;
-	vec4 dt = smpa(tex_ext_l, vec3(xuv(uv_sets.x, xm_det, xo_det.xy), top_lay.w));
+	vec4 dt = model > 0 ? smpa(tex_ext_l, vec3(xuv(uv_sets.x, xm_det, xo_det.xy), top_lay.w)) : vec4(0.5, 0.5, 1.0, 1.0);
 	float dmask = model == 1 ? mr.b : 1.0;
 	float dcurv = length(fwidth(normalize(in_nrm))) / max(length(fwidth(in_world)), 1e-6);
 	Mat q = Mat(nm, normalize(in_nrm), in_uv.z > 0.0 ? max(in_uv.z, 0.0) : dcurv, in_uv.z > 0.0 ? max(in_uv.w, 0.0005) : 1.0, 1.0, 0.0, 1.0);
@@ -1266,7 +1287,7 @@ void main() {
 	vec3 d = normalize(mix(reflect(-v, n), n, rough * rough));
 	vec3 se = env.x > 0.5 ? textureLod(tex_env, vec4(env_dir(d), 0.0), rough * env.z).rgb * env.y : mix(sky_color(d, l, zenith.rgb, horizon.rgb, ground.rgb, vec3(0.0)), env_irr(n), rough * rough) * screen.w;
 	rgb += (albedo * kd * env_irr(n) + ef * se) * occ;
-	rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
+	if (dot(emissive.rgb, vec3(1.0)) > 0.0) rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
 	if (is_puff) { float ed = clamp(dot(normalize(in_nrm), v), 0.0, 1.0); oa *= ed * ed * ed; }
 	out_rgba = vec4(rgb, oa);
 #else
@@ -1439,7 +1460,7 @@ void main() {
 		if (sb.a > 0.5) rgb += clamp(xo_det.w / max(dot(in_world - eye.xyz, view_dir.xyz), 1e-4) - 0.5, 0.0, 1.0) * albedo * sss_k * (sb.rgb - sss_d);
 	}
 
-	rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
+	if (dot(emissive.rgb, vec3(1.0)) > 0.0) rgb += emissive.rgb * smp(tex_emissive, xuv(uv_sets2.x, xm_emi, xo2.xy)).rgb;
 	if (is_water && !sea_under) {
 		rgb += shade_c.rgb * (vec3(1.0) - tint.rgb) * sea_lit;
 		float nz = water_grad(in_world.xz * 3.1, cluster.w * 0.7).x * 7.0 + 0.5;

@@ -16,7 +16,7 @@ void main() {
 	vec3 sum = c.rgb * wc;
 	float w = wc;
 	int n = min(int(tune.x), max(16, int(rmax * rmax * 1.5)));
-	float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+	float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)) + size.z * 0.61803398875)) * 6.2831853;
 	for (int i = 0; i < 128; i++) {
 		if (i >= n) break;
 		float fi = float(i) + 0.5;

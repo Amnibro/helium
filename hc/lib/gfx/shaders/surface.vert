@@ -83,6 +83,7 @@ vec3 bend(vec3 wp, vec3 o, float hw, float sw, bool prev) {
 }
 
 void main() {
+	bool need_motion = misc.z > 0.5;
 	vec3 p = in_pos;
 	vec3 pp = in_pos;
 	vec3 n = in_nrm;
@@ -92,26 +93,30 @@ void main() {
 		int count = int(misc.x);
 		for (int t = 0; t < targets && t < 64; t++) {
 			float w = morph_weight(t);
-			float pw = prev_weights[t >> 2][t & 3];
+			float pw = need_motion ? prev_weights[t >> 2][t & 3] : 0.0;
 			if (w == 0.0 && pw == 0.0) continue;
 			int e = (int(deform.y) + t * count + local_v) * 2;
 			p += morph_data[e].xyz * w;
-			pp += morph_data[e].xyz * pw;
+			if (need_motion) pp += morph_data[e].xyz * pw;
 			n += morph_data[e + 1].xyz * w;
 		}
 	}
 	mat4 m = model;
-	mat4 pm = prev_model;
 	vec3 wn = (model_normal * vec4(n, 0.0)).xyz;
 	if (deform.x >= 0.0) {
 		mat4 s = skin(int(deform.x));
 		m = s;
-		pm = misc.y >= 0.0 ? skin(int(misc.y)) : s;
-		// cofactor columns: the inverse transpose up to a positive scale
 		vec3 c0 = s[0].xyz;
 		vec3 c1 = s[1].xyz;
 		vec3 c2 = s[2].xyz;
 		wn = cross(c1, c2) * n.x + cross(c2, c0) * n.y + cross(c0, c1) * n.z;
+	}
+	vec4 w = m * vec4(p, 1.0);
+	vec3 tn = (m * vec4(in_tan.xyz, 0.0)).xyz;
+	vec4 pw = vec4(0.0);
+	if (need_motion) {
+		mat4 pm = deform.x >= 0.0 ? (misc.y >= 0.0 ? skin(int(misc.y)) : m) : prev_model;
+		pw = pm * vec4(pp, 1.0);
 	}
 	vec3 so = sway_o.xyz;
 	float sh = sway_o.w;
@@ -120,34 +125,39 @@ void main() {
 		int q = int(inst.y) + gl_InstanceIndex;
 		int k = (int(inst.x) + int(inst_ids[q >> 2][q & 3])) * 4;
 		mat4 im = mat4(inst_cols[k], inst_cols[k + 1], inst_cols[k + 2], inst_cols[k + 3]);
-		// a copy's tint rides in the matrix's unused bottom row; all zero means none
 		itint = vec3(im[0].w, im[1].w, im[2].w);
 		im[0].w = 0.0; im[1].w = 0.0; im[2].w = 0.0;
-		m = im * model;
-		pm = im * prev_model;
-		vec3 i0 = m[0].xyz;
-		vec3 i1 = m[1].xyz;
-		vec3 i2 = m[2].xyz;
-		wn = cross(i1, i2) * n.x + cross(i2, i0) * n.y + cross(i0, i1) * n.z;
-		so = im[3].xyz;
-		sh = inst.w * length(im[1].xyz);
+		w = im * w;
+		if (need_motion) pw = im * pw;
+		tn = (im * vec4(tn, 0.0)).xyz;
+		vec3 i0 = im[0].xyz;
+		vec3 i1 = im[1].xyz;
+		vec3 i2 = im[2].xyz;
+		wn = cross(i1, i2) * wn.x + cross(i2, i0) * wn.y + cross(i0, i1) * wn.z;
+		if (inst.z > 0.0) {
+			so = im[3].xyz;
+			sh = inst.w * length(im[1].xyz);
+		}
 	}
-	vec4 w = m * vec4(p, 1.0);
-	vec4 pw = pm * vec4(pp, 1.0);
 	if (inst.z > 0.0) {
 		w = vec4(bend(w.xyz, so, sh, inst.z, false), 1.0);
-		pw = vec4(bend(pw.xyz, so, sh, inst.z, true), 1.0);
+		if (need_motion) pw = vec4(bend(pw.xyz, so, sh, inst.z, true), 1.0);
 	}
 	if (water.w > 0.5) {
 		w.y += sea_wave(w.xz, water_t.x, water.xyz).z;
-		pw.y += sea_wave(pw.xz, water_t.y, water.xyz).z;
+		if (need_motion) pw.y += sea_wave(pw.xz, water_t.y, water.xyz).z;
 	}
 	out_world = w.xyz;
 	out_nrm = wn;
-	out_tan = vec4((m * vec4(in_tan.xyz, 0.0)).xyz, in_tan.w);
+	out_tan = vec4(tn, in_tan.w);
 	out_uv = vec4(in_uv0, in_uv1);
 	out_col = dot(itint, vec3(1.0)) > 0.0 ? vec4(in_col.rgb * itint, in_col.a) : in_col;
-	out_cur = cur_vp * w;
-	out_prev = prev_vp * pw;
+	if (need_motion) {
+		out_cur = cur_vp * w;
+		out_prev = prev_vp * pw;
+	} else {
+		out_cur = vec4(0.0, 0.0, 0.0, 1.0);
+		out_prev = vec4(0.0);
+	}
 	gl_Position = view_proj * w;
 }

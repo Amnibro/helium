@@ -14,7 +14,7 @@ vec3 view_pos(vec2 px, float z) { vec2 c = vec2(px.x * lens.z * 2.0 - 1.0, 1.0 -
 void main() {
 	ivec2 x = ivec2(gl_FragCoord.xy);
 	ivec2 lim = ivec2(jit.zw) - 1;
-	float a = tune.z > 0.5 ? texelFetch(tex_ao, x, 0).r : 1.0;
+	float a = tune.z > 0.5 ? texture(tex_ao, in_uv).r : 1.0;
 	float z = texelFetch(tex_depth, x, 0).r;
 	vec3 n = texelFetch(tex_nd, x, 0).xyz;
 	vec3 l = sun_v.xyz;

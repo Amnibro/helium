@@ -68,7 +68,7 @@ vec4 vol_at(vec3 p) {
 	return o;
 }
 void main() {
-	vec3 src = texture(tex_hdr, in_uv).rgb;
+	vec3 src = cl.y > 0.5 ? vec3(0.0) : texture(tex_hdr, in_uv).rgb;
 	vec4 nd = texture(tex_nd, in_uv);
 	vec4 w = inv_view_proj * vec4(in_uv.x * 2.0 - 1.0, 1.0 - in_uv.y * 2.0, 0.5, 1.0);
 	vec3 dir = normalize(w.xyz / w.w - eye.xyz);
@@ -135,5 +135,5 @@ void main() {
 		acc += tr * l * (sc / ext) * (1.0 - st);
 		tr *= st;
 	}
-	out_rgba = vec4(src * tr + acc, 1.0);
+	out_rgba = cl.y > 0.5 ? vec4(acc, tr) : vec4(src * tr + acc, 1.0);
 }

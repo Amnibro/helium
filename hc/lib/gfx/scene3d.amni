@@ -59,7 +59,7 @@ struct Look { exposure f32, white f32, bloom f32, bloom_cut f32, desaturate f32,
 struct NodeOv { item int, node int, t float3, r linalg::Quat, sc float3 }
 struct WeightOv { item int, node int, k int, w f32 }
 struct Item { asset int, place gfx::mat4, prev_place gfx::mat4, anim int, time f32, visible bool, anim2 int = -1, time2 f32 = 0.0, blend f32 = 1.0, bend_node int = -1, bend linalg::Quat = linalg::Quat { 0.0, 0.0, 0.0, 1.0 }, track int[4] = [-1, -1, -1, -1], tracked gfx::mat4[4] = [gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity, gfx::mat4_identity], light_base int = -1, sway f32 = 0.0, top f32 = 0.0, shadow bool = true, remap int = -1 }
-struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], smax f32 = 1.0, shadow bool = true }
+struct InstSet { asset int, first int, count int, lod_asset int = -1, lod_distance f32 = 0.0, sway f32 = 0.0, visible bool = true, top f32 = 0.0, c float3 = float3 { 0.0, 0.0, 0.0 }, r f32 = 0.0, lo float3 = float3 { 0.0, 0.0, 0.0 }, hi float3 = float3 { 0.0, 0.0, 0.0 }, ia int[2] = [0, 0], na int[2] = [0, 0], iv int[2] = [0, 0], nv int[2] = [0, 0], ic int[6] = [0, 0, 0, 0, 0, 0], nc int[6] = [0, 0, 0, 0, 0, 0], smax f32 = 1.0, shadow bool = true, dirty bool = true, rev int = 0 }
 struct Caustics { on bool = false, manual bool = false, strength f32 = 1.0, focus f32 = 1.0, cap f32 = 7.0, level f32 = 0.0, waves float4 = float4 { 1.1, 0.062, 1.0, 0.7 }, absorb float3 = float3 { 0.45, 0.09, 0.07 }, lo float3 = float3 { -1.0e9, 0.0, -1.0e9 }, hi float3 = float3 { 1.0e9, 0.0, 1.0e9 } }
 struct Sea { reflect bool = true, steps int = 24, under bool = true, march int = 24, shafts f32 = 1.0, scatter float3 = float3 { 0.012, 0.07, 0.08 } }
 struct Wind { dir float3 = float3 { 1.0, 0.0, 0.0 }, strength f32 = 0.0, speed f32 = 1.0, time f32 = 0.0 }
@@ -97,6 +97,7 @@ struct AdaptU { range float4, pct float4, rate float4 }
 struct FogVolume { pos float3, half float3 = float3 { 1.0, 1.0, 1.0 }, density f32 = 0.5, rgb float3 = float3 { 1.0, 1.0, 1.0 }, soft f32 = 0.25, round bool = false }
 struct SeaU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, absorb float4, scatter float4, box float4, waves float4, params float4 }
 struct FogU { inv_view_proj gfx::mat4, cascade_mat gfx::mat4[3], cascade_far float4, eye float4, view_dir float4, to_sun float4, sun_rgb float4, ambient float4, params float4, params2 float4, light_pos float4[16], light_rgb float4[16], env float4, env_rot float4, cl_u float4, cl_v float4, cl float4, light_dir float4[16], light_shd float4[16], vol_pos float4[8], vol_half float4[8], vol_rgb float4[8], vol float4, wind float4 }
+struct FogUpU { size float4 }
 struct QuadG { p float4[4], c float4[4], prm float4 }
 struct QuadViewU { view_proj gfx::mat4, right float4, up float4 }
 struct SsrU { lens float4, jit float4, tune float4, edge float4, inv_view gfx::mat4, prev_vp gfx::mat4 }
@@ -114,6 +115,11 @@ var look Look = Look { exposure: 1.0, white: 6.0, bloom: 0.6, bloom_cut: 1.2, de
 // 3 tangent; 4 ambient term; 5 direct light; 6 occlusion; 7 base colour; 8 n.v.
 var debug_view = 0;
 var ao_mode = 0;
+var ao_res f32 = 1.0;
+var fog_res f32 = 1.0;
+var shadow_taps = 12;
+var tex_max_linear = 0;
+var tex_max_srgb = 0;
 var gtao_steps = 8;
 var gtao_falloff f32 = 0.1;
 var spec_occlusion = true;
@@ -290,6 +296,20 @@ var width int = 0;
 var height int = 0;
 var pipe_lit gfx::Pipeline;
 var pipe_lit_two gfx::Pipeline;     // double sided
+var pipe_lit_z gfx::Pipeline;
+var pipe_lit_two_z gfx::Pipeline;
+var pipe_fog_up gfx::Pipeline;
+var fog_tex gfx::Texture;
+var fog_w = 0;
+var fog_h = 0;
+var ao_w = 0;
+var ao_h = 0;
+var msaa_made = 0;
+var prev_map = dictionary<int, int> {};
+var slot_tex u32[5] = [0; 5];
+var slot_smp u32[5] = [0; 5];
+var bound_sk = false;
+var cut_opaque CutU = CutU { base: float4 { 1.0, 1.0, 1.0, 1.0 }, alpha: float4 { 0.0, 0.5, 0.0, 0.0 }, uv_sets: float4 { 0.0, 0.0, 0.0, 0.0 }, xm: float4 { 1.0, 0.0, 0.0, 1.0 }, xo: float4 { 0.0, 0.0, 0.0, 0.0 } };
 var pipe_cut gfx::Pipeline;
 var pipe_cut_two gfx::Pipeline;
 var pipe_full gfx::Pipeline;
@@ -334,6 +354,7 @@ var probe_gen = -1;
 var capturing = false;
 var pipe_probe_copy gfx::Pipeline;
 var pipe_shadow gfx::Pipeline;
+var pipe_shadow_op gfx::Pipeline;
 var pipe_normals gfx::Pipeline;
 var pipe_normals_two gfx::Pipeline;
 var pipe_sky gfx::Pipeline;
@@ -505,6 +526,11 @@ var inst_t2 f32[>..] = [];
 var inst_t3 f32[>..] = [];
 var inst_dirty = true;
 var inst_all = false;
+var inst_cascade = -1;
+var inst_reach f32 = 0.0;
+var inst_local_base = -1;
+var local_ic int[>..] = [];
+var local_nc int[>..] = [];
 var meshlets = false;
 var meshlet_px f32 = 1.0;
 var meshlet_cone = true;
@@ -686,7 +712,7 @@ fn add_instances(asset int, mats gfx::mat4[:]) int {
 	inst_dirty = true; inst_rev += 1;
 	instances.len - 1
 }
-fn set_instance(set int, k int, m gfx::mat4) { inst_m[instances[set].first + k] = m; inst_bound(set, k); inst_dirty = true; inst_rev += 1; }
+fn set_instance(set int, k int, m gfx::mat4) { inst_m[instances[set].first + k] = m; inst_bound(set, k); instances[set].dirty = true; instances[set].rev += 1; }
 fn clear_instances() { instances.clear(); inst_m.clear(); inst_c.clear(); inst_dirty = true; inst_rev += 1; }
 fn instance_drawn(set int, lod int) int { instances[set].nv[lod] }
 fn instance_list(set int, lod int) int[>..] {
@@ -820,8 +846,8 @@ fn quad_draw(mul bool) {
 fn hdr_target() gfx::Texture { hdr }
 // Valid after a frame that wrote motion (motion_wanted()); a null handle before any.
 fn motion_target() gfx::Texture { motion_tex }
-fn ao_target() gfx::Texture { ao }
-fn bent_target() gfx::Texture { bent }
+fn ao_target() gfx::Texture { if width > 0 { ensure_ao(false); } ao }
+fn bent_target() gfx::Texture { if width > 0 { ensure_ao(true); } bent }
 fn nd_target() gfx::Texture { nd }
 fn motion_wanted() bool { motion_vectors || temporal_on() || motion_blur > 0.0 }
 // The image bloom and grading read: the temporal result when it ran, else `hdr`.
@@ -836,49 +862,73 @@ fn surface_desc(cull i32, blend i32, depth_write bool) gfx::PipelineDesc {
 
 fn drop_targets() {
 	if cloud_tex.id != 0 { gfx::release(cloud_tex); cloud_tex = none(); }
-	for t in [color_ms, depth_ms, hdr, nd, nd_depth, ao_raw, ao, lin_depth, bent_raw, bent, fx, tile_a, tile_b, contact_tex] { gfx::release(t); }
+	if depth_ms.id != 0 && depth_ms.id != nd_depth.id { gfx::release(depth_ms); }
+	for t in [color_ms, hdr, nd, nd_depth, ao_raw, ao, lin_depth, bent_raw, bent, fx, tile_a, tile_b, contact_tex, fog_tex] { gfx::release(t); }
+	color_ms = none(); depth_ms = none(); hdr = none(); nd = none(); nd_depth = none(); ao_raw = none(); ao = none(); lin_depth = none(); bent_raw = none(); bent = none(); fx = none(); tile_a = none(); tile_b = none(); contact_tex = none(); fog_tex = none();
+	ao_w = 0; ao_h = 0; fog_w = 0; fog_h = 0;
 	drop_motion();
 	drop_ssr();
 	for t in glow { gfx::release(t); }
+	glow.clear();
 	for t in history { gfx::release(t); }
+	history.clear();
 }
-
+fn ensure_history() {
+	if history.len == 2 { return; }
+	for k in 2 { history.push(gfx::render_target(out_width, out_height, gfx::RGBA16F)); }
+	hist_valid = false;
+}
+fn ensure_ao(want_bent bool) {
+	let s = clamp(ao_res, 0.25, 1.0);
+	let aw = max((width as f32 * s + 0.5) as int, 1);
+	let ah = max((height as f32 * s + 0.5) as int, 1);
+	if ao_raw.id == 0 || ao_w != aw || ao_h != ah {
+		gfx::release(ao_raw); gfx::release(ao); gfx::release(bent_raw); gfx::release(bent);
+		ao_raw = gfx::render_target(aw, ah, gfx::RG16F);
+		ao = gfx::render_target(aw, ah, gfx::R16F);
+		bent_raw = none(); bent = none();
+		ao_w = aw; ao_h = ah;
+	}
+	if want_bent && bent_raw.id == 0 {
+		bent_raw = gfx::render_target(ao_w, ao_h, gfx::RGBA16F);
+		bent = gfx::render_target(ao_w, ao_h, gfx::RGBA16F);
+	}
+}
+fn ensure_lin_depth() { if lin_depth.id == 0 { lin_depth = gfx::render_target(width, height, gfx::R32F); } }
+fn ensure_contact() { if contact_tex.id == 0 { contact_tex = gfx::render_target(width, height, gfx::RG16F); } }
+fn ensure_fx() { if fx.id == 0 { fx = gfx::render_target(width, height, gfx::RGBA16F); } }
+fn ensure_tiles() {
+	if tile_a.id != 0 { return; }
+	let tw = max((width + lens_tile_px - 1) / lens_tile_px, 1); let th = max((height + lens_tile_px - 1) / lens_tile_px, 1);
+	tile_a = gfx::render_target(tw, th, gfx::RG16F);
+	tile_b = gfx::render_target(tw, th, gfx::RG16F);
+}
+fn ensure_glow() {
+	if glow.len == GLOW_LEVELS { return; }
+	var gw = max(out_width / 2, 1);
+	var gh = max(out_height / 2, 1);
+	for k in GLOW_LEVELS { glow.push(gfx::render_target(gw, gh, gfx::RGBA16F)); gw = max(gw / 2, 1); gh = max(gh / 2, 1); }
+}
+fn ensure_fog_tex(fw int, fh int) {
+	if fog_tex.id != 0 && fog_w == fw && fog_h == fh { return; }
+	gfx::release(fog_tex);
+	fog_tex = gfx::render_target(fw, fh, gfx::RGBA16F);
+	fog_w = fw; fog_h = fh;
+}
 fn make_targets(w int, h int) { make_targets(w, h, w, h); }
-
-// w x h is the render size; ow x oh the size of the temporal result, bloom and the
-// caller's target.
 fn make_targets(w int, h int, ow int, oh int) {
 	if width > 0 { drop_targets(); }
 	width = w;
 	height = h;
 	out_width = ow;
 	out_height = oh;
-	history.clear();
-	for k in 2 { history.push(gfx::render_target(ow, oh, gfx::RGBA16F)); }
+	msaa_made = MSAA;
 	hist_valid = false;
 	color_ms = if MSAA > 1 { gfx::texture(gfx::TextureDesc { format: gfx::RGBA16F, usage: gfx::COLOR_TARGET, width: w as i32, height: h as i32, samples: MSAA as i32 }) } else { none() };
-	depth_ms = gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: w as i32, height: h as i32, samples: MSAA as i32 });
+	nd_depth = gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: w as i32, height: h as i32 });
+	depth_ms = if MSAA > 1 { gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: w as i32, height: h as i32, samples: MSAA as i32 }) } else { nd_depth };
 	hdr = gfx::render_target(w, h, gfx::RGBA16F);
 	nd = gfx::render_target(w, h, gfx::RGBA16F);
-	nd_depth = gfx::texture(gfx::TextureDesc { format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET, width: w as i32, height: h as i32 });
-	ao_raw = gfx::render_target(w, h, gfx::RG16F);
-	ao = gfx::render_target(w, h, gfx::R16F);
-	contact_tex = gfx::render_target(w, h, gfx::RG16F);
-	lin_depth = gfx::render_target(w, h, gfx::R32F);
-	bent_raw = gfx::render_target(w, h, gfx::RGBA16F);
-	bent = gfx::render_target(w, h, gfx::RGBA16F);
-	fx = gfx::render_target(w, h, gfx::RGBA16F);
-	let tw = max((w + lens_tile_px - 1) / lens_tile_px, 1); let th = max((h + lens_tile_px - 1) / lens_tile_px, 1);
-	tile_a = gfx::render_target(tw, th, gfx::RG16F);
-	tile_b = gfx::render_target(tw, th, gfx::RG16F);
-	glow.clear();
-	var gw = max(ow / 2, 1);
-	var gh = max(oh / 2, 1);
-	for k in GLOW_LEVELS {
-		glow.push(gfx::render_target(gw, gh, gfx::RGBA16F));
-		gw = max(gw / 2, 1);
-		gh = max(gh / 2, 1);
-	}
 }
 
 // The motion target (one sample per pixel, 8 bytes a pixel) is made on the first
@@ -956,7 +1006,7 @@ fn init(w int, h int) bool { init(w, h, w, h) }
 // upscales (TSR). The caller's target must be ow x oh.
 fn init(w int, h int, ow int, oh int) bool {
 	if ready {
-		if w != width || h != height || ow != out_width || oh != out_height { make_targets(w, h, ow, oh); }
+		if w != width || h != height || ow != out_width || oh != out_height || msaa_made != MSAA { make_targets(w, h, ow, oh); }
 		return true;
 	}
 	let vs = embed_shader("shaders/surface.vert");
@@ -964,8 +1014,10 @@ fn init(w int, h int, ow int, oh int) bool {
 	let fo = if lite { embed_shader("shaders/surface_lite.frag") } else { fs };
 	let scr = embed_shader("shaders/screen.vert");
 	pipe_lit = gfx::pipeline(vs, fo, surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, true));
+	pipe_lit_z = gfx::pipeline(vs, fo, surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, false));
 	pipe_full = if lite { gfx::pipeline(vs, fs, surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, true)) } else { pipe_lit };
 	pipe_lit_two = gfx::pipeline(vs, fo, surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
+	pipe_lit_two_z = gfx::pipeline(vs, fo, surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, false));
 	pipe_full_two = if lite { gfx::pipeline(vs, fs, surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true)) } else { pipe_lit_two };
 	pipe_cut = gfx::pipeline(vs, fo, gfx::PipelineDesc { cull: gfx::CULL_BACK, depth_test: true, depth_write: true, depth_compare: gfx::COMPARE_LESS_EQUAL, alpha_to_coverage: true });
 	pipe_cut_two = gfx::pipeline(vs, fo, gfx::PipelineDesc { cull: gfx::CULL_NONE, depth_test: true, depth_write: true, depth_compare: gfx::COMPARE_LESS_EQUAL, alpha_to_coverage: true });
@@ -974,7 +1026,9 @@ fn init(w int, h int, ow int, oh int) bool {
 	var sd = surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true);
 	sd.depth_bias = 1.5;
 	sd.depth_bias_slope = 2.0;
-	pipe_shadow = gfx::pipeline(vs, embed_shader("shaders/depth_only.frag"), sd);
+	let vs_sh = embed_shader("shaders/depth_only.vert");
+	pipe_shadow = gfx::pipeline(vs_sh, embed_shader("shaders/depth_only.frag"), sd);
+	pipe_shadow_op = gfx::pipeline(vs_sh, embed_shader("shaders/empty.frag"), sd);
 	pipe_shelter = gfx::pipeline(vs, embed_shader("shaders/shelter.frag"), surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
 	pipe_normals = gfx::pipeline(vs, embed_shader("shaders/normals.frag"), surface_desc(gfx::CULL_BACK, gfx::BLEND_NONE, true));
 	pipe_normals_two = gfx::pipeline(vs, embed_shader("shaders/normals.frag"), surface_desc(gfx::CULL_NONE, gfx::BLEND_NONE, true));
@@ -998,6 +1052,7 @@ fn init(w int, h int, ow int, oh int) bool {
 	pipe_ssgi_accum = gfx::pipeline(scr, embed_shader("shaders/ssgi_accum.frag"));
 	pipe_ssgi_up = gfx::compute_pipeline(embed_shader("shaders/ssgi_up.comp"));
 	pipe_fog = gfx::pipeline(scr, embed_shader("shaders/fog.frag"));
+	pipe_fog_up = gfx::pipeline(scr, embed_shader("shaders/fog_up.frag"));
 	pipe_sea = gfx::pipeline(scr, embed_shader("shaders/underwater.frag"));
 	pipe_clouds = gfx::pipeline(scr, embed_shader("shaders/clouds.frag"));
 	pipe_cloud_shadow = gfx::pipeline(scr, embed_shader("shaders/cloud_shadow.frag"));
@@ -1078,7 +1133,7 @@ fn forget() {
 	if uploaded_indices >= 0 { uploaded_indices = -2; }
 	if uploaded_morphs >= 0 { uploaded_morphs = -2; }
 	// a new scene: no last-frame placement, camera or history to measure against
-	prev_keys.clear(); prev_models.clear(); prev_bases.clear(); prev_joints.clear();
+	prev_keys.clear(); prev_map.clear(); prev_models.clear(); prev_bases.clear(); prev_joints.clear();
 	motion_fresh = true;
 	temporal_reset = true;
 	gi_built = false;
@@ -1366,13 +1421,28 @@ fn image_texture(image int, srgb bool) gfx::Texture {
 		if tex_bake(image, srgb, path[..], file, 0) { t = ktx_texture(file[..], srgb); }
 	}
 	if t.id == 0 {
-		let mips = mip_count(im.width, im.height);
-		t = gfx::texture(gfx::TextureDesc { format: tex_format(0, srgb), usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: im.width as i32, height: im.height as i32, mips: mips as i32 });
 		gltf::need_pixels(image);
-		gfx::update_texture(t, gltf::image_pixels(image));
 		let cut = cut_of(image);
-		if mips > 1 && cut > 0.0 { cut_chain(t, image, srgb, cut, mips); } else if mips > 1 { gfx::generate_mips(t); }
-		tex_mem += chain_bytes(0, im.width, im.height, mips);
+		let cap = if srgb { tex_max_srgb } else { tex_max_linear };
+		var tw = im.width;
+		var th = im.height;
+		if cap > 0 && cut <= 0.0 && max(tw, th) > cap {
+			var cur byte[>..] = [];
+			cur.append(gltf::image_pixels(image));
+			var nxt byte[>..] = [];
+			while max(tw, th) > cap { let nw, nh = bc::halve(cur[..], tw, th, srgb, nxt); cur.clear(); cur.append(nxt[..]); tw = nw; th = nh; }
+			let mips = mip_count(tw, th);
+			t = gfx::texture(gfx::TextureDesc { format: tex_format(0, srgb), usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: tw as i32, height: th as i32, mips: mips as i32 });
+			gfx::update_texture(t, cur[..]);
+			if mips > 1 { gfx::generate_mips(t); }
+			tex_mem += chain_bytes(0, tw, th, mips);
+		} else {
+			let mips = mip_count(tw, th);
+			t = gfx::texture(gfx::TextureDesc { format: tex_format(0, srgb), usage: gfx::SAMPLED | gfx::COLOR_TARGET, width: tw as i32, height: th as i32, mips: mips as i32 });
+			gfx::update_texture(t, gltf::image_pixels(image));
+			if mips > 1 && cut > 0.0 { cut_chain(t, image, srgb, cut, mips); } else if mips > 1 { gfx::generate_mips(t); }
+			tex_mem += chain_bytes(0, tw, th, mips);
+		}
 	}
 	tex_ns += clock_ns() - t0;
 	if srgb { tex_srgb[image] = t; } else { tex_linear[image] = t; }
@@ -1622,13 +1692,18 @@ fn texture_sampler(t gltf::Texture) gfx::Sampler {
 	smp_cache[key]
 }
 
+fn reset_slots() { for k in 5 { slot_tex[k] = 0; slot_smp[k] = 0; } }
 fn bind_slot(slot int, r gltf::TexRef, srgb bool, fallback gfx::Texture) {
-	if r.texture < 0 || gltf::textures[r.texture].image < 0 {
-		gfx::bind_texture(gfx::FRAGMENT, slot, fallback, smp_linear);
-		return;
+	var tex = fallback;
+	var smp = smp_linear;
+	if r.texture >= 0 && gltf::textures[r.texture].image >= 0 {
+		let t = gltf::textures[r.texture];
+		tex = image_texture(t.image, srgb);
+		smp = texture_sampler(t);
 	}
-	let t = gltf::textures[r.texture];
-	gfx::bind_texture(gfx::FRAGMENT, slot, image_texture(t.image, srgb), texture_sampler(t));
+	if slot < 5 && slot_tex[slot] == tex.id && slot_smp[slot] == smp.id { return; }
+	if slot < 5 { slot_tex[slot] = tex.id; slot_smp[slot] = smp.id; }
+	gfx::bind_texture(gfx::FRAGMENT, slot, tex, smp);
 }
 
 var item_remap int[>..] = [];
@@ -1649,8 +1724,8 @@ fn cut_of(m gltf::Material) CutU {
 // ---- per-frame flattening
 
 fn find_prev(key int) int {
-	for k, i in prev_keys { if k == key { return i; } }
-	-1
+	let r = prev_map.get(key);
+	if r { r } else { -1 }
 }
 
 // false when the box lies wholly outside one clip plane (camera passes only; shadows keep it)
@@ -1748,6 +1823,15 @@ fn frustum(m gfx::mat4) {
 	fr = [r3 + r0, r3 - r0, r3 + r1, r3 - r1, r2, r3 - r2];
 	for k in 6 { fr[k] = fr[k] * (1.0 / linalg::f(sqrt((fr[k].x * fr[k].x + fr[k].y * fr[k].y + fr[k].z * fr[k].z) as real))); }
 }
+fn upload_inst_ids() {
+	while inst_ids.len < 4 || inst_ids.len % 4 != 0 { inst_ids.push(0.0); }
+	if inst_ids.len > idbuf_cap {
+		if idbuf_cap > 0 { gfx::release(idbuf); }
+		idbuf_cap = inst_ids.len * 2;
+		idbuf = gfx::buffer(gfx::BUFFER_STORAGE, idbuf_cap * 4, []);
+	}
+	gfx::update_buffer(idbuf, 0, bytes_of(inst_ids)[..inst_ids.len * 4]);
+}
 fn gather_instances() {
 	let wd = linalg::unit3(linalg::v3(wind.dir.x, 0.0, wind.dir.z));
 	wind_u = f4(wd.x * wind.strength, 0.0, wd.z * wind.strength, wind.speed);
@@ -1758,45 +1842,63 @@ fn gather_instances() {
 		ppush_u[k] = if k < prev_pushers.len { prev_pushers[k] } else { push_u[k] };
 		reach = max(reach, push_u[k].w);
 	}
+	inst_reach = reach;
 	inst_ids.clear();
 	frustum(view_proj);
 	for s, si in instances {
 		if !s.visible || s.count == 0 { continue; }
-		if inst_dirty {
+		if inst_dirty || s.dirty {
 			var lo = linalg::v3(1.0e30, 1.0e30, 1.0e30);
 			var hi = linalg::v3(-1.0e30, -1.0e30, -1.0e30);
+			var sm f32 = 0.0;
 			for k in s.count {
 				let c = inst_c[s.first + k];
 				lo = linalg::v3(min(lo.x, c.x - c.w), min(lo.y, c.y - c.w), min(lo.z, c.z - c.w));
 				hi = linalg::v3(max(hi.x, c.x + c.w), max(hi.y, c.y + c.w), max(hi.z, c.z + c.w));
+				sm = max(sm, c.w);
 			}
 			instances[si].lo = lo;
 			instances[si].hi = hi;
-			var sm f32 = 0.0;
-			for k in s.count { sm = max(sm, inst_c[s.first + k].w); }
 			instances[si].smax = if s.r > 0.0 { sm / s.r } else { 1.0 };
 		}
-		if !s.shadow && instance_cull { let bl = instances[si].lo; let bh = instances[si].hi; let slack = (if s.sway > 0.0 { reach } else { 0.0 }) + 2.0 * s.sway * wind.strength * s.r * instances[si].smax; var gone = false; for p in fr { if p.x * (if p.x > 0.0 { bh.x } else { bl.x }) + p.y * (if p.y > 0.0 { bh.y } else { bl.y }) + p.z * (if p.z > 0.0 { bh.z } else { bl.z }) + p.w < -slack { gone = true; } } if gone { instances[si].ia = [0, 0]; instances[si].na = [0, 0]; instances[si].iv = [0, 0]; instances[si].nv = [0, 0]; continue; } }
-		inst_t0.clear(); inst_t1.clear(); inst_t2.clear(); inst_t3.clear();
-		let grow = 1.0 + 2.0 * s.sway * wind.strength;
-		let more = if s.sway > 0.0 { reach } else { 0.0 };
-		let far2 = s.lod_distance * s.lod_distance;
-		for k in s.count {
-			let c = inst_c[s.first + k];
-			let dx = c.x - view.eye.x; let dy = c.y - view.eye.y; let dz = c.z - view.eye.z;
-			let far = s.lod_asset >= 0 && dx * dx + dy * dy + dz * dz >= far2;
-			var see = true;
-			if instance_cull { let r = c.w * grow + more; for p in fr { if p.x * c.x + p.y * c.y + p.z * c.z + p.w < -r { see = false; } } }
-			if far { inst_t1.push(k as f32); if see { inst_t3.push(k as f32); } } else { inst_t0.push(k as f32); if see { inst_t2.push(k as f32); } }
-		}
-		instances[si].ia = [inst_ids.len, inst_ids.len + inst_t0.len];
-		instances[si].na = [inst_t0.len, inst_t1.len];
-		inst_ids.append(inst_t0[..]); inst_ids.append(inst_t1[..]);
-		instances[si].iv = [inst_ids.len, inst_ids.len + inst_t2.len];
-		instances[si].nv = [inst_t2.len, inst_t3.len];
-		inst_ids.append(inst_t2[..]); inst_ids.append(inst_t3[..]);
 		let bl = instances[si].lo;
 		let bh = instances[si].hi;
+		let slack = (if s.sway > 0.0 { reach } else { 0.0 }) + 2.0 * s.sway * wind.strength * s.r * instances[si].smax;
+		var gone = false;
+		var all_in = true;
+		if instance_cull {
+			for p in fr {
+				if p.x * (if p.x > 0.0 { bh.x } else { bl.x }) + p.y * (if p.y > 0.0 { bh.y } else { bl.y }) + p.z * (if p.z > 0.0 { bh.z } else { bl.z }) + p.w < -slack { gone = true; all_in = false; break; }
+				if all_in && p.x * (if p.x > 0.0 { bl.x } else { bh.x }) + p.y * (if p.y > 0.0 { bl.y } else { bh.y }) + p.z * (if p.z > 0.0 { bl.z } else { bh.z }) + p.w < slack { all_in = false; }
+			}
+		}
+		if gone && !s.shadow { instances[si].ia = [0, 0]; instances[si].na = [0, 0]; instances[si].iv = [0, 0]; instances[si].nv = [0, 0]; continue; }
+		if (all_in || gone) && s.lod_asset < 0 {
+			let base = inst_ids.len;
+			for k in s.count { inst_ids.push(k as f32); }
+			instances[si].ia = [base, base + s.count];
+			instances[si].na = [s.count, 0];
+			if gone { instances[si].iv = [0, 0]; instances[si].nv = [0, 0]; }
+			else { instances[si].iv = [base, base + s.count]; instances[si].nv = [s.count, 0]; }
+		} else {
+			inst_t0.clear(); inst_t1.clear(); inst_t2.clear(); inst_t3.clear();
+			let grow = 1.0 + 2.0 * s.sway * wind.strength;
+			let more = if s.sway > 0.0 { reach } else { 0.0 };
+			let far2 = s.lod_distance * s.lod_distance;
+			for k in s.count {
+				let c = inst_c[s.first + k];
+				let far = if s.lod_asset >= 0 { let dx = c.x - view.eye.x; let dy = c.y - view.eye.y; let dz = c.z - view.eye.z; dx * dx + dy * dy + dz * dz >= far2 } else { false };
+				var see = !gone;
+				if !gone && !all_in && instance_cull { let r = c.w * grow + more; for p in fr { if p.x * c.x + p.y * c.y + p.z * c.z + p.w < -r { see = false; break; } } }
+				if far { inst_t1.push(k as f32); if see { inst_t3.push(k as f32); } } else { inst_t0.push(k as f32); if see { inst_t2.push(k as f32); } }
+			}
+			instances[si].ia = [inst_ids.len, inst_ids.len + inst_t0.len];
+			instances[si].na = [inst_t0.len, inst_t1.len];
+			inst_ids.append(inst_t0[..]); inst_ids.append(inst_t1[..]);
+			instances[si].iv = [inst_ids.len, inst_ids.len + inst_t2.len];
+			instances[si].nv = [inst_t2.len, inst_t3.len];
+			inst_ids.append(inst_t2[..]); inst_ids.append(inst_t3[..]);
+		}
 		let d = linalg::dot3(linalg::v3((bl.x + bh.x) * 0.5 - view.eye.x, (bl.y + bh.y) * 0.5 - view.eye.y, (bl.z + bh.z) * 0.5 - view.eye.z), forward());
 		for l in if s.lod_asset >= 0 { 2 } else { 1 } {
 			if instances[si].na[l] == 0 { continue; }
@@ -1816,21 +1918,74 @@ fn gather_instances() {
 			}
 		}
 	}
-	while inst_ids.len < 4 || inst_ids.len % 4 != 0 { inst_ids.push(0.0); }
-	if inst_ids.len > idbuf_cap {
-		if idbuf_cap > 0 { gfx::release(idbuf); }
-		idbuf_cap = inst_ids.len * 2;
-		idbuf = gfx::buffer(gfx::BUFFER_STORAGE, idbuf_cap * 4, []);
-	}
-	gfx::update_buffer(idbuf, 0, bytes_of(inst_ids)[..inst_ids.len * 4]);
+	if capturing || instances.len == 0 { upload_inst_ids(); }
 	if inst_m.len > xbuf_cap || xbuf_cap == 0 {
 		if xbuf_cap > 0 { gfx::release(xbuf); }
 		xbuf_cap = max(inst_m.len * 2, 1);
 		xbuf = gfx::buffer(gfx::BUFFER_STORAGE, xbuf_cap * 64, []);
 		inst_dirty = true; inst_rev += 1;
 	}
-	if inst_dirty && inst_m.len > 0 { gfx::update_buffer(xbuf, 0, bytes_of(inst_m)[..inst_m.len * 64]); }
+	if inst_dirty {
+		if inst_m.len > 0 { gfx::update_buffer(xbuf, 0, bytes_of(inst_m)[..inst_m.len * 64]); }
+		for si in instances.len { instances[si].dirty = false; }
+	} else {
+		let mb = bytes_of(inst_m);
+		for si in instances.len {
+			if instances[si].dirty && instances[si].count > 0 {
+				let o = instances[si].first * 64;
+				let sz = instances[si].count * 64;
+				gfx::update_buffer(xbuf, o, mb[o..o + sz]);
+				instances[si].dirty = false;
+			}
+		}
+	}
 	inst_dirty = false;
+}
+fn cull_instance_shadows() {
+	if sun.shadows && instances.len > 0 {
+		for c in cascade_live {
+			let shift = if c == 0 { shadow_test_shift.x } else if c == 1 { shadow_test_shift.y } else { shadow_test_shift.z };
+			var vp = cascade_vp[c];
+			if shift != 0.0 && shadow_size > 0 {
+				let dx = 2.0 * shift / shadow_size as f32;
+				vp.c0.x += dx * vp.c0.w; vp.c1.x += dx * vp.c1.w; vp.c2.x += dx * vp.c2.w; vp.c3.x += dx * vp.c3.w;
+			}
+			frustum(vp);
+			for s, si in instances {
+				if !s.visible || !s.shadow || s.count == 0 { instances[si].ic[c * 2] = 0; instances[si].nc[c * 2] = 0; instances[si].ic[c * 2 + 1] = 0; instances[si].nc[c * 2 + 1] = 0; continue; }
+				let bl = s.lo; let bh = s.hi;
+				let slack = (if s.sway > 0.0 { inst_reach } else { 0.0 }) + 2.0 * s.sway * wind.strength * s.r * s.smax;
+				var gone = false; var all_in = true;
+				for p in fr {
+					if p.x * (if p.x > 0.0 { bh.x } else { bl.x }) + p.y * (if p.y > 0.0 { bh.y } else { bl.y }) + p.z * (if p.z > 0.0 { bh.z } else { bl.z }) + p.w < -slack { gone = true; all_in = false; break; }
+					if all_in && p.x * (if p.x > 0.0 { bl.x } else { bh.x }) + p.y * (if p.y > 0.0 { bl.y } else { bh.y }) + p.z * (if p.z > 0.0 { bl.z } else { bh.z }) + p.w < slack { all_in = false; }
+				}
+				if gone { instances[si].ic[c * 2] = 0; instances[si].nc[c * 2] = 0; instances[si].ic[c * 2 + 1] = 0; instances[si].nc[c * 2 + 1] = 0; continue; }
+				if all_in || s.count > 4096 { instances[si].ic[c * 2] = s.ia[0]; instances[si].nc[c * 2] = s.na[0]; instances[si].ic[c * 2 + 1] = s.ia[1]; instances[si].nc[c * 2 + 1] = s.na[1]; continue; }
+				let grow = 1.0 + 2.0 * s.sway * wind.strength;
+				let more = if s.sway > 0.0 { inst_reach } else { 0.0 };
+				for l in 2 {
+					let n = s.na[l];
+					if n == 0 { instances[si].ic[c * 2 + l] = 0; instances[si].nc[c * 2 + l] = 0; continue; }
+					inst_t0.clear();
+					let base = s.ia[l];
+					for j in n {
+						let k = inst_ids[base + j] as int;
+						let ci = inst_c[s.first + k];
+						let r = ci.w * grow + more;
+						var ok = true;
+						for p in fr { if p.x * ci.x + p.y * ci.y + p.z * ci.z + p.w < -r { ok = false; break; } }
+						if ok { inst_t0.push(k as f32); }
+					}
+					instances[si].ic[c * 2 + l] = inst_ids.len;
+					instances[si].nc[c * 2 + l] = inst_t0.len;
+					inst_ids.append(inst_t0[..]);
+				}
+			}
+		}
+	}
+	local_shadow_prepare();
+	if instances.len > 0 { upload_inst_ids(); }
 }
 fn gather() {
 	batch.clear();
@@ -1844,7 +1999,8 @@ fn gather() {
 	old_w.clear(); old_w.append(cur_w[..]);
 	for k, i in cloths { cloths[i].shown = k.stepped; cloths[i].stepped = false; cloth::cloths[k.c].keep = false; }
 	cur_w.clear();
-	for it, ii in items {
+	for ii in items.len {
+		let it .= items[ii];
 		if !it.visible || it.asset < 0 { continue; }
 		pose(ii);
 		item_lights(ii);
@@ -1893,7 +2049,7 @@ fn gather() {
 	}
 	gather_instances();
 	let here = joints.len;
-	for b, i in batch { if batch[i].prev_joint_base >= 0 { batch[i].prev_joint_base = here + b.prev_joint_base; } }
+	for i in batch.len { if batch[i].prev_joint_base >= 0 { batch[i].prev_joint_base = here + batch[i].prev_joint_base; } }
 	joints.append(prev_joints[..]);
 	if joints.len > jbuf_cap {
 		gfx::release(jbuf);
@@ -1905,6 +2061,7 @@ fn gather() {
 	prev_joints.clear();
 	prev_joints.append(joints[..here]);
 	prev_keys.clear(); prev_keys.append(cur_keys[..]);
+	prev_map.clear(); for k, i in cur_keys { prev_map.insert(k, i); }
 	prev_models.clear(); prev_models.append(cur_models[..]);
 	prev_bases.clear(); prev_bases.append(cur_bases[..]);
 	prev_wb.clear(); prev_wb.append(cur_wb[..]);
@@ -2070,32 +2227,43 @@ fn meshlet_stats() int, int, int {
 fn forward() float3 { linalg::unit3(linalg::v3(view.target.x - view.eye.x, view.target.y - view.eye.y, view.target.z - view.eye.z)) }
 
 fn mw(pool f32[:], base int, j int, n int) f32 { if base >= 0 && j < n && j < motion::MAX_WEIGHTS && base + j < pool.len { pool[base + j] } else { 0.0 } }
-fn draw_uniforms(b Batch, vp gfx::mat4) DrawU {
+fn draw_uniforms_ex(b const Batch&, vp gfx::mat4, need_norm bool, need_motion bool) DrawU {
 	let pr = gltf::prims[b.prim];
 	var w float4[16] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 16];
 	var pw float4[16] = [float4 { 0.0, 0.0, 0.0, 0.0 }; 16];
-	for q in min((pr.targets + 3) / 4, 16) {
-		w[q] = float4 { mw(cur_w[..], b.wb, q * 4, pr.targets), mw(cur_w[..], b.wb, q * 4 + 1, pr.targets), mw(cur_w[..], b.wb, q * 4 + 2, pr.targets), mw(cur_w[..], b.wb, q * 4 + 3, pr.targets) };
-		pw[q] = if b.pwb >= 0 { float4 { mw(old_w[..], b.pwb, q * 4, pr.targets), mw(old_w[..], b.pwb, q * 4 + 1, pr.targets), mw(old_w[..], b.pwb, q * 4 + 2, pr.targets), mw(old_w[..], b.pwb, q * 4 + 3, pr.targets) } } else { w[q] };
+	if pr.targets > 0 {
+		for q in min((pr.targets + 3) / 4, 16) {
+			w[q] = float4 { mw(cur_w[..], b.wb, q * 4, pr.targets), mw(cur_w[..], b.wb, q * 4 + 1, pr.targets), mw(cur_w[..], b.wb, q * 4 + 2, pr.targets), mw(cur_w[..], b.wb, q * 4 + 3, pr.targets) };
+			pw[q] = if b.pwb >= 0 { float4 { mw(old_w[..], b.pwb, q * 4, pr.targets), mw(old_w[..], b.pwb, q * 4 + 1, pr.targets), mw(old_w[..], b.pwb, q * 4 + 2, pr.targets), mw(old_w[..], b.pwb, q * 4 + 3, pr.targets) } } else { w[q] };
+		}
+		let ck = if pr.targets == 2 { cloth_of(b.prim) } else { -1 };
+		if ck >= 0 { w[0] = f4(1.0, 0.0, 0.0, 0.0); pw[0] = if cloths[ck].shown && !test_morph_still { f4(0.0, 1.0, 0.0, 0.0) } else { w[0] }; }
 	}
-	let ck = if pr.targets == 2 { cloth_of(b.prim) } else { -1 };
-	if ck >= 0 { w[0] = f4(1.0, 0.0, 0.0, 0.0); pw[0] = if cloths[ck].shown && !test_morph_still { f4(0.0, 1.0, 0.0, 0.0) } else { w[0] }; }
 	let sw = b.inst < 0 && b.item >= 0 && items[b.item].sway > 0.0;
 	let pl = if sw { items[b.item].place } else { gfx::mat4_identity };
 	let wm = bmat(b);
 	DrawU {
-		model: b.model, model_normal: linalg::normal_matrix(b.model), view_proj: vp, prev_model: b.prev_model,
+		model: b.model, model_normal: if need_norm { linalg::normal_matrix(b.model) } else { gfx::mat4_identity }, view_proj: vp, prev_model: b.prev_model,
 		deform: f4(b.joint_base as f32, pr.mfirst as f32, pr.targets as f32, pr.vfirst as f32),
-		misc: f4(pr.vcount as f32, b.prev_joint_base as f32, 0.0, 0.0),
+		misc: f4(pr.vcount as f32, b.prev_joint_base as f32, if need_motion { 1.0 } else { 0.0 }, 0.0),
 		cur_vp: view_proj_nj, prev_vp: prev_view_proj, weights: w, prev_weights: pw,
-		inst: if b.inst >= 0 { f4(instances[b.inst].first as f32, (if inst_all { instances[b.inst].ia[b.lod] } else { instances[b.inst].iv[b.lod] }) as f32, instances[b.inst].sway, instances[b.inst].top) } else { f4(0.0, -1.0, if sw { items[b.item].sway } else { 0.0 }, 0.0) },
+		inst: if b.inst >= 0 { let o, _ = inst_slice(b); f4(instances[b.inst].first as f32, o as f32, instances[b.inst].sway, instances[b.inst].top) } else { f4(0.0, -1.0, if sw { items[b.item].sway } else { 0.0 }, 0.0) },
 		sway_o: if sw { f4(pl.c3.x, pl.c3.y, pl.c3.z, items[b.item].top * linalg::f(sqrt((pl.c1.x * pl.c1.x + pl.c1.y * pl.c1.y + pl.c1.z * pl.c1.z) as real))) } else { f4(0.0, 0.0, 0.0, 1.0) },
 		wind: wind_u, wind_t: f4(wind.time, wind_prev, min(pushers.len, 4) as f32, min(if prev_pushers.len > 0 { prev_pushers.len } else { pushers.len }, 4) as f32), push: push_u, prev_push: ppush_u,
 		water: if wm.shading == 4 && wm.shade_a.w > 0.5 { f4(wm.shade_b.x, wm.shade_b.y, wm.shade_b.z, 1.0) } else { f4(0.0, 0.0, 0.0, 0.0) }, water_t: f4(world_time, water_prev, 0.0, 0.0)
 	}
 }
+fn draw_uniforms(b const Batch&, vp gfx::mat4) DrawU { draw_uniforms_ex(b, vp, true, false) }
+fn inst_slice(b const Batch&) int, int {
+	if inst_local_base >= 0 { let k = inst_local_base + b.inst * 2 + b.lod; return local_ic[k], local_nc[k]; }
+	let s .= instances[b.inst];
+	if inst_cascade >= 0 { let k = inst_cascade * 2 + b.lod; return s.ic[k], s.nc[k]; }
+	if inst_all { return s.ia[b.lod], s.na[b.lod]; }
+	return s.iv[b.lod], s.nv[b.lod];
+}
 
 fn bind_geometry() {
+	reset_slots();
 	gfx::bind_vertex_buffer(vbuf);
 	gfx::bind_index_buffer(ibuf, 4);
 	gfx::bind_storage_buffer(gfx::VERTEX, 0, jbuf);
@@ -2104,7 +2272,7 @@ fn bind_geometry() {
 	gfx::bind_storage_buffer(gfx::VERTEX, 3, idbuf);
 }
 
-fn draw_prim(b Batch) {
+fn draw_prim(b const Batch&) {
 	if b.ml >= 0 {
 		gfx::bind_index_buffer(ml_out_buf, 4);
 		gfx::draw_indexed_indirect(ml_args_buf, (b.ml * 2 + (if inst_all { 1 } else { 0 })) * 32);
@@ -2112,7 +2280,9 @@ fn draw_prim(b Batch) {
 		return;
 	}
 	let pr = gltf::prims[b.prim];
-	gfx::draw_indexed(pr.icount, if b.inst < 0 { 1 } else if inst_all { instances[b.inst].na[b.lod] } else { instances[b.inst].nv[b.lod] }, pr.ifirst, pr.vfirst, 0);
+	var n = 1;
+	if b.inst >= 0 { let _, cnt = inst_slice(b); n = cnt; if n <= 0 { return; } }
+	gfx::draw_indexed(pr.icount, n, pr.ifirst, pr.vfirst, 0);
 }
 
 // ---- cameras
@@ -2286,7 +2456,7 @@ fn fill_frame() {
 	frame_u.vp = view_proj;
 	frame_u.cluster = f4(clusters::CX as f32, clusters::CY as f32, clusters::CZ as f32, world_time);
 	frame_u.cluster2 = f4(view.near, clusters::CZ as f32 / linalg::f(log((view.far / view.near) as real)), wet, snow);
-	frame_u.rain = f4(ripples, puddles, max(puddle_size, 0.01), 0.0);
+	frame_u.rain = f4(ripples, puddles, max(puddle_size, 0.01), clamp(shadow_taps, 1, 12) as f32);
 	var cf = caustics.manual;
 	sea_on = cf;
 	if cf { sea_level = caustics.level; sea_lo = caustics.lo; sea_hi = caustics.hi; sea_waves = caustics.waves; sea_absorb = caustics.absorb; sea_scatter = sea.scatter; }
@@ -2348,7 +2518,7 @@ fn image_avg(image int) float3 {
 	a
 }
 fn gi_takes(b Batch) bool { b.mode != gltf::ALPHA_BLEND && b.joint_base < 0 && b.inst < 0 && gltf::prims[b.prim].targets == 0 && !bmat(b).no_gi }
-fn gi_key(b Batch) int { b.item * 1048576 + b.node }
+fn gi_key(b Batch) int { (b.item * 1048576 + b.node) * 1048576 + b.prim }
 fn gi_pos(prim int, model gfx::mat4, at int) float3 {
 	let pr = gltf::prims[prim];
 	let vi = (pr.vfirst + gltf::indices[pr.ifirst + at] as int) * gltf::VERTEX_FLOATS + gltf::AT_POS;
@@ -2461,7 +2631,7 @@ fn gi_rot(k int) GiU {
 }
 fn gi_pass() {
 	if !(gi_on || rt_shadows || rt_reflect) { return; }
-	gi_track();
+	if !gi_built || rt_shadows || rt_reflect || gi_updates <= 8 || gi_interval <= 1 || frames % gi_interval == 0 { gi_track(); }
 	if !gi_built { gi_scene(); }
 	if !gi_on || !gi_have || !rt::ready { return; }
 	if gi_updates > 8 && gi_interval > 1 && frames % gi_interval != 0 { return; }
@@ -2684,7 +2854,7 @@ fn vsm_batch_hash(b Batch) int {
 	var h = vsm_mix(vsm_mix(vsm_mix(vsm_mix(7, b.prim), b.lod), b.ml + 1), b.inst + 1);
 	if b.inst >= 0 {
 		let s = instances[b.inst];
-		h = vsm_mix(vsm_mix(vsm_mix(vsm_mix(vsm_mix(h, inst_rev), s.first), s.count), s.na[b.lod]), s.ia[b.lod]);
+		h = vsm_mix(vsm_mix(vsm_mix(vsm_mix(vsm_mix(h, inst_rev), s.rev), s.first), s.count), s.na[b.lod]);
 		return if s.sway != 0.0 { vsm_mix(h, frames) } else { h };
 	}
 	if b.joint_base >= 0 || b.wb >= 0 || items[b.item].sway != 0.0 { return vsm_mix(h, frames); }
@@ -2819,15 +2989,22 @@ fn vsm_update() {
 		gfx::scissor(sl % np * VSM_PAGE, sl / np * VSM_PAGE, VSM_PAGE, VSM_PAGE);
 		gfx::bind(pipe_vsm_clear);
 		gfx::draw(3);
-		gfx::bind(pipe_shadow);
+		gfx::bind(pipe_shadow_op);
 		bind_geometry();
+		var vsm_mask = false;
 		let vp = gfx::mul(gfx::ortho(linalg::f(px as real * pm), linalg::f((px + 1) as real * pm), linalg::f(py as real * pm), linalg::f((py + 1) as real * pm), linalg::f(-vsm_zc - 1024.0), linalg::f(-vsm_zc + 1024.0)), frame_u.vsm_rot);
 		for c in vsm_ch.len {
 			if !vsm_hit(c, px as real * pm - t, py as real * pm - t, (px + 1) as real * pm + t, (py + 1) as real * pm + t) { continue; }
-			let b = batch[vsm_cb[c]]; let m = bmat(b);
-			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
-			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
-			bind_slot(0, m.base_tex, true, white);
+			let b .= batch[vsm_cb[c]]; let m = bmat(b);
+			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms_ex(b, vp, false, false));
+			if m.alpha_mode == gltf::ALPHA_MASK {
+				if !vsm_mask { gfx::bind(pipe_shadow); vsm_mask = true; }
+				gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
+				bind_slot(0, m.base_tex, true, white);
+			} else if vsm_mask {
+				gfx::bind(pipe_shadow_op);
+				vsm_mask = false;
+			}
 			draw_prim(b);
 		}
 		vsm_drawn += 1;
@@ -2860,9 +3037,11 @@ fn shadow_pass() {
 	// waiting), and never on the later cascades, which would discard the earlier layers.
 	for c in cascade_live {
 		let cyc = if shadow_test_cycle_never { 2 } else if shadow_test_cycle_all || c == 0 { 1 } else { 2 };
-		guard gfx::begin_pass(gfx::PassDesc { depth: shadow_map, layer: c as i32, clear_depth: true, depth_value: 1.0, cycle: cyc as i32, .. }) else { return; }
-		gfx::bind(pipe_shadow);
+		guard gfx::begin_pass(gfx::PassDesc { depth: shadow_map, layer: c as i32, clear_depth: true, depth_value: 1.0, cycle: cyc as i32, .. }) else { inst_cascade = -1; return; }
+		inst_cascade = c;
+		gfx::bind(pipe_shadow_op);
 		bind_geometry();
+		var sh_mask = false;
 		let shift = if c == 0 { shadow_test_shift.x } else { if c == 1 { shadow_test_shift.y } else { shadow_test_shift.z } };
 		var vp = cascade_vp[c];
 		if shift != 0.0 {
@@ -2870,17 +3049,31 @@ fn shadow_pass() {
 			let dx = 2.0 * shift / shadow_size as f32;
 			vp.c0.x += dx * vp.c0.w; vp.c1.x += dx * vp.c1.w; vp.c2.x += dx * vp.c2.w; vp.c3.x += dx * vp.c3.w;
 		}
-		for b in batch {
+		for bi in batch.len {
+			let b .= batch[bi];
 			if b.mode == gltf::ALPHA_BLEND { continue; }
 			let m = bmat(b);
 			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) { continue; }
-			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
-			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
-			bind_slot(0, m.base_tex, true, white);
+			if b.inst >= 0 {
+				if instances[b.inst].nc[c * 2 + b.lod] <= 0 { continue; }
+			} else if b.joint_base < 0 {
+				let pr = gltf::prims[b.prim];
+				if pr.targets == 0 && (b.item < 0 || items[b.item].sway == 0.0) && !in_view(gfx::mul(vp, b.model), pr.lo, pr.hi) { continue; }
+			}
+			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms_ex(b, vp, false, false));
+			if m.alpha_mode == gltf::ALPHA_MASK {
+				if !sh_mask { gfx::bind(pipe_shadow); sh_mask = true; }
+				gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
+				bind_slot(0, m.base_tex, true, white);
+			} else if sh_mask {
+				gfx::bind(pipe_shadow_op);
+				sh_mask = false;
+			}
 			draw_prim(b);
 		}
 		gfx::end_pass();
 	}
+	inst_cascade = -1;
 }
 
 fn shelter_pass() {
@@ -2983,19 +3176,26 @@ fn local_hits(b Batch, c int) bool {
 		let e = max(lo - q[j], max(q[j] - hi, 0.0));
 		d2 += e * e;
 	}
-	d2 <= (l.range as real) * (l.range as real)
+	if d2 > (l.range as real) * (l.range as real) { return false; }
+	if b.inst >= 0 {
+		let s = instances[b.inst];
+		let sl = if s.sway > 0.0 { 4.0 + 2.0 * s.sway * wind.strength * s.r * s.smax } else { 0.0 };
+		return in_view(local_vp[c], s.lo - linalg::v3(sl, sl, sl), s.hi + linalg::v3(sl, sl, sl));
+	}
+	let pd = linalg::v3(0.5, 0.5, 0.5);
+	in_view(gfx::mul(local_vp[c], items[b.item].place), pr.lo - pd, pr.hi + pd)
 }
-fn local_shadow_pass() {
-	local_drawn = 0;
+fn local_shadow_prepare() {
+	local_todo.clear();
+	local_ic.clear();
+	local_nc.clear();
 	if local_used == 0 { return; }
-	inst_all = true;
 	if local_size != local_atlas {
 		if local_size > 0 { gfx::release(local_map); }
 		local_size = local_atlas;
 		local_map = gfx::texture(gfx::TextureDesc { kind: gfx::TEXTURE_2D_ARRAY, format: gfx::DEPTH32F, usage: gfx::DEPTH_TARGET | gfx::SAMPLED, width: local_size as i32, height: local_size as i32, depth: 1 });
 		local_fresh = true;
 	}
-	local_todo.clear();
 	for c in local_used {
 		let s = local_ts[c * 3 + 2];
 		if s <= 0 { continue; }
@@ -3003,36 +3203,106 @@ fn local_shadow_pass() {
 		let m = local_vp[c];
 		let v f32[16] = [m.c0.x, m.c0.y, m.c0.z, m.c0.w, m.c1.x, m.c1.y, m.c1.z, m.c1.w, m.c2.x, m.c2.y, m.c2.z, m.c2.w, m.c3.x, m.c3.y, m.c3.z, m.c3.w];
 		for x in v { h = vsm_mix(h, (x * 65536.0) as int); }
-		for b in batch {
-			if b.mode == gltf::ALPHA_BLEND || bmat(b).no_shadow { continue; }
+		for bi in batch.len {
+			let b .= batch[bi];
+			if b.mode == gltf::ALPHA_BLEND || bmat(b).no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) { continue; }
 			if local_hits(b, c) { h = vsm_mix(h, vsm_batch_hash(b)); }
 		}
 		let id = local_id[c];
 		if local_fresh || !local_cache || local_key[id] != h { local_key[id] = h; local_todo.push(c); }
 	}
-	if local_todo.len == 0 { return; }
+	if local_todo.len == 0 || instances.len == 0 { return; }
+	local_ic.resize(local_todo.len * instances.len * 2, 0);
+	local_nc.resize(local_todo.len * instances.len * 2, 0);
+	for c, ti in local_todo {
+		let l = lights[local_id[c] / 6];
+		let lx = l.pos.x; let ly = l.pos.y; let lz = l.pos.z; let lr = max(l.range, 0.01);
+		frustum(local_vp[c]);
+		let fbase = ti * instances.len * 2;
+		for s, si in instances {
+			if !s.visible || !s.shadow || s.count == 0 { continue; }
+			let sl = (if s.sway > 0.0 { inst_reach } else { 0.0 }) + 2.0 * s.sway * wind.strength * s.r * s.smax;
+			let bl = s.lo - linalg::v3(sl, sl, sl); let bh = s.hi + linalg::v3(sl, sl, sl);
+			let dx = max(bl.x - lx, max(lx - bh.x, 0.0)); let dy = max(bl.y - ly, max(ly - bh.y, 0.0)); let dz = max(bl.z - lz, max(lz - bh.z, 0.0));
+			if dx * dx + dy * dy + dz * dz > lr * lr { continue; }
+			var gone = false; var all_in = true;
+			for p in fr {
+				if p.x * (if p.x > 0.0 { bh.x } else { bl.x }) + p.y * (if p.y > 0.0 { bh.y } else { bl.y }) + p.z * (if p.z > 0.0 { bh.z } else { bl.z }) + p.w < 0.0 { gone = true; all_in = false; break; }
+				if all_in && p.x * (if p.x > 0.0 { bl.x } else { bh.x }) + p.y * (if p.y > 0.0 { bl.y } else { bh.y }) + p.z * (if p.z > 0.0 { bl.z } else { bh.z }) + p.w < 0.0 { all_in = false; }
+			}
+			if gone { continue; }
+			if s.count > 4096 {
+				local_ic[fbase + si * 2] = s.ia[0]; local_nc[fbase + si * 2] = s.na[0];
+				local_ic[fbase + si * 2 + 1] = s.ia[1]; local_nc[fbase + si * 2 + 1] = s.na[1];
+				continue;
+			}
+			let grow = 1.0 + 2.0 * s.sway * wind.strength;
+			let more = if s.sway > 0.0 { inst_reach } else { 0.0 };
+			for lod in 2 {
+				let n = s.na[lod];
+				if n == 0 { continue; }
+				inst_t0.clear();
+				let base = s.ia[lod];
+				for j in n {
+					let k = inst_ids[base + j] as int;
+					let ci = inst_c[s.first + k];
+					let r = ci.w * grow + more;
+					let ldx = ci.x - lx; let ldy = ci.y - ly; let ldz = ci.z - lz;
+					let sr = lr + r;
+					if ldx * ldx + ldy * ldy + ldz * ldz > sr * sr { continue; }
+					var ok = true;
+					if !all_in { for p in fr { if p.x * ci.x + p.y * ci.y + p.z * ci.z + p.w < -r { ok = false; break; } } }
+					if ok { inst_t0.push(k as f32); }
+				}
+				local_ic[fbase + si * 2 + lod] = inst_ids.len;
+				local_nc[fbase + si * 2 + lod] = inst_t0.len;
+				inst_ids.append(inst_t0[..]);
+			}
+		}
+	}
+}
+fn local_shadow_pass() {
+	local_drawn = 0;
+	if local_used == 0 || local_todo.len == 0 { return; }
+	inst_all = true;
 	guard gfx::begin_pass(gfx::PassDesc { depth: local_map, layer: 0, clear_depth: local_fresh, depth_value: 1.0, cycle: 2, .. }) else { local_fresh = true; return; }
 	local_fresh = false;
-	for c in local_todo {
+	let has_inst = instances.len > 0 && local_nc.len > 0;
+	for c, ti in local_todo {
 		let x = local_ts[c * 3]; let y = local_ts[c * 3 + 1]; let s = local_ts[c * 3 + 2];
+		inst_local_base = if has_inst { ti * instances.len * 2 } else { -1 };
 		gfx::viewport(x as f32, y as f32, s as f32, s as f32);
 		gfx::scissor(x, y, s, s);
 		gfx::bind(pipe_vsm_clear);
 		gfx::draw(3);
-		gfx::bind(pipe_shadow);
+		gfx::bind(pipe_shadow_op);
 		bind_geometry();
+		var ls_mask = false;
 		let vp = local_vp[c];
-		for b in batch {
+		for bi in batch.len {
+			let b .= batch[bi];
 			if b.mode == gltf::ALPHA_BLEND { continue; }
 			let m = bmat(b);
-			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) || (b.inst >= 0 && !instances[b.inst].shadow) || !local_hits(b, c) { continue; }
-			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, vp));
-			gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
-			bind_slot(0, m.base_tex, true, white);
+			if m.no_shadow || (b.item >= 0 && !items[b.item].shadow) { continue; }
+			if b.inst >= 0 {
+				if !instances[b.inst].shadow { continue; }
+				if inst_local_base >= 0 { if local_nc[inst_local_base + b.inst * 2 + b.lod] <= 0 { continue; } }
+				else if !local_hits(b, c) { continue; }
+			} else if !local_hits(b, c) { continue; }
+			gfx::uniforms(gfx::VERTEX, 0, draw_uniforms_ex(b, vp, false, false));
+			if m.alpha_mode == gltf::ALPHA_MASK {
+				if !ls_mask { gfx::bind(pipe_shadow); ls_mask = true; }
+				gfx::uniforms(gfx::FRAGMENT, 0, cut_of(m));
+				bind_slot(0, m.base_tex, true, white);
+			} else if ls_mask {
+				gfx::bind(pipe_shadow_op);
+				ls_mask = false;
+			}
 			draw_prim(b);
 		}
 		local_drawn += 1;
 	}
+	inst_local_base = -1;
 	gfx::end_pass();
 }
 fn local_stats() int, int { return local_drawn, local_todo.len; }
@@ -3055,45 +3325,63 @@ fn ao_pass() {
 	mt_ran = false;
 	var water = sea_wet();
 	sss_live = false;
-	for b in batch { if b.trans && b.vis && bmat(b).shading == 4 { water = true; } if sss_on && !capturing && sss_draws(b) { sss_live = true; } }
+	for bi in batch.len { let b .= batch[bi]; if b.trans && b.vis && bmat(b).shading == 4 { water = true; } if sss_on && !capturing && sss_draws(b) { sss_live = true; } }
 	if !depth_wanted && !water && !sss_live && !look.ssao && !mv && !cs && !ssr_on && !ssgi_live() && !fog_on && dof_aperture <= 0.0 && !(fx::ready() && fx::wants_depth()) { return; }
 	nd_ran = true;
 	let gia = gi_on && gi_ao && gi_built && gi_have;
 	let gt = look.ssao && (ao_mode == 1 || gia);
 	let ar = if gia { min(gi_step.x, min(gi_step.y, gi_step.z)) } else { look.ao_radius };
 	let ap = if gia { 1.0 } else { look.ao_power };
+	let want_mt = mv || ssr_on || ssgi_live();
 	let ld = gt || cs || ssr_on || ssgi_live() || sss_live;
-	if mv || ld { make_motion(); }
-	mt_ran = mv || ld;
-	let mt = if mt_ran { motion_tex } else { none() };
+	if want_mt || ld { make_motion(); }
+	if ld { ensure_lin_depth(); }
+	mt_ran = want_mt;
+	let mt = if want_mt || ld { motion_tex } else { none() };
 	guard gfx::begin_pass(gfx::PassDesc { color: [nd, mt, if ld { lin_depth } else { none() }, none()], depth: nd_depth, color_value: f4(0.0, 0.0, 1.0, 0.0), .. }) else { return; }
-	// background first: the sky's nd (normal +z, depth 0) and its motion (rotation only),
-	// view depth 60000 now and last frame
-	if mv {
+	if want_mt {
 		gfx::bind(pipe_sky_motion);
 		gfx::uniforms(gfx::FRAGMENT, 0, sky_u());
 		gfx::draw(3);
 	}
 	var current = -1;
+	var cut_dirty = true;
+	var cv_op = CutViewU { base: cut_opaque.base, alpha: cut_opaque.alpha, uv_sets: cut_opaque.uv_sets, xm: cut_opaque.xm, xo: cut_opaque.xo, view: view_mat };
 	bind_geometry();
-	for b in batch {
+	for bi in batch.len {
+		let b .= batch[bi];
 		if b.mode == gltf::ALPHA_BLEND || b.trans || !b.vis { continue; }
 		let m = bmat(b);
 		let want = if m.double_sided { 1 } else { 0 };
 		if want != current {
 			gfx::bind(if m.double_sided { pipe_normals_two } else { pipe_normals });
-			bind_geometry();
+			if current < 0 {
+				bind_geometry();
+				gfx::bind_texture(gfx::FRAGMENT, 0, white, smp_linear);
+				slot_tex[0] = white.id; slot_smp[0] = smp_linear.id;
+			}
 			current = want;
 		}
-		let c = cut_of(m);
-		gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, view_proj));
-		gfx::uniforms(gfx::FRAGMENT, 0, CutViewU { base: c.base, alpha: c.alpha, uv_sets: c.uv_sets, xm: c.xm, xo: c.xo, view: view_mat });
-		bind_slot(0, m.base_tex, true, white);
+		gfx::uniforms(gfx::VERTEX, 0, draw_uniforms_ex(b, view_proj, true, want_mt));
+		if m.alpha_mode == gltf::ALPHA_MASK {
+			let c = cut_of(m);
+			gfx::uniforms(gfx::FRAGMENT, 0, CutViewU { base: c.base, alpha: c.alpha, uv_sets: c.uv_sets, xm: c.xm, xo: c.xo, view: view_mat });
+			bind_slot(0, m.base_tex, true, white);
+			cut_dirty = true;
+		} else {
+			let ds = if m.double_sided { 1.0 } else { 0.0 };
+			if cut_dirty || cv_op.alpha.z != ds {
+				cv_op.alpha.z = ds;
+				gfx::uniforms(gfx::FRAGMENT, 0, cv_op);
+				cut_dirty = false;
+			}
+		}
 		draw_prim(b);
 	}
 	gfx::end_pass();
 	if !look.ssao { return; }
 
+	ensure_ao(gt);
 	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
 	let tx = ty * width as f32 / height as f32;
 	if gt {
@@ -3101,14 +3389,14 @@ fn ao_pass() {
 		gfx::bind(pipe_gtao);
 		gfx::bind_texture(gfx::FRAGMENT, 0, nd, smp_point);
 		gfx::bind_texture(gfx::FRAGMENT, 1, lin_depth, smp_point);
-		gfx::uniforms(gfx::FRAGMENT, 0, GtaoU { lens: f4(tx, ty, 1.0 / width as f32, 1.0 / height as f32), tune: f4(ar, gtao_falloff, ap, 0.0), size: f4(1.0 / width as f32, 1.0 / height as f32, max(look.ao_samples / 4, 1) as f32, gtao_steps as f32) });
+		gfx::uniforms(gfx::FRAGMENT, 0, GtaoU { lens: f4(tx, ty, 1.0 / ao_w as f32, 1.0 / ao_h as f32), tune: f4(ar, gtao_falloff, ap, 0.0), size: f4(1.0 / ao_w as f32, 1.0 / ao_h as f32, max(look.ao_samples / 4, 1) as f32, gtao_steps as f32) });
 		gfx::draw(3);
 		gfx::end_pass();
 		guard gfx::begin_pass(gfx::PassDesc { color: [ao, bent, none(), none()], .. }) else { return; }
 		gfx::bind(pipe_gtao_blur);
 		gfx::bind_texture(gfx::FRAGMENT, 0, ao_raw, smp_point);
 		gfx::bind_texture(gfx::FRAGMENT, 1, bent_raw, smp_point);
-		gfx::uniforms(gfx::FRAGMENT, 0, TexelU { texel: f4(1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0) });
+		gfx::uniforms(gfx::FRAGMENT, 0, TexelU { texel: f4(1.0 / ao_w as f32, 1.0 / ao_h as f32, 0.0, 0.0) });
 		gfx::draw(3);
 		gfx::end_pass();
 		bent_ran = true;
@@ -3117,14 +3405,14 @@ fn ao_pass() {
 	guard gfx::begin_pass(gfx::PassDesc { color: [ao_raw, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_ao);
 	gfx::bind_texture(gfx::FRAGMENT, 0, nd, smp_point);
-	gfx::uniforms(gfx::FRAGMENT, 0, AoU { lens: f4(tx, ty, 1.0 / width as f32, 1.0 / height as f32), tune: f4(look.ao_radius, 0.02, look.ao_power, look.ao_samples as f32) });
+	gfx::uniforms(gfx::FRAGMENT, 0, AoU { lens: f4(tx, ty, 1.0 / ao_w as f32, 1.0 / ao_h as f32), tune: f4(look.ao_radius, 0.02, look.ao_power, look.ao_samples as f32) });
 	gfx::draw(3);
 	gfx::end_pass();
 
 	guard gfx::begin_pass(gfx::PassDesc { color: [ao, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_ao_blur);
 	gfx::bind_texture(gfx::FRAGMENT, 0, ao_raw, smp_point);
-	gfx::uniforms(gfx::FRAGMENT, 0, TexelU { texel: f4(1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0) });
+	gfx::uniforms(gfx::FRAGMENT, 0, TexelU { texel: f4(1.0 / ao_w as f32, 1.0 / ao_h as f32, 0.0, 0.0) });
 	gfx::draw(3);
 	gfx::end_pass();
 }
@@ -3179,6 +3467,7 @@ fn cloud_pass() {
 fn contact_on() bool { (sun.shadows && sun.contact > 0.0) || cloud_shadow_on() }
 fn contact_pass() {
 	if !contact_on() || !nd_ran { return; }
+	ensure_contact();
 	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
 	let tx = ty * width as f32 / height as f32;
 	let l = linalg::unit3(sun.to_sun);
@@ -3188,7 +3477,7 @@ fn contact_pass() {
 	gfx::bind(pipe_contact);
 	gfx::bind_texture(gfx::FRAGMENT, 0, lin_depth, smp_point);
 	gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
-	gfx::bind_texture(gfx::FRAGMENT, 2, if look.ssao { ao } else { white }, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 2, if look.ssao { ao } else { white }, if look.ssao && ao_w != width { smp_linear } else { smp_point });
 	gfx::bind_texture(gfx::FRAGMENT, 3, if cloud_shadow_on() { cloud_shadow_tex } else { white }, smp_linear);
 	gfx::uniforms(gfx::FRAGMENT, 0, ContactU { lens: f4(tx, ty, 1.0 / width as f32, 1.0 / height as f32), jit: f4(jitter.x, jitter.y, width as f32, height as f32), sun_v: x4(lv, if sun.shadows { sun.contact } else { 0.0 }), tune: f4(min(contact_steps, 32) as f32, contact_thick, if look.ssao { 1.0 } else { 0.0 }, if temporal_on() { 1.0 } else { 0.0 }), cl_u: cloud_view(cloud_cu, vi), cl_v: cloud_view(cloud_cv, vi), cl: f4(if cloud_shadow_on() { clouds.shadow } else { 0.0 }, 0.0, 0.0, 0.0) });
 	gfx::draw(3);
@@ -3277,7 +3566,7 @@ fn ssr_capture() {
 	if ssr_on { gfx::generate_mips(ssr_prev); }
 	ssr_have = true;
 }
-fn cut_cover(m gltf::Material) bool { alpha_to_coverage && m.alpha_mode == gltf::ALPHA_MASK }
+fn cut_cover(m gltf::Material) bool { MSAA > 1 && alpha_to_coverage && m.alpha_mode == gltf::ALPHA_MASK }
 fn lit_pipe(m gltf::Material) gfx::Pipeline { if cut_cover(m) { if m.double_sided { pipe_cut_two } else { pipe_cut } } else { if m.double_sided { pipe_lit_two } else { pipe_lit } } }
 fn mip_scale() f32 { (if mip_bias_auto && !capturing { min(width as f32 / max(out_width, 1) as f32, 1.0) } else { 1.0 }) * linalg::f(pow(2.0, mip_bias as real)) }
 fn surface_of(m gltf::Material) SurfaceU {
@@ -3304,37 +3593,48 @@ fn surface_of(m gltf::Material) SurfaceU {
 	}
 }
 
-fn draw_lit(b Batch) {
+fn bind_frame_lit() {
+	gfx::uniforms(gfx::FRAGMENT, 0, frame_u);
+	gfx::uniforms(gfx::FRAGMENT, 2, ext_zero);
+	ext_pushed = true;
+	gfx::bind_texture(gfx::FRAGMENT, 5, shadow_map, smp_shadow);
+	let use_ct = contact_on() && contact_tex.id != 0 && nd_ran;
+	let use_ao = !use_ct && look.ssao && ao.id != 0 && nd_ran;
+	gfx::bind_texture(gfx::FRAGMENT, 6, if use_ct { contact_tex } else if use_ao { ao } else { white }, if use_ao && ao_w != width { smp_linear } else { smp_point });
+	gfx::bind_texture(gfx::FRAGMENT, 7, ext_arr[0], smp_ext);
+	gfx::bind_texture(gfx::FRAGMENT, 8, ext_arr[1], smp_ext);
+	gfx::bind_texture(gfx::FRAGMENT, 9, if trans_tex.id != 0 { trans_tex } else { white }, smp_trans);
+	bound_sk = false;
+	gfx::bind_texture(gfx::FRAGMENT, 10, if frame_u.vsm_x.x > 0.5 { vsm_atlas } else { shadow_map }, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 11, if local_size > 0 { local_map } else { shadow_map }, smp_shadow);
+	gfx::bind_texture(gfx::FRAGMENT, 12, if bent_ran && bent.id != 0 { bent } else { white }, if bent_ran && ao_w != width { smp_linear } else { smp_point });
+	gfx::bind_texture(gfx::FRAGMENT, 13, if ssr_on && ssr_hit.id != 0 { ssr_hit } else { white }, smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 14, if ssr_on && ssr_hit.id != 0 { ssr_prev } else { white }, smp_linear);
+	gfx::bind_texture(gfx::FRAGMENT, 15, envmap::texture(), envmap::smp);
+	gi_bind();
+}
+fn draw_lit(b const Batch&) {
 	let m = bmat(b);
 	gfx::uniforms(gfx::VERTEX, 0, draw_uniforms(b, view_proj));
-	gfx::uniforms(gfx::FRAGMENT, 0, frame_u);
 	var su = surface_of(m);
 	if m.ext { su.misc.w = linalg::f(sqrt((b.model.c0.x * b.model.c0.x + b.model.c0.y * b.model.c0.y + b.model.c0.z * b.model.c0.z) as real)); }
 	gfx::uniforms(gfx::FRAGMENT, 1, su);
-	if m.ext { gfx::uniforms(gfx::FRAGMENT, 2, ext_of(m)); ext_pushed = true; } else if !ext_pushed { gfx::uniforms(gfx::FRAGMENT, 2, ext_zero); ext_pushed = true; }
+	if m.ext { gfx::uniforms(gfx::FRAGMENT, 2, ext_of(m)); ext_pushed = true; }
 	bind_slot(0, m.base_tex, true, white);
 	bind_slot(1, m.mr_tex, false, white);
 	bind_slot(2, m.normal_tex, false, flat_normal);
 	bind_slot(3, m.occlusion_tex, false, white);
 	bind_slot(4, m.emissive_tex, true, white);
-	gfx::bind_texture(gfx::FRAGMENT, 5, shadow_map, smp_shadow);
-	gfx::bind_texture(gfx::FRAGMENT, 6, if contact_on() { contact_tex } else if look.ssao { ao } else { white }, smp_point);
-	gfx::bind_texture(gfx::FRAGMENT, 10, if frame_u.vsm_x.x > 0.5 { vsm_atlas } else { shadow_map }, smp_point);
-	gfx::bind_texture(gfx::FRAGMENT, 11, if local_size > 0 { local_map } else { shadow_map }, smp_shadow);
-	gfx::bind_texture(gfx::FRAGMENT, 7, ext_arr[0], smp_ext);
-	gfx::bind_texture(gfx::FRAGMENT, 8, ext_arr[1], smp_ext);
 	let sk = sss_mode == 2 && sss_skin(m);
-	gfx::bind_texture(gfx::FRAGMENT, 9, if sk { sss_out } else if trans_tex.id != 0 { trans_tex } else { white }, if sk { smp_point } else { smp_trans });
-	gfx::bind_texture(gfx::FRAGMENT, 12, if bent_ran { bent } else { white }, smp_point);
-	gfx::bind_texture(gfx::FRAGMENT, 13, if ssr_on && ssr_hit.id != 0 { ssr_hit } else { white }, smp_point);
-	gfx::bind_texture(gfx::FRAGMENT, 14, if ssr_on && ssr_hit.id != 0 { ssr_prev } else { white }, smp_linear);
-	gfx::bind_texture(gfx::FRAGMENT, 15, envmap::texture(), envmap::smp);
-	gi_bind();
+	if sk != bound_sk {
+		gfx::bind_texture(gfx::FRAGMENT, 9, if sk { sss_out } else if trans_tex.id != 0 { trans_tex } else { white }, if sk { smp_point } else { smp_trans });
+		bound_sk = sk;
+	}
 	draw_prim(b);
 }
 
 fn sss_skin(m gltf::Material) bool { m.shading == 1 && !m.ext && m.alpha_mode == gltf::ALPHA_OPAQUE }
-fn sss_draws(b Batch) bool { b.vis && !b.trans && b.mode != gltf::ALPHA_BLEND && sss_skin(bmat(b)) }
+fn sss_draws(b const Batch&) bool { b.vis && !b.trans && b.mode != gltf::ALPHA_BLEND && sss_skin(bmat(b)) }
 fn sss_dist(m gltf::Material) float4 { let a = max(m.shade_a.x, 0.00001); let b = max(m.shade_a.y, 0.00001); let c = max(m.shade_a.z, 0.00001); f4(a, b, c, max(a, max(b, c))) }
 fn sss_find(d float4) int { var k = 0; while k < sss_np && (sss_u.prof[k].x != d.x || sss_u.prof[k].y != d.y || sss_u.prof[k].z != d.z) { k += 1; } k }
 fn sss_target() gfx::Texture { sss_out }
@@ -3364,7 +3664,7 @@ fn sss_pass() {
 		sss_built = n;
 	}
 	sss_np = 0;
-	for b in batch { if sss_draws(b) { let d = sss_dist(bmat(b)); let k = sss_find(d); if k == sss_np && sss_np < 8 { sss_u.prof[k] = d; sss_np += 1; } } }
+	for bi in batch.len { let b .= batch[bi]; if sss_draws(b) { let d = sss_dist(bmat(b)); let k = sss_find(d); if k == sss_np && sss_np < 8 { sss_u.prof[k] = d; sss_np += 1; } } }
 	sss_ps = height as f32 / (2.0 * linalg::f(tan((view.fov_y * 0.5) as real)));
 	sss_u.lens = f4(sss_ps, width as f32, height as f32, n as f32);
 	sss_u.tune = f4(min(sss_lod, (sss_levels - 1) as f32), 0.25, if sss_depth { 1.0 } else { 0.0 }, if temporal_on() { (1 + frames % 128) as f32 } else { 0.0 });
@@ -3373,11 +3673,13 @@ fn sss_pass() {
 	ext_pushed = false;
 	guard gfx::begin_pass(gfx::PassDesc { color: [sss_irr, none(), none(), none()], depth: nd_depth, clear_depth: false, color_value: f4(0.0, 0.0, 0.0, 0.0), .. }) else { return; }
 	sss_mode = 1;
+	var fb = false;
 	for pass in 2 {
 		var bound = false;
-		for b in batch {
+		for bi in batch.len {
+			let b .= batch[bi];
 			if !sss_draws(b) || bmat(b).double_sided != (pass == 1) { continue; }
-			if !bound { gfx::bind(if pass == 0 { pipe_sss } else { pipe_sss_two }); bind_geometry(); bound = true; }
+			if !bound { gfx::bind(if pass == 0 { pipe_sss } else { pipe_sss_two }); if !fb { bind_geometry(); bind_frame_lit(); fb = true; } bound = true; }
 			draw_lit(b);
 		}
 	}
@@ -3419,8 +3721,9 @@ fn trans_capture() {
 fn color_pass() {
 	inst_all = false;
 	let clear = x4(if sky.backdrop_on { sky.backdrop } else { sky.horizon }, 1.0);
+	let ez = MSAA == 1 && nd_ran && !capturing;
 	ext_pushed = false;
-	guard gfx::begin_pass(gfx::PassDesc { color: [if MSAA > 1 { color_ms } else { hdr }, none(), none(), none()], resolve: [if MSAA > 1 { hdr } else { none() }, none(), none(), none()], depth: depth_ms, color_value: clear, .. }) else { return; }
+	guard gfx::begin_pass(gfx::PassDesc { color: [if MSAA > 1 { color_ms } else { hdr }, none(), none(), none()], resolve: [if MSAA > 1 { hdr } else { none() }, none(), none(), none()], depth: depth_ms, clear_depth: !ez, color_value: clear, .. }) else { return; }
 	// with sky drawing off the sky pass writes the flat clear colour
 	gfx::bind(pipe_sky);
 	gfx::bind_texture(gfx::FRAGMENT, 0, envmap::texture(), envmap::smp);
@@ -3429,34 +3732,49 @@ fn color_pass() {
 	gfx::uniforms(gfx::FRAGMENT, 0, sky_u());
 	gfx::draw(3);
 	sss_mode = if sss_ran && !capturing { 2 } else { 0 };
-	// opaque and cut-out, single- then double-sided
-	for pass in if alpha_to_coverage { 4 } else { 2 } {
-		let pp = if pass == 0 { pipe_lit } else if pass == 1 { pipe_lit_two } else if pass == 2 { pipe_cut } else { pipe_cut_two };
+	var frame_bound = false;
+	let p0 = if ez { pipe_lit_z } else { pipe_lit };
+	let p1 = if ez { pipe_lit_two_z } else { pipe_lit_two };
+	for pass in if MSAA > 1 && alpha_to_coverage { 4 } else { 2 } {
+		let pp = if pass == 0 { p0 } else if pass == 1 { p1 } else if pass == 2 { pipe_cut } else { pipe_cut_two };
+		let match_pp = if pass == 0 { pipe_lit } else if pass == 1 { pipe_lit_two } else if pass == 2 { pipe_cut } else { pipe_cut_two };
 		var bound = false;
-		for b in batch {
+		for bi in batch.len {
+			let b .= batch[bi];
 			if b.mode == gltf::ALPHA_BLEND || b.trans || !b.vis { continue; }
-			if lit_pipe(bmat(b)).id != pp.id { continue; }
-			if !bound { gfx::bind(pp); bind_geometry(); bound = true; }
+			if lit_pipe(bmat(b)).id != match_pp.id { continue; }
+			if !bound {
+				gfx::bind(pp);
+				if !frame_bound { bind_geometry(); bind_frame_lit(); frame_bound = true; }
+				bound = true;
+			}
 			draw_lit(b);
 		}
 	}
 	sss_mode = 0;
 	var any_trans = false;
-	for b in batch { if b.trans && b.vis { any_trans = true; } }
+	for bi in batch.len { if batch[bi].trans && batch[bi].vis { any_trans = true; break; } }
 	if any_trans && !capturing {
 		gfx::end_pass();
 		trans_capture();
 		guard gfx::begin_pass(gfx::PassDesc { color: [if MSAA > 1 { color_ms } else { hdr }, none(), none(), none()], resolve: [if MSAA > 1 { hdr } else { none() }, none(), none(), none()], depth: depth_ms, clear_color: false, clear_depth: false, .. }) else { return; }
-		for b in batch {
+		frame_bound = false;
+		var cur_p u32 = 0;
+		for bi in batch.len {
+			let b .= batch[bi];
 			if !b.trans || !b.vis { continue; }
-			gfx::bind(if lite { if bmat(b).double_sided { pipe_full_two } else { pipe_full } } else { lit_pipe(bmat(b)) });
-			bind_geometry();
+			let tp = if lite { if bmat(b).double_sided { pipe_full_two } else { pipe_full } } else { lit_pipe(bmat(b)) };
+			if tp.id != cur_p {
+				gfx::bind(tp);
+				cur_p = tp.id;
+				if !frame_bound { bind_geometry(); bind_frame_lit(); frame_bound = true; }
+			}
 			draw_lit(b);
 		}
 	}
 	// blended, far to near
 	var order int[>..] = [];
-	for b, i in batch { if b.mode == gltf::ALPHA_BLEND && b.vis { order.push(i); } }
+	for bi in batch.len { if batch[bi].mode == gltf::ALPHA_BLEND && batch[bi].vis { order.push(bi); } }
 	for i in 1..order.len {
 		var j = i;
 		while j > 0 && batch[order[j - 1]].depth < batch[order[j]].depth {
@@ -3464,15 +3782,23 @@ fn color_pass() {
 			j -= 1;
 		}
 	}
+	var cur_bp u32 = 0;
 	for i in order {
-		if bmat(batch[i]).double_sided {
-			gfx::bind(pipe_blend_back);
-			bind_geometry();
-			draw_lit(batch[i]);
+		let b .= batch[i];
+		if bmat(b).double_sided {
+			if cur_bp != pipe_blend_back.id {
+				gfx::bind(pipe_blend_back);
+				cur_bp = pipe_blend_back.id;
+				if !frame_bound { bind_geometry(); bind_frame_lit(); frame_bound = true; }
+			}
+			draw_lit(b);
 		}
-		gfx::bind(pipe_blend);
-		bind_geometry();
-		draw_lit(batch[i]);
+		if cur_bp != pipe_blend.id {
+			gfx::bind(pipe_blend);
+			cur_bp = pipe_blend.id;
+			if !frame_bound { bind_geometry(); bind_frame_lit(); frame_bound = true; }
+		}
+		draw_lit(b);
 	}
 	let fwd = forward();
 	let right = linalg::unit3(linalg::cross3(fwd, view.up));
@@ -3488,6 +3814,7 @@ fn color_pass() {
 }
 
 fn lens_tiles(src gfx::Texture, mode f32) {
+	ensure_tiles();
 	let k = lens_tile_px;
 	let tw = max((width + k - 1) / k, 1); let th = max((height + k - 1) / k, 1);
 	let ty = linalg::f(tan((view.fov_y * 0.5) as real));
@@ -3507,6 +3834,7 @@ fn lens_tiles(src gfx::Texture, mode f32) {
 fn lens_swap() { let t = hdr; hdr = fx; fx = t; }
 fn sea_pass() {
 	if !sea_wet() || !nd_ran { return; }
+	ensure_fx();
 	guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_sea);
 	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
@@ -3529,8 +3857,16 @@ fn sea_pass() {
 }
 fn fog_pass() {
 	if !fog_on || !nd_ran { return; }
-	let nt = envmap::noise_tex();
-	guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
+	ensure_fx();
+	let use_noise = fog_noise > 0.0;
+	let nt = if use_noise { envmap::noise_tex() } else { lut_tex };
+	let nsmp = if use_noise { envmap::smp_noise } else { smp_linear };
+	let half = fog_res < 0.99;
+	let fs = clamp(fog_res, 0.25, 1.0);
+	let fw = if half { max((width as f32 * fs + 0.5) as int, 1) } else { width };
+	let fh = if half { max((height as f32 * fs + 0.5) as int, 1) } else { height };
+	if half { ensure_fog_tex(fw, fh); }
+	guard gfx::begin_pass(gfx::PassDesc { color: [if half { fog_tex } else { fx }, none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_fog);
 	gfx::bind_storage_buffer(gfx::FRAGMENT, 0, light_buf);
 	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
@@ -3538,7 +3874,7 @@ fn fog_pass() {
 	gfx::bind_texture(gfx::FRAGMENT, 2, shadow_map, smp_shadow);
 	gfx::bind_texture(gfx::FRAGMENT, 3, envmap::texture(), envmap::smp);
 	gfx::bind_texture(gfx::FRAGMENT, 4, if cloud_shadow_on() { cloud_shadow_tex } else { white }, smp_linear);
-	gfx::bind_texture(gfx::FRAGMENT, 5, nt, envmap::smp_noise);
+	gfx::bind_texture(gfx::FRAGMENT, 5, nt, nsmp);
 	gfx::bind_texture(gfx::FRAGMENT, 6, if local_size > 0 { local_map } else { shadow_map }, smp_shadow);
 	var u FogU;
 	u.inv_view_proj = linalg::inverse(view_proj);
@@ -3550,7 +3886,7 @@ fn fog_pass() {
 	u.params2 = f4(fog_steps as f32, (frames % 64) as f32, fog_g, frame_u.screen.z);
 	u.env = frame_u.env;
 	u.env_rot = frame_u.env_rot;
-	u.cl_u = cloud_cu; u.cl_v = cloud_cv; u.cl = f4(if cloud_shadow_on() { clouds.shadow } else { 0.0 }, 0.0, 0.0, 0.0);
+	u.cl_u = cloud_cu; u.cl_v = cloud_cv; u.cl = f4(if cloud_shadow_on() { clouds.shadow } else { 0.0 }, if half { 1.0 } else { 0.0 }, 0.0, 0.0);
 	for k in MAX_LIGHTS { u.light_pos[k] = frame_u.light_pos[k]; u.light_rgb[k] = frame_u.light_rgb[k]; u.light_dir[k] = frame_u.light_dir[k]; u.light_shd[k] = frame_u.light_shd[k]; }
 	let nv = min(fog_volumes.len, MAX_FOG_VOLUMES);
 	for k in MAX_FOG_VOLUMES {
@@ -3566,12 +3902,23 @@ fn fog_pass() {
 	gfx::uniforms(gfx::FRAGMENT, 0, u);
 	gfx::draw(3);
 	gfx::end_pass();
+	if half {
+		guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
+		gfx::bind(pipe_fog_up);
+		gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
+		gfx::bind_texture(gfx::FRAGMENT, 1, nd, smp_point);
+		gfx::bind_texture(gfx::FRAGMENT, 2, fog_tex, smp_linear);
+		gfx::uniforms(gfx::FRAGMENT, 0, FogUpU { size: f4(fw as f32, fh as f32, 1.0 / fw as f32, 1.0 / fh as f32) });
+		gfx::draw(3);
+		gfx::end_pass();
+	}
 	lens_swap();
 }
 
 fn lens_pass() {
 	let k = lens_tile_px;
 	if motion_blur > 0.0 && motion_tex.id != 0 {
+		ensure_fx();
 		lens_tiles(motion_tex, 0.0);
 		guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
 		gfx::bind(pipe_mblur);
@@ -3584,6 +3931,7 @@ fn lens_pass() {
 		lens_swap();
 	}
 	if dof_aperture > 0.0 {
+		ensure_fx();
 		lens_tiles(nd, 1.0);
 		let ty = linalg::f(tan((view.fov_y * 0.5) as real));
 		guard gfx::begin_pass(gfx::PassDesc { color: [fx, none(), none(), none()], .. }) else { return; }
@@ -3597,18 +3945,19 @@ fn lens_pass() {
 		gfx::bind(pipe_dof);
 		gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_point);
 		gfx::bind_texture(gfx::FRAGMENT, 1, tile_b, smp_point);
-		gfx::uniforms(gfx::FRAGMENT, 0, DofU { size: f4(width as f32, height as f32, 0.0, k as f32), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, dof_near), tune: f4(dof_samples as f32, dof_bokeh, dof_bokeh_cut, dof_band) });
+		gfx::uniforms(gfx::FRAGMENT, 0, DofU { size: f4(width as f32, height as f32, if temporal_on() { (frames % 16) as f32 } else { 0.0 }, k as f32), lens: f4(dof_aperture * height as f32 / (2.0 * ty), dof_focus, dof_max_px, dof_near), tune: f4(dof_samples as f32, dof_bokeh, dof_bokeh_cut, dof_band) });
 		gfx::draw(3);
 		gfx::end_pass();
 		lens_swap();
 	}
 }
 fn temporal_draw() {
+	ensure_history();
 	let into = 1 - hist_cur;
 	guard gfx::begin_pass(gfx::PassDesc { color: [history[into], none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_temporal);
 	gfx::bind_texture(gfx::FRAGMENT, 0, hdr, smp_linear);
-	gfx::bind_texture(gfx::FRAGMENT, 1, history[hist_cur], smp_point);
+	gfx::bind_texture(gfx::FRAGMENT, 1, history[hist_cur], smp_linear);
 	gfx::bind_texture(gfx::FRAGMENT, 2, motion_tex, smp_point);
 	let fresh = !hist_valid || temporal_reset;
 	let up = out_width as f32 / width as f32;
@@ -3638,6 +3987,7 @@ fn temporal_repeat(n int) { for k in n { temporal_draw(); } }
 
 fn glow_pass() {
 	if look.bloom <= 0.0 { return; }
+	ensure_glow();
 	let cut = f4(look.bloom_cut, look.bloom_cut * 0.5, 64.0, 1.0);
 	guard gfx::begin_pass(gfx::PassDesc { color: [glow[0], none(), none(), none()], .. }) else { return; }
 	gfx::bind(pipe_bright);
@@ -3845,6 +4195,7 @@ fn render_begin() bool {
 	gi_pass();
 	fill_frame();
 	light_upload();
+	cull_instance_shadows();
 	shadow_pass();
 	local_shadow_pass();
 	ao_pass();
