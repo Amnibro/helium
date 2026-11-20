@@ -191,6 +191,13 @@ var VIDI = false
 var SHF u32 = 0
 var FLAGS = 0
 var MEMLOG = false
+var FLOG = false
+var TOUCHF = false
+var FL_N = 0
+var FL_SUM real = 0.0
+var FL_MAX real = 0.0
+var FL_SLOW = 0
+var FL_HITCH = 0
 var SCR = Texture{0}
 var SCRD = Texture{0}
 var SW = 0
@@ -416,7 +423,7 @@ start(win0 bool, title const byte[:], width int, height int, flags int) bool:
 		s_hint(ffi::ptr("SDL_VIDEO_DRIVER\0"), ffi::ptr("offscreen\0")); ok := s_init(32); s_rhint(ffi::ptr("SDL_VIDEO_DRIVER\0"))
 		if !ok: return sdl_fail("initializing SDL video")
 	VIDI = true; s_init(0x2000); debug ~= flags & 32 != 0; dv byte[>..] ~= []
-	ml byte[>..] ~= []; MEMLOG = env("HELIUM_GFX_MEMLOG", ml)
+	ml byte[>..] ~= []; MEMLOG = env("HELIUM_GFX_MEMLOG", ml); FLOG = env("HELIUM_GFX_FRAMELOG", ml); TOUCHF = env("HELIUM_GFX_TOUCH", ml); FL_N = 0; FL_SUM = 0.0; FL_MAX = 0.0; FL_SLOW = 0; FL_HITCH = 0
 	if env("HELIUM_GFX_DEBUG", dv) || env("GOOSE_GFX_DEBUG", dv): debug = atoi(dv[..]) != 0
 	DEV = s_mkdev(18, debug, 0)
 	if DEV == 0: fail(str("no GPU device: ", sdlerr())); close_raw(); return false
@@ -523,7 +530,15 @@ frame_raw() bool:
 			if code >= 0 && code < INJ.len: if FOC { text_events(ffi::ptr(INJ[code][..])) } INJ[code].clear()
 	INJ.clear()
 	if resized && WIN != 0: s_wpsz(WIN, p4(0), p4(1)); w := I4[0] as int; h := I4[1] as int; if w > 0 && h > 0 && (w != SW || h != SH) { create_screen(w, h) }
-	now := s_ns(); DELTA = (now - LAST) as real / 1e9; LAST = now; FRAMES += 1; !QUIT
+	now := s_ns(); DELTA = (now - LAST) as real / 1e9; LAST = now; FRAMES += 1
+	if FLOG: framelog(now)
+	!QUIT
+framelog(now uint):
+	ms := DELTA * 1000.0
+	if FRAMES == 1: print(str("GFXFRAME first ", ((now - START) as real / 1e6) as int, " ms after open")); return
+	if ms > 100.0: print(str("GFXHITCH frame ", FRAMES, " ", ms as int, " ms"))
+	FL_N += 1; FL_SUM += ms; FL_MAX = max(FL_MAX, ms); if ms > 33.4 { FL_SLOW += 1 } if ms > 100.0 { FL_HITCH += 1 }
+	if FL_N == 120: print(str("GFXFRAME avg ", (FL_SUM / 120.0 * 100.0) as int as real / 100.0, " ms max ", FL_MAX as int, " ms over33 ", FL_SLOW, " over100 ", FL_HITCH, " frames 120")); FL_N = 0; FL_SUM = 0.0; FL_MAX = 0.0; FL_SLOW = 0; FL_HITCH = 0
 frame() bool: running := frame_raw(); check(); running
 time() real: if DEV != 0 { (s_ns() - START) as real / 1e9 } else { 0.0 }
 delta_time() real: DELTA
@@ -598,7 +613,7 @@ events_into(out Event[:]) int:
 fingers() Finger[>..]: o Finger[>..] ~= []; o.append(FINGERS[..]); o
 events() Event[>..]: o Event[>..] ~= []; o.append(EVS[..]); o
 display_scale() f32: if WIN == 0 { 1.0 } else { k := s_dscale(WIN); if k > 0.0 { k } else { 1.0 } }
-touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS"
+touch_first() bool: p := ffi::cstr(s_platform()); p == "Android" || p == "iOS" || TOUCHF
 platform() byte[>..]: ffi::cstr(s_platform())
 backgrounded() bool: BGF
 foregrounded() bool: FGF
