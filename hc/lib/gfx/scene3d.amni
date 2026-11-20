@@ -1006,7 +1006,15 @@ fn pixel_texture(rgba byte[4], format i32) gfx::Texture {
 }
 
 // Creates targets and pipelines; gfx must be open. Safe to call again after a resize.
-fn init(w int, h int) bool { init(w, h, w, h) }
+// Phones and tablets render at most this many pixels when the caller asks for init(w, h) and the
+// temporal pass upscales to w x h (0 = native size). Fold screens are 4+ megapixels; their GPUs
+// fill about a third of that at 60 frames a second with the full surface shader.
+var touch_pixels = 1600000;
+fn init(w int, h int) bool {
+	if touch_pixels <= 0 || !gfx::touch_first() || w * h <= touch_pixels { return init(w, h, w, h); }
+	let s = sqrt(touch_pixels as real / (w * h) as real);
+	init(max((w as real * s) as int, 1), max((h as real * s) as int, 1), w, h)
+}
 
 // Renders at w x h and writes ow x oh: with a larger output the temporal pass
 // upscales (TSR). The caller's target must be ow x oh.
