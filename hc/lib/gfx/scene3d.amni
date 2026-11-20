@@ -492,6 +492,12 @@ var tex_cached = 0;
 var tex_mem = 0;
 var tex_ns = 0;
 var tex_stream = false;
+// Milliseconds per frame spent turning new images into textures (0 = no limit, below 0 = 8 on
+// phones and tablets, no limit elsewhere). Past it, materials draw with their fallback until a
+// later frame loads the image, so a big level never stalls one frame.
+var tex_frame_ms f32 = -1.0;
+var tex_frame_ns = 0;
+var tex_pending = 0;
 var tex_budget = 0;
 var tex_upload_cap = 4194304;
 var tex_hold = 30;
@@ -1589,8 +1595,20 @@ fn stream_update() {
 	if !capturing { tex_stream_ns = clock_ns() - t0; }
 }
 
+fn tex_try(image int, srgb bool) gfx::Texture {
+	let have = if srgb { tex_srgb[image] } else { tex_linear[image] };
+	if have.id != 0 { return have; }
+	let cap = if tex_frame_ms < 0.0 { if gfx::touch_first() { 8.0 } else { 0.0 } } else { tex_frame_ms };
+	if cap > 0.0 && tex_frame_ns >= (cap * 1000000.0) as int { tex_pending += 1; return none(); }
+	let t0 = clock_ns();
+	let t = image_texture(image, srgb);
+	tex_frame_ns += clock_ns() - t0;
+	t
+}
+// Images still waiting for a texture after the last frame (always 0 when tex_frame_ms is 0).
+fn textures_pending() int { tex_pending }
 fn warm(r gltf::TexRef, srgb bool) {
-	if r.texture >= 0 && gltf::textures[r.texture].image >= 0 { let _ = image_texture(gltf::textures[r.texture].image, srgb); }
+	if r.texture >= 0 && gltf::textures[r.texture].image >= 0 { let _ = tex_try(gltf::textures[r.texture].image, srgb); }
 }
 
 fn ext_fill(s int, layer int, src gfx::Texture) {
@@ -1653,7 +1671,7 @@ fn ext_of(m gltf::Material) ExtU {
 // Textures are created on first use; uploads must happen outside render passes,
 // so every texture the batch will sample is created before the first pass.
 fn warm_textures() {
-	if !capturing { tex_streamed = 0; tex_steps = 0; }
+	if !capturing { tex_streamed = 0; tex_steps = 0; tex_frame_ns = 0; tex_pending = 0; }
 	for b in batch {
 		let m = bmat(b);
 		warm(m.base_tex, true);
@@ -1698,7 +1716,8 @@ fn bind_slot(slot int, r gltf::TexRef, srgb bool, fallback gfx::Texture) {
 	var smp = smp_linear;
 	if r.texture >= 0 && gltf::textures[r.texture].image >= 0 {
 		let t = gltf::textures[r.texture];
-		tex = image_texture(t.image, srgb);
+		tex = tex_try(t.image, srgb);
+		if tex.id == 0 { tex = fallback; }
 		smp = texture_sampler(t);
 	}
 	if slot < 5 && slot_tex[slot] == tex.id && slot_smp[slot] == smp.id { return; }
