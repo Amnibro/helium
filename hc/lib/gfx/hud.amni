@@ -25,6 +25,7 @@ fn spec(n int, ax int, cb f32, cdef bool) f32 {
 	if m == PX { v } else if m == PCT && cdef { cb * v / 100.0 } else { -1.0 }
 }
 var TEXT_DROP f32 = 0.2;
+var ZOOM f32 = 1.0; var RZ f32 = 1.0;
 fn text_size(n int) float2 { rich(TEXTS[N[n].text][..], 16.0, 0xffffff as u32); var w f32 = 0.0; var hh f32 = 0.0; for i in TXT.len { w += char_w(i); hh = max(hh, CSZ[i]); } float2 { w, hh * 1.55 } }
 fn intrinsic(n int, ax int) f32 {
 	let d = N[n].dir; let p = N[n].pd;
@@ -200,7 +201,7 @@ fn rich(src const byte[:], size f32, color u32) {
 				tag = true;
 				if starts(src, at, "<b>") { bs.push(true); cs.push(cs[cs.len - 1]); ss.push(ss[ss.len - 1]); kind.push(0); }
 				else if starts(src, at, "<color=#") && e - at == 14 { var v u32 = 0; for k in 6 { v = v * 16 + hexv(src[at + 8 + k]); } bs.push(bs[bs.len - 1]); cs.push(v); ss.push(ss[ss.len - 1]); kind.push(1); }
-				else if starts(src, at, "<size=") { var v f32 = 0.0; for k in at + 6..e { v = v * 10.0 + (src[k] - 48) as f32; } bs.push(bs[bs.len - 1]); cs.push(cs[cs.len - 1]); ss.push(v); kind.push(2); }
+				else if starts(src, at, "<size=") { var v f32 = 0.0; for k in at + 6..e { v = v * 10.0 + (src[k] - 48) as f32; } bs.push(bs[bs.len - 1]); cs.push(cs[cs.len - 1]); ss.push(v * RZ); kind.push(2); }
 				else if src[at + 1] == 47 && kind.len > 0 { bs.pop(); cs.pop(); ss.pop(); kind.pop(); }
 				else { tag = false; }
 			}
@@ -260,6 +261,7 @@ fn set_text(n int, s const byte[:]) { var c byte[>..] = []; c.append(s); TEXTS.p
 fn rgba(c float4, a f32) byte[4] { [(clamp(c.x, 0.0, 1.0) * 255.0 + 0.5) as byte, (clamp(c.y, 0.0, 1.0) * 255.0 + 0.5) as byte, (clamp(c.z, 0.0, 1.0) * 255.0 + 0.5) as byte, (clamp(c.w * a, 0.0, 1.0) * 255.0 + 0.5) as byte] }
 fn alpha_of(n int) f32 { var a f32 = 1.0; var p = n; while p >= 0 { a *= N[p].opacity; p = N[p].parent; } a }
 fn shown(n int) bool { var p = n; while p >= 0 { if !N[p].visible { return false; } p = N[p].parent; } true }
+fn layer_of(n int) int { var p = n; while p >= 0 { if N[p].abs { return 1; } p = N[p].parent; } 0 }
 fn draw(target gfx::Texture, w int, h int, clear bool, bg float4) {
 	if !PAN_READY {
 		var d = gfx::PipelineDesc { cull: gfx::CULL_NONE, depth_test: false, depth_write: false, blend: gfx::BLEND_ALPHA };
@@ -268,10 +270,14 @@ fn draw(target gfx::Texture, w int, h int, clear bool, bg float4) {
 		PAN_READY = true;
 	}
 	var vs PanVtx[>..] = []; var tv TextVtx[>..] = [];
+	let t0 = gfx::Texture { 0 };
+	if clear { guard gfx::begin_pass(gfx::PassDesc { color: [target, t0, t0, t0], clear_color: true, color_value: bg, .. }) else { return; } gfx::end_pass(); }
+	for layer in 2 {
+	vs.clear(); tv.clear();
 	for n in N.len {
-		if !shown(n) { continue; }
-		let a = alpha_of(n); let s = N[n].scale;
-		let cx = N[n].x + N[n].w * 0.5 + N[n].ox; let cy = N[n].y + N[n].h * 0.5 + N[n].oy;
+		if !shown(n) || layer_of(n) != layer { continue; }
+		let a = alpha_of(n); let s = N[n].scale * ZOOM;
+		let cx = (N[n].x + N[n].w * 0.5 + N[n].ox) * ZOOM; let cy = (N[n].y + N[n].h * 0.5 + N[n].oy) * ZOOM;
 		let hx = N[n].w * 0.5 * s; let hy = N[n].h * 0.5 * s;
 		if N[n].color.w > 0.0 || N[n].bw > 0.0 {
 			let f = rgba(N[n].color, a); let e = rgba(N[n].border, a); let rb = float2 { N[n].radius * s, N[n].bw * s }; let hh = float2 { hx, hy };
@@ -283,7 +289,7 @@ fn draw(target gfx::Texture, w int, h int, clear bool, bg float4) {
 			vs.append([p0, p1, p2, p0, p2, p3]);
 		}
 		if N[n].text >= 0 {
-			rich(TEXTS[N[n].text][..], 16.0 * s, 0xffffff as u32);
+			RZ = ZOOM; rich(TEXTS[N[n].text][..], 16.0 * s, 0xffffff as u32); RZ = 1.0;
 			wrap(N[n].w * s - 2.0 * N[n].pd * s);
 			let mid = N[n].jus == CENTER && KIDS[n].len == 0; var tot f32 = 0.0; var q = 0; while q < LINES.len { var m f32 = 0.0; for i in LINES[q]..LINES[q + 1] { m = max(m, CSZ[i]); } tot += m * 1.25; q += 2; }
 			var ly = if mid { cy - tot * 0.5 } else { cy - hy + N[n].pd * s }; var l = 0;
@@ -303,8 +309,6 @@ fn draw(target gfx::Texture, w int, h int, clear bool, bg float4) {
 			}
 		}
 	}
-	let t0 = gfx::Texture { 0 };
-	if clear { guard gfx::begin_pass(gfx::PassDesc { color: [target, t0, t0, t0], clear_color: true, color_value: bg, .. }) else { return; } gfx::end_pass(); }
 	if vs.len > 0 {
 		if vs.len > PAN_CAP { if PAN_CAP > 0 { gfx::release(PAN_VB); } PAN_CAP = max(vs.len, 4096); PAN_VB = gfx::buffer(gfx::BUFFER_VERTEX as int, PAN_CAP * 40, []); }
 		gfx::update_buffer(PAN_VB, 0, bytes_of(vs)[..vs.len * 40]);
@@ -316,4 +320,5 @@ fn draw(target gfx::Texture, w int, h int, clear bool, bg float4) {
 		gfx::end_pass();
 	}
 	sdf_draw(target, w, h, tv);
+	}
 }
