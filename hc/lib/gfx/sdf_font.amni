@@ -16,6 +16,216 @@
 import std;
 import math;
 import gfx;
+import os;
+import ttf;
+struct TtG { u0 f32, v0 f32, u1 f32, v1 f32, x0 f32, y0 f32, w f32, h f32, adv f32, g int, f int }
+let TT_BAKE f32 = 40.0;
+let TT_HI = 3;
+let TT_PAD = 7;
+let TT_AW = 2048;
+let TT_AH = 1024;
+var TT ttf::Info;
+var TT_ON = 0;
+var TT_WANT = false;
+var TT_CAP f32 = 1.0;
+var TF ttf::Info;
+var TF_ON = false;
+var TF_CAP f32 = 1.0;
+var TT_G TtG[>..] = [];
+var TT_KEY int[>..] = [];
+var TT_MAP int[>..] = [];
+var TT_PIX byte[>..] = [];
+var TT_X = 0;
+var TT_Y = 0;
+var TT_ROW = 0;
+var TT_DIRTY = false;
+fn tt_path(k int) const byte[:] { if k == 0 { "/usr/share/fonts/inter/InterVariable.ttf" } else if k == 1 { "/usr/share/fonts/truetype/sand-box/google/Inter/Inter-VariableFont_opsz,wght.ttf" } else if k == 2 { "/usr/share/fonts/TTF/Inter-Regular.ttf" } else if k == 3 { "/usr/share/fonts/truetype/inter/Inter-Regular.ttf" } else if k == 4 { "/usr/share/fonts/noto/NotoSans-Regular.ttf" } else if k == 5 { "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf" } else if k == 6 { "/usr/share/fonts/TTF/DejaVuSans.ttf" } else if k == 7 { "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" } else if k == 8 { "/System/Library/Fonts/Supplemental/Arial.ttf" } else { "C:/Windows/Fonts/segoeui.ttf" } }
+fn tt_on() bool {
+	if TT_ON != 0 { return TT_ON > 0; }
+	TT_ON = -1;
+	var path byte[>..] = [];
+	var blob byte[>..] = [];
+	let named = env("HELIUM_FONT", path) && path.len > 0;
+	if (named && path == "builtin") || (!named && !TT_WANT) || SDF_TTF_PIX.len > 0 { return false; }
+	var ok = named && read_file(path[..], blob);
+	var k = 0;
+	while !ok && k < 10 { ok = read_file(tt_path(k), blob); k += 1; }
+	if !ok { return false; }
+	TT = ttf::Info { blob };
+	TT.fo = ttf::font_offset(TT.d[..], 0);
+	if TT.fo < 0 || !ttf::init(TT) { return false; }
+	var b = ttf::B4 { 0, 0, 0, 0 };
+	if !ttf::gbox(TT, ttf::glyph_index(TT, 'H' as int), b) || b.y1 <= 0 { return false; }
+	TT_CAP = b.y1 as f32;
+	let pk = if named { -1 } else { k - 1 };
+	var j = 6;
+	while !TF_ON && pk < 6 && j < 8 {
+		var fb byte[>..] = [];
+		if read_file(tt_path(j), fb) {
+			TF = ttf::Info { fb };
+			TF.fo = ttf::font_offset(TF.d[..], 0);
+			var c = ttf::B4 { 0, 0, 0, 0 };
+			TF_ON = TF.fo >= 0 && ttf::init(TF) && ttf::gbox(TF, ttf::glyph_index(TF, 'H' as int), c) && c.y1 > 0;
+			TF_CAP = if TF_ON { c.y1 as f32 } else { 1.0 };
+		}
+		j += 1;
+	}
+	TT_MAP.resize(0x6000, -1);
+	TT_PIX.resize(TT_AW * TT_AH * 4, 0);
+	TT_ON = 1;
+	true
+}
+fn sdf_system_font() bool {
+	TT_WANT = true;
+	TT_ON = if TT_ON < 0 && !SDF_READY { 0 } else { TT_ON };
+	tt_on()
+}
+fn tt_edt(g f32[>..]&, w int, h int) {
+	let n = max(w, h);
+	var f f32[>..] = [];
+	var d f32[>..] = [];
+	var v int[>..] = [];
+	var z f32[>..] = [];
+	f.resize(n, 0.0);
+	d.resize(n, 0.0);
+	v.resize(n, 0);
+	z.resize(n + 1, 0.0);
+	for pass in 2 {
+		let lines = if pass == 0 { w } else { h };
+		let len = if pass == 0 { h } else { w };
+		for l in lines {
+			for i in len { f[i] = g[if pass == 0 { i * w + l } else { l * w + i }]; }
+			var k = 0;
+			v[0] = 0;
+			z[0] = -1.0e20;
+			z[1] = 1.0e20;
+			for q in 1..len {
+				var s = (f[q] + (q * q) as f32 - f[v[k]] - (v[k] * v[k]) as f32) / (2 * (q - v[k])) as f32;
+				while k > 0 && s <= z[k] { k -= 1; s = (f[q] + (q * q) as f32 - f[v[k]] - (v[k] * v[k]) as f32) / (2 * (q - v[k])) as f32; }
+				k += 1;
+				v[k] = q;
+				z[k] = s;
+				z[k + 1] = 1.0e20;
+			}
+			k = 0;
+			for q in len {
+				while z[k + 1] < q as f32 { k += 1; }
+				d[q] = ((q - v[k]) * (q - v[k])) as f32 + f[v[k]];
+			}
+			for i in len { g[if pass == 0 { i * w + l } else { l * w + i }] = d[i]; }
+		}
+	}
+}
+fn tt_slot(cp int, weight int) int {
+	let key = cp * 2 + weight;
+	if key < TT_MAP.len && TT_MAP[key] >= 0 { return TT_MAP[key]; }
+	if key >= TT_MAP.len { for i in TT_KEY.len { if TT_KEY[i] == key { return i; } } }
+	let g0 = ttf::glyph_index(TT, cp);
+	let fb = g0 == 0 && TF_ON && ttf::glyph_index(TF, cp) != 0;
+	let g = if fb { ttf::glyph_index(TF, cp) } else { g0 };
+	let hs = TT_BAKE / (if fb { TF_CAP } else { TT_CAP }) * TT_HI as f32;
+	let b = if fb { ttf::bbox(TF, g, hs, hs, 0.0, 0.0) } else { ttf::bbox(TT, g, hs, hs, 0.0, 0.0) };
+	let pd = TT_PAD * TT_HI;
+	let gw = max(0, b.x1 - b.x0);
+	let gh = max(0, b.y1 - b.y0);
+	let w = gw + 2 * pd;
+	let h = gh + 2 * pd;
+	let ow = (w + TT_HI - 1) / TT_HI;
+	let oh = (h + TT_HI - 1) / TT_HI;
+	if gw > 0 && gh > 0 && TT_X + ow > TT_AW { TT_X = 0; TT_Y += TT_ROW + 1; TT_ROW = 0; }
+	let room = gw > 0 && gh > 0 && TT_Y + oh <= TT_AH;
+	if room {
+		var hi byte[>..] = [];
+		hi.resize(w * h, 0);
+		if fb { ttf::glyph_bitmap(TF, hi, pd * w + pd, gw, gh, w, hs, hs, g); } else { ttf::glyph_bitmap(TT, hi, pd * w + pd, gw, gh, w, hs, hs, g); }
+		var gi f32[>..] = [];
+		var go f32[>..] = [];
+		gi.resize(w * h, 1.0e20);
+		go.resize(w * h, 1.0e20);
+		for i in w * h { if hi[i] >= 128 { gi[i] = 0.0; } else { go[i] = 0.0; } }
+		tt_edt(gi, w, h);
+		tt_edt(go, w, h);
+		let bold = if weight != 0 { 0.9 } else { 0.0 };
+		for oy in oh {
+			for ox in ow {
+				let sx = min(ox * TT_HI + TT_HI / 2, w - 1);
+				let sy = min(oy * TT_HI + TT_HI / 2, h - 1);
+				let k = sy * w + sx;
+				let sd = (sqrt(gi[k]) - sqrt(go[k])) / TT_HI as f32 - bold;
+				let val = (clamp(0.5 - sd / (2.0 * SDF_SPREAD), 0.0, 1.0) * 255.0 + 0.5) as int as byte;
+				let o = ((TT_Y + oy) * TT_AW + TT_X + ox) * 4;
+				TT_PIX[o] = val;
+				TT_PIX[o + 1] = val;
+				TT_PIX[o + 2] = val;
+				TT_PIX[o + 3] = val;
+			}
+		}
+		TT_DIRTY = true;
+	}
+	let adv = if fb { ttf::hmetrics(TF, g).x as f32 * TT_BAKE / TF_CAP } else { ttf::hmetrics(TT, g).x as f32 * TT_BAKE / TT_CAP };
+	TT_G.push(TtG { u0: TT_X as f32 / TT_AW as f32, v0: TT_Y as f32 / TT_AH as f32, u1: (TT_X + ow) as f32 / TT_AW as f32, v1: (TT_Y + oh) as f32 / TT_AH as f32, x0: (b.x0 - pd) as f32 / TT_HI as f32, y0: (b.y0 - pd) as f32 / TT_HI as f32 + TT_BAKE, w: if room { ow as f32 } else { 0.0 }, h: oh as f32, adv: adv, g: g, f: if fb { 1 } else { 0 } });
+	if room { TT_X += ow + 1; TT_ROW = max(TT_ROW, oh); }
+	TT_KEY.push(key);
+	if key < TT_MAP.len { TT_MAP[key] = TT_G.len - 1; }
+	TT_G.len - 1
+}
+fn tt_next(t const byte[:], i int) int, int {
+	let c = t[i] as int;
+	let n = if c >= 240 { 3 } else if c >= 224 { 2 } else if c >= 192 { 1 } else { 0 };
+	var cp = if n == 3 { c & 7 } else if n == 2 { c & 15 } else if n == 1 { c & 31 } else { c };
+	var j = i + 1;
+	for k in n { if j < t.len { cp = cp * 64 + ((t[j] as int) & 63); j += 1; } }
+	return cp, j;
+}
+fn tt_text(vs TextVtx[>..]&, x f32, y f32, px f32, t const byte[:], c byte[4], weight int, outline bool) f32 {
+	let s = px / TT_BAKE;
+	let ks = TT_BAKE / TT_CAP * s;
+	var pen f32 = 0.0;
+	for pass in 2 {
+		let is_bg = pass == 0;
+		if is_bg && c[3] == 0 { continue; }
+		let o = if outline { 0.0 } else if is_bg { max(1.0, px * 0.07) } else { 0.0 };
+		let col byte[4] = if is_bg { [0, 0, 0, c[3]] } else { c };
+		let um f32 = if outline && is_bg { 2.0 } else { 0.0 };
+		pen = x + o;
+		var pg = -1;
+		var pf = 0;
+		var i = 0;
+		while i < t.len {
+			let cp, j = tt_next(t, i);
+			i = j;
+			let q = TT_G[tt_slot(cp, weight)];
+			pen += if q.f == 0 && pf == 0 { ttf::kern(TT, pg, q.g) as f32 * ks } else { 0.0 };
+			pg = q.g;
+			pf = q.f;
+			if q.w > 0.0 {
+				let qx = pen + q.x0 * s;
+				let qy = y + o + q.y0 * s;
+				let qx1 = qx + q.w * s;
+				let qy1 = qy + q.h * s;
+				vs.append([TextVtx { pos: float2 { qx, qy }, uv: float2 { q.u0 + um, q.v0 }, col: col }, TextVtx { pos: float2 { qx1, qy }, uv: float2 { q.u1 + um, q.v0 }, col: col }, TextVtx { pos: float2 { qx1, qy1 }, uv: float2 { q.u1 + um, q.v1 }, col: col }, TextVtx { pos: float2 { qx, qy }, uv: float2 { q.u0 + um, q.v0 }, col: col }, TextVtx { pos: float2 { qx1, qy1 }, uv: float2 { q.u1 + um, q.v1 }, col: col }, TextVtx { pos: float2 { qx, qy1 }, uv: float2 { q.u0 + um, q.v1 }, col: col }]);
+			}
+			pen += q.adv * s;
+		}
+	}
+	pen - x
+}
+fn tt_width(t const byte[:], px f32) f32 {
+	let s = px / TT_BAKE;
+	var w f32 = 0.0;
+	var pg = -1;
+	var pf = 0;
+	var i = 0;
+	while i < t.len {
+		let cp, j = tt_next(t, i);
+		i = j;
+		let q = TT_G[tt_slot(cp, 0)];
+		w += (if q.f == 0 && pf == 0 { ttf::kern(TT, pg, q.g) as f32 * TT_BAKE / TT_CAP * s } else { 0.0 }) + q.adv * s;
+		pg = q.g;
+		pf = q.f;
+	}
+	w
+}
 
 struct TextVtx { pos float2, uv float2, col byte[4] }
 
@@ -966,9 +1176,11 @@ fn sdf_init() {
 	d.formats[2] = gfx::VERTEX_UBYTE4_NORM;
 	SDF_PIPE = gfx::pipeline(embed_shader("shaders/sdf_text.vert"), embed_shader("shaders/sdf_text.frag"), d);
 	var pix byte[>..] = [];
-	if SDF_TTF_PIX.len > 0 { pix.append(SDF_TTF_PIX[..]); } else { sdf_bake(pix); }
-	SDF_TEX = gfx::texture2d(SDF_ATLAS_W, SDF_ATLAS_H, gfx::RGBA8, gfx::SAMPLED);
-	gfx::update_texture(SDF_TEX, pix[..]);
+	let tt = tt_on();
+	if !tt { if SDF_TTF_PIX.len > 0 { pix.append(SDF_TTF_PIX[..]); } else { sdf_bake(pix); } }
+	SDF_TEX = if tt { gfx::texture2d(TT_AW, TT_AH, gfx::RGBA8, gfx::SAMPLED) } else { gfx::texture2d(SDF_ATLAS_W, SDF_ATLAS_H, gfx::RGBA8, gfx::SAMPLED) };
+	gfx::update_texture(SDF_TEX, if tt { TT_PIX[..] } else { pix[..] });
+	TT_DIRTY = false;
 	SDF_SMP = gfx::sampler(gfx::LINEAR, gfx::CLAMP);
 	SDF_READY = true;
 }
@@ -977,6 +1189,7 @@ fn sdf_texture() gfx::Texture { SDF_TEX }
 fn sdf_sampler() gfx::Sampler { SDF_SMP }
 
 fn sdf_text_w(t const byte[:], px f32) f32 {
+	if tt_on() { return tt_width(t, px); }
 	sdf_build_glyphs();
 	let s = px / SDF_CAP_H;
 	var w f32 = 0.0;
@@ -989,6 +1202,7 @@ fn sdf_text_w(t const byte[:], px f32) f32 {
 }
 
 fn sdf_text(vs TextVtx[>..]&, x f32, y f32, px f32, t const byte[:], c byte[4], weight int, outline bool) {
+	if tt_on() { tt_text(vs, x, y, px, t, c, weight, outline); return; }
 	sdf_build_glyphs();
 	let s = px / SDF_CAP_H;
 	let row_offset = if weight != 0 { 5 } else { 0 };
@@ -1069,6 +1283,7 @@ fn sdf_draw(target gfx::Texture, w int, h int, vs TextVtx[>..]&) {
 		SDF_VB_CAP = max(vs.len, 4096);
 		SDF_VB = gfx::buffer(gfx::BUFFER_VERTEX as int, SDF_VB_CAP * 20, []);
 	}
+	if TT_DIRTY { gfx::update_texture(SDF_TEX, TT_PIX[..]); TT_DIRTY = false; }
 	gfx::update_buffer(SDF_VB, 0, bytes_of(vs)[..vs.len * 20]);
 	let t0 = gfx::Texture { 0 };
 	guard gfx::begin_pass(gfx::PassDesc { color: [target, t0, t0, t0], clear_color: false, .. }) else { return; }
