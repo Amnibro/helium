@@ -5,7 +5,7 @@ use math
 use os
 use ffi
 MAIN_THREAD := true
-WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32
+WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32; PRESENT_ON_WORK := 64 as i32
 VERTEX := 0 as i32; FRAGMENT := 1 as i32; COMPUTE := 2 as i32
 BUFFER_VERTEX := 1 as i32; BUFFER_INDEX := 2 as i32; BUFFER_INDIRECT := 4 as i32; BUFFER_STORAGE := 8 as i32; BUFFER_COMPUTE_READ := 16 as i32; BUFFER_COMPUTE_WRITE := 32 as i32
 TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32; TEXTURE_CUBE_ARRAY := 4 as i32
@@ -482,7 +482,7 @@ focus(f bool):
 frame_raw() bool:
 	if !need("frame"): return false
 	if PASS != 0 || CPASS != 0: misuse(str("frame() inside a ", pname(), " pass: end the pass first")); return false
-	if WIN != 0 && FRAMES > 0: present()
+	if WIN != 0 && FRAMES > 0 && (FLAGS & 64 == 0 || CMD != 0): present()
 	if WIN != 0 { submit() } else { submit_paced() } for k 512 { PK[k] = false; RK[k] = false } for k 16 { PADP[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
 	while s_poll(ep):
 		t := u32at(EVB[..], 0)
