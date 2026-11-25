@@ -201,7 +201,7 @@ const cw = w => { if (!CM) return w; w = sp(w); const cv = new Set(); w = w.repl
     SDL_WindowSupportsGPUPresentMode: (d, w, m) => m === 0 ? 1 : 0, SDL_SetGPUSwapchainParameters: (d, w, c, m) => m === 0 && c === 0 ? 1 : 0,
     SDL_WaitAndAcquireGPUSwapchainTexture: (c, h, tp, wp, hp) => { const W = win(h), go = () => { fit(W); const T = W.tex; T.g = W.ctx.getCurrentTexture(); T.views.clear(); T.w = W.cv.width; T.h = W.cv.height; w64(tp, 0, W.th); w32(wp, 0, T.w); w32(hp, 0, T.h); return 1; }; if (!W?.ctx) return 0; return raf || !R.canWait() ? go() : nextFrame().then(go); },
     SDL_GetWindowSize: (h, a, b) => { const W = win(h); if (!W) return 0; w32(a, 0, W.w); w32(b, 0, W.h); return 1; },
-    SDL_GetWindowSizeInPixels: (h, a, b) => { const W = win(h); if (!W) return 0; w32(a, 0, W.cv.width); w32(b, 0, W.cv.height); return 1; },
+    SDL_GetWindowSizeInPixels: (h, a, b) => { const W = win(h); if (!W) return 0; const D = W.cv.dataset?.size === "host" ? W.cv.dataset : {}; w32(a, 0, +D.rw || W.cv.width); w32(b, 0, +D.rh || W.cv.height); return 1; },
     SDL_GetWindowSafeArea: (h, r) => { const W = win(h); if (!W) return 0; w32(r, 0, 0); w32(r, 4, 0); w32(r, 8, W.w); w32(r, 12, W.h); return 1; },
     SDL_GetWindowPosition: (h, a, b) => { const W = win(h); if (!W) return 0; const r = W.cv.getBoundingClientRect(); w32(a, 0, Math.round(r.left)); w32(b, 0, Math.round(r.top)); return 1; },
     SDL_GetWindowFlags: h => { const W = win(h); return W ? BigInt(W.f & 8192 | (document.fullscreenElement ? 1 : 0) | (W.cv.hidden ? 8 : 0) | (document.hasFocus() ? 512 : 0) | (inside ? 1024 : 0)) : 0n; },
