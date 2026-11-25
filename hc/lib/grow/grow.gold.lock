@@ -1,9 +1,10 @@
-=== -2ba1f6111df2e1d4
+=== 394ea03645142f51
 namespace grow;
 import math;
 import vec;
 import os;
 import dictionary;
+import noise.noise;
 var P f32[>..];
 var N f32[>..];
 var C f32[>..];
@@ -25,16 +26,10 @@ fn clear() {
 }
 fn vcount() int { P.len / 3 }
 fn tcount() int { I.len / 3 }
-=== 1035614cc6d877bf
-fn mix64(v u64) u64 {
-	var z u64 = v;
-	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9;
-	z = (z ^ (z >> 27)) * 0x94D049BB133111EB;
-	z ^ (z >> 31)
-}
+=== 71af54d6bda5e0fd
 fn next() u64 {
 	st = st + 0x9E3779B97F4A7C15;
-	mix64(st)
+	noise::mix64(st)
 }
 fn rnd() real {
 	((next() >> 11) as real) / 9007199254740992.0
@@ -47,74 +42,13 @@ fn seed(s int) {
 fn range(a real, b real) real { a + (b - a) * rnd() }
 fn vary(v real, frac real) real { v * (1.0 + frac * (2.0 * rnd() - 1.0)) }
 fn pick(n int) int { min(floor(rnd() * n) as int, n - 1) }
-=== 324c7d9d3eb64af9
-fn lat(ix int, iy int, iz int) u64 {
-	var h u64 = nseed;
-	h = mix64(h + (ix as! u64) * 0x9E3779B97F4A7C15);
-	h = mix64(h + (iy as! u64) * 0x9E3779B97F4A7C15);
-	h = mix64(h + (iz as! u64) * 0x9E3779B97F4A7C15);
-	h
-}
-fn fade(t real) real { t * t * t * (t * (t * 6.0 - 15.0) + 10.0) }
-fn grad_dot(h u64, x real, y real, z real) real {
-	let g = (h % 12) as int;
-	let first = if g < 8 { x } else { y };
-	let second = if g < 4 { y } else { z };
-	let a = if g % 2 == 0 { first } else { 0.0 - first };
-	let b = if (g / 2) % 2 == 0 { second } else { 0.0 - second };
-	a + b
-}
-fn noise(p double3) real {
-	let gx = floor(p.x);
-	let gy = floor(p.y);
-	let gz = floor(p.z);
-	let ix = gx as int;
-	let iy = gy as int;
-	let iz = gz as int;
-	let x = p.x - gx;
-	let y = p.y - gy;
-	let z = p.z - gz;
-	let u = fade(x);
-	let v = fade(y);
-	let w = fade(z);
-	let c000 = grad_dot(lat(ix, iy, iz), x, y, z);
-	let c100 = grad_dot(lat(ix + 1, iy, iz), x - 1.0, y, z);
-	let c010 = grad_dot(lat(ix, iy + 1, iz), x, y - 1.0, z);
-	let c110 = grad_dot(lat(ix + 1, iy + 1, iz), x - 1.0, y - 1.0, z);
-	let c001 = grad_dot(lat(ix, iy, iz + 1), x, y, z - 1.0);
-	let c101 = grad_dot(lat(ix + 1, iy, iz + 1), x - 1.0, y, z - 1.0);
-	let c011 = grad_dot(lat(ix, iy + 1, iz + 1), x, y - 1.0, z - 1.0);
-	let c111 = grad_dot(lat(ix + 1, iy + 1, iz + 1), x - 1.0, y - 1.0, z - 1.0);
-	let near_face = lerp(lerp(c000, c100, u), lerp(c010, c110, u), v);
-	let far_face = lerp(lerp(c001, c101, u), lerp(c011, c111, u), v);
-	lerp(near_face, far_face, w)
-}
+=== -6af07b91cfedefa7
+fn noise(p double3) real { noise::perlin3(nseed, p) }
 fn fbm(p double3, oct int) real {
-	var sum = 0.0;
-	var total = 0.0;
-	var amp = 1.0;
-	var freq = 1.0;
-	for i in oct {
-		sum += amp * noise(p * freq);
-		total += amp;
-		amp *= 0.5;
-		freq *= 2.0;
-	}
-	sum / total
+	noise::layered(noise::Noise { kind: noise::PERLIN, seed: nseed, step: 0, frequency: 1.0, fractal: noise::FBM, octaves: oct, lacunarity: 2.0, gain: 0.5, warp: 0.0, warp_freq: 1.0 }, p)
 }
 fn ridged(p double3, oct int) real {
-	var sum = 0.0;
-	var total = 0.0;
-	var amp = 1.0;
-	var freq = 1.0;
-	for i in oct {
-		let r = 1.0 - abs(noise(p * freq));
-		sum += amp * (r * r);
-		total += amp;
-		amp *= 0.5;
-		freq *= 2.0;
-	}
-	sum / total
+	noise::layered(noise::Noise { kind: noise::PERLIN, seed: nseed, step: 0, frequency: 1.0, fractal: noise::RIDGED, octaves: oct, lacunarity: 2.0, gain: 0.5, warp: 0.0, warp_freq: 1.0 }, p)
 }
 === 32798532eaa12e4d
 fn vert(p double3, n double3, c double3) int {

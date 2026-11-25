@@ -1,0 +1,303 @@
+import math;
+import vec;
+import os;
+import noise.noise;
+var FAILS int = 0;
+let NAMES = ["value", "perlin", "simplex", "cell_f1", "cell_f2", "cell_edge", "cell_value"];
+fn check(ok bool, label const byte[:], detail const byte[:]) {
+	if ok {
+		print("ok ", label, " ", detail);
+	} else {
+		print("FAIL ", label, " ", detail);
+		FAILS++;
+	}
+}
+fn r4(x real) real {
+	round(x * 10000.0) / 10000.0
+}
+var RS u64 = 0;
+fn reset(s int) {
+	RS = s as! u64;
+}
+fn rnd() real {
+	RS += noise::GOLDEN64;
+	noise::unit_of(noise::mix64(RS))
+}
+fn point() double3 {
+	let x = 100.0 * rnd() - 50.0;
+	let y = 100.0 * rnd() - 50.0;
+	let z = 100.0 * rnd() - 50.0;
+	double3 { x: x, y: y, z: z }
+}
+fn dir() double3 {
+	var x = 0.0;
+	var y = 0.0;
+	var z = 0.0;
+	var l = 0.0;
+	while l < 0.01 {
+		x = 2.0 * rnd() - 1.0;
+		y = 2.0 * rnd() - 1.0;
+		z = 2.0 * rnd() - 1.0;
+		l = sqrt(x * x + y * y + z * z);
+	}
+	double3 { x: x / l, y: y / l, z: z / l }
+}
+fn n1_n2() {
+	var outside = 0;
+	var means = [0.0; 7];
+	var devs = [0.0; 7];
+	var raw_out = 0;
+	var largest = 0.0;
+	for k in 7 {
+		reset(7);
+		let n = noise::make(k, 7);
+		var sum = 0.0;
+		var sq = 0.0;
+		for i in 100000 {
+			let v = noise::sample(n, point());
+			if v < -1.0 || v > 1.0 { outside++; }
+			sum += v;
+			sq += v * v;
+		}
+		let mean = sum / 100000.0;
+		let dev = sqrt(max(sq / 100000.0 - mean * mean, 0.0));
+		means[k] = mean;
+		devs[k] = dev;
+		print(NAMES[k], " mean ", r4(mean), " std ", r4(dev));
+		if k == noise::PERLIN {
+			reset(7);
+			for i in 100000 {
+				let v = noise::perlin3(7, point());
+				if v < -1.0 || v > 1.0 { raw_out++; }
+				largest = max(largest, abs(v));
+			}
+		}
+	}
+	let d1 = str(outside, " outside");
+	check(outside == 0, "N1 every sample in [-1, 1]", d1);
+	let d2 = str(raw_out, " outside, largest ", r4(largest));
+	check(raw_out < 100, "N1 raw perlin rarely clamps", d2);
+	var balanced = true;
+	var d3 byte[>..] = [];
+	for k in 3 {
+		if !(abs(means[k]) < 0.05 && devs[k] >= 0.1 && devs[k] <= 0.6) { balanced = false; }
+		format(d3, NAMES[k], " mean ", r4(means[k]), " std ", r4(devs[k]), " ");
+	}
+	check(balanced, "N2 value, perlin and simplex balanced", d3);
+	var vary = true;
+	var d4 byte[>..] = [];
+	for k in 3..7 {
+		if !(devs[k] > 0.1) { vary = false; }
+		format(d4, NAMES[k], " std ", r4(devs[k]), " ");
+	}
+	check(vary, "N2 cellular kinds vary", d4);
+}
+fn n3() {
+	var worst = 0.0;
+	var jump = 0.0;
+	for k in 7 {
+		reset(11);
+		let n = noise::make(k, 7);
+		var biggest = 0.0;
+		for i in 100000 {
+			let p = point();
+			let u = dir();
+			let q = double3 { x: p.x + u.x * 0.00001, y: p.y + u.y * 0.00001, z: p.z + u.z * 0.00001 };
+			biggest = max(biggest, abs(noise::sample(n, p) - noise::sample(n, q)));
+		}
+		if k == noise::CELL_VALUE {
+			jump = biggest;
+		} else {
+			worst = max(worst, biggest);
+		}
+	}
+	let d1 = str("largest ", worst);
+	check(worst < 0.001, "N3 continuous", d1);
+	let d2 = str("largest ", r4(jump));
+	check(jump > 0.1, "N3 control: cell value jumps", d2);
+}
+fn n4() {
+	var differ = 0;
+	var largest = 0.0;
+	for k in 7 {
+		reset(13);
+		let a = noise::make(k, 7);
+		let b = noise::make(k, 7);
+		let one = noise::make(k, 1);
+		let two = noise::make(k, 2);
+		var sx = 0.0;
+		var sy = 0.0;
+		var sxx = 0.0;
+		var syy = 0.0;
+		var sxy = 0.0;
+		for i in 10000 {
+			let p = point();
+			if noise::sample(a, p) != noise::sample(b, p) { differ++; }
+			let x = noise::sample(one, p);
+			let y = noise::sample(two, p);
+			sx += x;
+			sy += y;
+			sxx += x * x;
+			syy += y * y;
+			sxy += x * y;
+		}
+		let mx = sx / 10000.0;
+		let my = sy / 10000.0;
+		let vx = sxx / 10000.0 - mx * mx;
+		let vy = syy / 10000.0 - my * my;
+		let corr = if vx <= 0.0 || vy <= 0.0 { 0.0 } else { (sxy / 10000.0 - mx * my) / sqrt(vx * vy) };
+		largest = max(largest, abs(corr));
+	}
+	let d1 = str(differ, " differ");
+	check(differ == 0, "N4 same seed, same values", d1);
+	let d2 = str("largest ", r4(largest));
+	check(largest < 0.05, "N4 seeds independent", d2);
+}
+fn n6() {
+	reset(17);
+	var wrong = 0;
+	var missed = 0;
+	for i in 20000 {
+		let p = point();
+		let cx = floor(p.x) as int;
+		let cy = floor(p.y) as int;
+		let cz = floor(p.z) as int;
+		var b1 = 1000000000.0;
+		var b2 = 1000000000.0;
+		var s1 = 1000000000.0;
+		var s2 = 1000000000.0;
+		for ox in -3..4 {
+			for oy in -3..4 {
+				for oz in -3..4 {
+					let q, h = noise::cell_point(7, cx + ox, cy + oy, cz + oz);
+					let ax = q.x - p.x;
+					let ay = q.y - p.y;
+					let az = q.z - p.z;
+					let d = ax * ax + ay * ay + az * az;
+					if d < b1 {
+						b2 = b1;
+						b1 = d;
+					} else if d < b2 {
+						b2 = d;
+					}
+					if abs(ox) <= 1 && abs(oy) <= 1 && abs(oz) <= 1 {
+						if d < s1 {
+							s2 = s1;
+							s1 = d;
+						} else if d < s2 {
+							s2 = d;
+						}
+					}
+				}
+			}
+		}
+		let e1 = clamp(2.0 * sqrt(b1) - 1.0, -1.0, 1.0);
+		let e2 = clamp(sqrt(b2) - 1.0, -1.0, 1.0);
+		if abs(noise::base(noise::CELL_F1, 7, p) - e1) > 0.000000000001 || abs(noise::base(noise::CELL_F2, 7, p) - e2) > 0.000000000001 { wrong++; }
+		if s2 != b2 { missed++; }
+	}
+	let d1 = str(wrong, " wrong");
+	check(wrong == 0, "N6 cellular F1 and F2 exact", d1);
+	let d2 = str(wrong, " wrong, ", missed, " missed by 3x3x3");
+	check(missed > 0, "N6 control: a 3x3x3 search misses some", d2);
+}
+fn rough(oct int) real {
+	var n = noise::make(noise::PERLIN, 7);
+	n.fractal = noise::FBM;
+	n.octaves = oct;
+	reset(23);
+	var diff = 0.0;
+	var sum = 0.0;
+	var sq = 0.0;
+	for i in 10000 {
+		let p = point();
+		let u = dir();
+		let q = double3 { x: p.x + u.x * 0.01, y: p.y + u.y * 0.01, z: p.z + u.z * 0.01 };
+		let v = noise::sample(n, p);
+		diff += abs(noise::sample(n, q) - v);
+		sum += v;
+		sq += v * v;
+	}
+	let mean = sum / 10000.0;
+	(diff / 10000.0) / sqrt(max(sq / 10000.0 - mean * mean, 0.0))
+}
+fn n7() {
+	var outside = 0;
+	for f in [noise::FBM, noise::RIDGED, noise::BILLOW] {
+		var n = noise::make(noise::PERLIN, 7);
+		n.fractal = f;
+		n.octaves = 5;
+		reset(19);
+		for i in 100000 {
+			let v = noise::sample(n, point());
+			if v < -1.0 || v > 1.0 { outside++; }
+		}
+	}
+	let d1 = str(outside, " outside");
+	check(outside == 0, "N7 fractals in [-1, 1]", d1);
+	let one = rough(1);
+	let five = rough(5);
+	let ratio = five / one;
+	let d2 = str("rough(1) ", r4(one), " rough(5) ", r4(five), " ratio ", r4(ratio));
+	check(ratio >= 1.5, "N7 octaves add detail", d2);
+}
+fn n8() {
+	var n = noise::make(noise::PERLIN, 7);
+	n.fractal = noise::FBM;
+	n.octaves = 3;
+	n.warp = 0.0;
+	var m = n;
+	m.warp = 1.0;
+	reset(29);
+	var differ = 0;
+	var total = 0.0;
+	for i in 10000 {
+		let p = point();
+		let v = noise::sample(n, p);
+		if v != clamp(noise::layered(n, p), -1.0, 1.0) { differ++; }
+		total += abs(noise::sample(m, p) - v);
+	}
+	let d1 = str(differ, " differ");
+	check(differ == 0, "N8 no warp, same field", d1);
+	let mean = total / 10000.0;
+	let d2 = str("mean ", r4(mean));
+	check(mean > 0.05, "N8 warp moves values", d2);
+}
+var SINK real = 0.0;
+fn n9() {
+	var n = noise::make(noise::PERLIN, 7);
+	n.fractal = noise::FBM;
+	n.octaves = 5;
+	n.frequency = 1.0 / 64.0;
+	var out f32[>..] = [];
+	let start = time_ns();
+	noise::fill2(n, 0.0, 0.0, 0.37, 1.0, 512, 512, out);
+	let ms = (time_ns() - start) as real / 1000000.0;
+	let d1 = str(r4(ms), " ms");
+	check(ms < 150.0 && out.len == 262144, "N9 512x512 5-octave fBm", d1);
+	for k in 7 {
+		reset(31);
+		let m = noise::make(k, 7);
+		let t0 = time_ns();
+		for i in 100000 {
+			SINK += noise::sample(m, point());
+		}
+		let per = (time_ns() - t0) as real / 100000.0;
+		print(NAMES[k], " ", r4(per), " ns per sample");
+	}
+}
+fn main() {
+	n1_n2();
+	n3();
+	n4();
+	n6();
+	n7();
+	n8();
+	n9();
+	if FAILS == 0 {
+		print("noise: ok");
+	} else {
+		print("noise: FAILED ", FAILS);
+		exit(1);
+	}
+}

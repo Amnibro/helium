@@ -20,7 +20,7 @@ seen from outside). Lengths are in meters, Y up.
 
 | family | verbs |
 |---|---|
-| randomness | `seed` `rnd` `range` `vary` `noise` `fbm` `ridged` |
+| randomness | `seed` `rnd` `range` `vary` `noise` `fbm` `ridged` (Perlin from the shared `noise` module) |
 | building | `vert` `tri` `quad` `tube` `revolve` `sheet` `normals` `move` `spin` |
 | placement | `phyllo` `scatter` `on_surface` |
 | forms | `leaf` `blade` `tuft` `rock` `shell` `mushroom` `cactus` `tree` `pine` `bush` `fern` `flower` `coral` `brain_coral` `moss` `succulent` |
