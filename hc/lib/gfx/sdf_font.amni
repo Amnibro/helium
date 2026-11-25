@@ -18,7 +18,7 @@ import math;
 import gfx;
 import os;
 import ttf;
-struct TtG { u0 f32, v0 f32, u1 f32, v1 f32, x0 f32, y0 f32, w f32, h f32, adv f32, g int }
+struct TtG { u0 f32, v0 f32, u1 f32, v1 f32, x0 f32, y0 f32, w f32, h f32, adv f32, g int, f int }
 let TT_BAKE f32 = 40.0;
 let TT_HI = 3;
 let TT_PAD = 7;
@@ -28,6 +28,9 @@ var TT ttf::Info;
 var TT_ON = 0;
 var TT_WANT = false;
 var TT_CAP f32 = 1.0;
+var TF ttf::Info;
+var TF_ON = false;
+var TF_CAP f32 = 1.0;
 var TT_G TtG[>..] = [];
 var TT_KEY int[>..] = [];
 var TT_MAP int[>..] = [];
@@ -54,6 +57,19 @@ fn tt_on() bool {
 	var b = ttf::B4 { 0, 0, 0, 0 };
 	if !ttf::gbox(TT, ttf::glyph_index(TT, 'H' as int), b) || b.y1 <= 0 { return false; }
 	TT_CAP = b.y1 as f32;
+	let pk = if named { -1 } else { k - 1 };
+	var j = 6;
+	while !TF_ON && pk < 6 && j < 8 {
+		var fb byte[>..] = [];
+		if read_file(tt_path(j), fb) {
+			TF = ttf::Info { fb };
+			TF.fo = ttf::font_offset(TF.d[..], 0);
+			var c = ttf::B4 { 0, 0, 0, 0 };
+			TF_ON = TF.fo >= 0 && ttf::init(TF) && ttf::gbox(TF, ttf::glyph_index(TF, 'H' as int), c) && c.y1 > 0;
+			TF_CAP = if TF_ON { c.y1 as f32 } else { 1.0 };
+		}
+		j += 1;
+	}
 	TT_MAP.resize(0x6000, -1);
 	TT_PIX.resize(TT_AW * TT_AH * 4, 0);
 	TT_ON = 1;
@@ -104,9 +120,11 @@ fn tt_slot(cp int, weight int) int {
 	let key = cp * 2 + weight;
 	if key < TT_MAP.len && TT_MAP[key] >= 0 { return TT_MAP[key]; }
 	if key >= TT_MAP.len { for i in TT_KEY.len { if TT_KEY[i] == key { return i; } } }
-	let g = ttf::glyph_index(TT, cp);
-	let hs = TT_BAKE / TT_CAP * TT_HI as f32;
-	let b = ttf::bbox(TT, g, hs, hs, 0.0, 0.0);
+	let g0 = ttf::glyph_index(TT, cp);
+	let fb = g0 == 0 && TF_ON && ttf::glyph_index(TF, cp) != 0;
+	let g = if fb { ttf::glyph_index(TF, cp) } else { g0 };
+	let hs = TT_BAKE / (if fb { TF_CAP } else { TT_CAP }) * TT_HI as f32;
+	let b = if fb { ttf::bbox(TF, g, hs, hs, 0.0, 0.0) } else { ttf::bbox(TT, g, hs, hs, 0.0, 0.0) };
 	let pd = TT_PAD * TT_HI;
 	let gw = max(0, b.x1 - b.x0);
 	let gh = max(0, b.y1 - b.y0);
@@ -119,7 +137,7 @@ fn tt_slot(cp int, weight int) int {
 	if room {
 		var hi byte[>..] = [];
 		hi.resize(w * h, 0);
-		ttf::glyph_bitmap(TT, hi, pd * w + pd, gw, gh, w, hs, hs, g);
+		if fb { ttf::glyph_bitmap(TF, hi, pd * w + pd, gw, gh, w, hs, hs, g); } else { ttf::glyph_bitmap(TT, hi, pd * w + pd, gw, gh, w, hs, hs, g); }
 		var gi f32[>..] = [];
 		var go f32[>..] = [];
 		gi.resize(w * h, 1.0e20);
@@ -144,8 +162,8 @@ fn tt_slot(cp int, weight int) int {
 		}
 		TT_DIRTY = true;
 	}
-	let adv = ttf::hmetrics(TT, g).x as f32 * TT_BAKE / TT_CAP;
-	TT_G.push(TtG { u0: TT_X as f32 / TT_AW as f32, v0: TT_Y as f32 / TT_AH as f32, u1: (TT_X + ow) as f32 / TT_AW as f32, v1: (TT_Y + oh) as f32 / TT_AH as f32, x0: (b.x0 - pd) as f32 / TT_HI as f32, y0: (b.y0 - pd) as f32 / TT_HI as f32 + TT_BAKE, w: if room { ow as f32 } else { 0.0 }, h: oh as f32, adv: adv, g: g });
+	let adv = if fb { ttf::hmetrics(TF, g).x as f32 * TT_BAKE / TF_CAP } else { ttf::hmetrics(TT, g).x as f32 * TT_BAKE / TT_CAP };
+	TT_G.push(TtG { u0: TT_X as f32 / TT_AW as f32, v0: TT_Y as f32 / TT_AH as f32, u1: (TT_X + ow) as f32 / TT_AW as f32, v1: (TT_Y + oh) as f32 / TT_AH as f32, x0: (b.x0 - pd) as f32 / TT_HI as f32, y0: (b.y0 - pd) as f32 / TT_HI as f32 + TT_BAKE, w: if room { ow as f32 } else { 0.0 }, h: oh as f32, adv: adv, g: g, f: if fb { 1 } else { 0 } });
 	if room { TT_X += ow + 1; TT_ROW = max(TT_ROW, oh); }
 	TT_KEY.push(key);
 	if key < TT_MAP.len { TT_MAP[key] = TT_G.len - 1; }
@@ -171,13 +189,15 @@ fn tt_text(vs TextVtx[>..]&, x f32, y f32, px f32, t const byte[:], c byte[4], w
 		let um f32 = if outline && is_bg { 2.0 } else { 0.0 };
 		pen = x + o;
 		var pg = -1;
+		var pf = 0;
 		var i = 0;
 		while i < t.len {
 			let cp, j = tt_next(t, i);
 			i = j;
 			let q = TT_G[tt_slot(cp, weight)];
-			pen += ttf::kern(TT, pg, q.g) as f32 * ks;
+			pen += if q.f == 0 && pf == 0 { ttf::kern(TT, pg, q.g) as f32 * ks } else { 0.0 };
 			pg = q.g;
+			pf = q.f;
 			if q.w > 0.0 {
 				let qx = pen + q.x0 * s;
 				let qy = y + o + q.y0 * s;
@@ -194,13 +214,15 @@ fn tt_width(t const byte[:], px f32) f32 {
 	let s = px / TT_BAKE;
 	var w f32 = 0.0;
 	var pg = -1;
+	var pf = 0;
 	var i = 0;
 	while i < t.len {
 		let cp, j = tt_next(t, i);
 		i = j;
 		let q = TT_G[tt_slot(cp, 0)];
-		w += ttf::kern(TT, pg, q.g) as f32 * TT_BAKE / TT_CAP * s + q.adv * s;
+		w += (if q.f == 0 && pf == 0 { ttf::kern(TT, pg, q.g) as f32 * TT_BAKE / TT_CAP * s } else { 0.0 }) + q.adv * s;
 		pg = q.g;
+		pf = q.f;
 	}
 	w
 }
