@@ -1,0 +1,13 @@
+import std;
+struct S { n const byte[:] }
+var AR byte[>..] = [];
+var SH S[>..] = [];
+var ER const byte[:] = "";
+fn add(k int) { let a = AR.len; format(AR, "x", k); SH.push(S { n: AR[a..AR.len] }); ER = AR[a..AR.len]; }
+fn begin() { SH.clear(); SH.reserve(1 << 7); ER = ""; AR.clear(); AR.reserve(77); }
+fn main() {
+	begin(); add(1); add(2);
+	print(SH.len, " ", ER);
+	begin(); add(3);
+	print(SH.len, " ", SH[0].n, " ", ER);
+}

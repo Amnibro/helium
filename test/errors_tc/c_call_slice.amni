@@ -1,0 +1,2 @@
+// error: c_call passes and returns only integers, bools and floats
+fn main() { let s = "hi"; print(c_call<int>(0 as uint, s)); }

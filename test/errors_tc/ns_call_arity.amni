@@ -1,0 +1,3 @@
+// error: no matching overload for call to three: declared with 3 parameters, the call passes 4
+import nsfix.b;
+fn main() { print(nsfix::use_it(), "\n"); }

@@ -32,7 +32,10 @@ layout(set = 1, binding = 0) uniform Draw {
 	vec4 wind_t;
 	vec4 push[4];
 	vec4 prev_push[4];
+	vec4 water;
+	vec4 water_t;
 };
+#include "water.glsl"
 
 layout(location = 0) out vec3 out_world;
 layout(location = 1) out vec3 out_nrm;
@@ -41,6 +44,7 @@ layout(location = 3) out vec4 out_uv;
 layout(location = 4) out vec4 out_col;
 layout(location = 5) out vec4 out_cur;   // unjittered clip position, this frame
 layout(location = 6) out vec4 out_prev;  // unjittered clip position, last frame
+layout(location = 7) flat out float out_fade;
 
 mat4 joint(int j) {
 	return mat4(joint_cols[j * 4], joint_cols[j * 4 + 1], joint_cols[j * 4 + 2], joint_cols[j * 4 + 3]);
@@ -112,10 +116,17 @@ void main() {
 	}
 	vec3 so = sway_o.xyz;
 	float sh = sway_o.w;
+	vec3 itint = vec3(0.0);
+	out_fade = 0.0;
 	if (inst.y >= 0.0) {
 		int q = int(inst.y) + gl_InstanceIndex;
-		int k = (int(inst.x) + int(inst_ids[q >> 2][q & 3])) * 4;
+		float iv = inst_ids[q >> 2][q & 3];
+		out_fade = fract(iv) * (4.0 / 3.0);
+		int k = (int(inst.x) + int(iv)) * 4;
 		mat4 im = mat4(inst_cols[k], inst_cols[k + 1], inst_cols[k + 2], inst_cols[k + 3]);
+		// a copy's tint rides in the matrix's unused bottom row; all zero means none
+		itint = vec3(im[0].w, im[1].w, im[2].w);
+		im[0].w = 0.0; im[1].w = 0.0; im[2].w = 0.0;
 		m = im * model;
 		pm = im * prev_model;
 		vec3 i0 = m[0].xyz;
@@ -131,11 +142,15 @@ void main() {
 		w = vec4(bend(w.xyz, so, sh, inst.z, false), 1.0);
 		pw = vec4(bend(pw.xyz, so, sh, inst.z, true), 1.0);
 	}
+	if (water.w > 0.5) {
+		w.y += sea_wave(w.xz, water_t.x, water.xyz).z;
+		pw.y += sea_wave(pw.xz, water_t.y, water.xyz).z;
+	}
 	out_world = w.xyz;
 	out_nrm = wn;
 	out_tan = vec4((m * vec4(in_tan.xyz, 0.0)).xyz, in_tan.w);
 	out_uv = vec4(in_uv0, in_uv1);
-	out_col = in_col;
+	out_col = dot(itint, vec3(1.0)) > 0.0 ? vec4(in_col.rgb * itint, in_col.a) : in_col;
 	out_cur = cur_vp * w;
 	out_prev = prev_vp * pw;
 	gl_Position = view_proj * w;

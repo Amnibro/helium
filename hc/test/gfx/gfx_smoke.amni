@@ -76,6 +76,9 @@ import gfx.rt;
 import gfx.fx;
 import gfx.bc;
 import gfx.ktx2;
+import gfx.cloth;
+import gfx.hair;
+import gfx.hairdo;
 
 fn milli(v f32) int { round((v * 1000.0) as real) as int }
 
@@ -3053,6 +3056,194 @@ fn fx_perf() {
 	fx::release();
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 }
+fn vx_ring(inherit f32, link bool) int, real {
+	fx_fresh();
+	var a = fx::emitter();
+	a.spread = 3.1415927; a.speed_min = 2.0; a.speed_max = 2.0; a.life_min = 0.5; a.life_max = 0.5; a.gravity = 0.0;
+	var b = fx::emitter();
+	b.speed_min = 0.0; b.speed_max = 0.0; b.life_min = 100.0; b.life_max = 100.0; b.gravity = 0.0; b.inherit = inherit;
+	if link { a.on_death = 1; a.on_death_n = 8; }
+	let i = fx::add(a); let _ = fx::add(b);
+	fx::burst(i, 64);
+	fx_run(60);
+	var ps fx::Part[>..] = [];
+	fx::read_parts(ps);
+	var n = 0; var worst = 0.0;
+	for p in ps { if p.vel.w <= 0.0 { continue; } n += 1; worst = max(worst, abs(sqrt((p.pos.x * p.pos.x + p.pos.y * p.pos.y + p.pos.z * p.pos.z) as real) - (1.0 + inherit as real))); }
+	return n, worst;
+}
+fn vx_hits(collide bool) int, real {
+	fx_fresh();
+	fx_floor_scene();
+	s3d::init(1280, 720);
+	let out = gfx::render_target(1280, 720, gfx::RGBA8);
+	var a = fx::emitter();
+	a.shape = 1; a.pos = float3 { 0.0, 2.0, 0.0 }; a.size = float3 { 0.5, 0.5, 0.5 }; a.speed_min = 0.0; a.speed_max = 0.0; a.life_min = 100.0; a.life_max = 100.0; a.collide = collide; a.restitution = 0.0; a.sizes = float4 { 0.03, 0.03, 0.03, 0.03 }; a.on_hit = 1; a.on_hit_n = 4;
+	var b = fx::emitter();
+	b.speed_min = 0.0; b.speed_max = 0.0; b.life_min = 100.0; b.life_max = 100.0; b.gravity = 0.0; b.sizes = float4 { 0.03, 0.03, 0.03, 0.03 };
+	let i = fx::add(a); let _ = fx::add(b);
+	fx::burst(i, 200);
+	s3d::fx_dt = 1.0 / 60.0;
+	shoot(120, out);
+	s3d::fx_dt = 0.0;
+	var ps fx::Part[>..] = [];
+	fx::read_parts(ps);
+	var n = 0; var nf = 0;
+	for p in ps { if p.vel.w > 0.0 && p.misc.x > 0.5 { n += 1; if abs(p.pos.y) <= 0.15 { nf += 1; } } }
+	gfx::release(out);
+	return n, nf as real / max(n, 1) as real;
+}
+var VX_CUBE = -1;
+fn vx_stage(sky bool, to_sun float3) byte[>..] {
+	fx_fresh();
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sky.draw = sky; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false; s3d::temporal = 0; s3d::sun.shadows = false; s3d::sun.to_sun = to_sun;
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 5.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 60.0 };
+	if VX_CUBE < 0 {
+		var pos f32[>..] = []; var nrm f32[>..] = []; var idx int[>..] = [];
+		for a in 3 { for s in 2 {
+			let g = if s == 0 { linalg::f(-0.5) } else { linalg::f(0.5) };
+			let base = pos.len / 3;
+			for c in 4 {
+				var p f32[3] = [0.0; 3]; var n f32[3] = [0.0; 3];
+				p[a] = g; n[a] = g * 2.0;
+				p[(a + 1) % 3] = if c == 0 || c == 3 { linalg::f(-0.5) } else { linalg::f(0.5) };
+				p[(a + 2) % 3] = if c < 2 { linalg::f(-0.5) } else { linalg::f(0.5) };
+				for k in 3 { pos.push(p[k]); nrm.push(n[k]); }
+			}
+			for k in [0, 1, 2, 0, 2, 3] { idx.push(base + k); }
+		} }
+		VX_CUBE = fx::mesh(pos[..], nrm[..], idx[..]);
+	}
+	[]
+}
+fn vx_shots(n int) byte[>..] { s3d::fx_dt = 1.0 / 60.0; shoot(n, IN_OUT); s3d::fx_dt = 0.0; gfx::read_pixels(IN_OUT) }
+fn vx_trail(trail f32) real, real {
+	let _ = vx_stage(false, float3 { 0.0, 1.0, 0.0 });
+	shoot(2, IN_OUT);
+	let base = gfx::read_pixels(IN_OUT);
+	var e = fx::emitter();
+	e.pos = float3 { -2.0, 0.0, 0.0 }; e.dir = float3 { 1.0, 0.0, 0.0 }; e.speed_min = 4.0; e.speed_max = 4.0; e.life_min = 100.0; e.life_max = 100.0; e.gravity = 0.0; e.sizes = float4 { 0.1, 0.1, 0.1, 0.1 }; e.colors = [float4 { 2.0, 2.0, 2.0, 1.0 }; 4]; e.trail = trail;
+	fx::burst(fx::add(e), 1);
+	let px = vx_shots(45);
+	if trail > 0.0 { let _ = codec_png::write(path(OUT_DIR[..], "vfx_trail.png")[..], 1280, 720, 4, px[..]); }
+	var col real[>..] = [];
+	var lo = 1280; var hi = -1;
+	for x in 1280 {
+		var s = 0.0;
+		for k in 120 { let i = (300 + k) * 1280 + x; if sk_d(base[..], px[..], i) > 8 { s += vc_l8(px[..], i) - vc_l8(base[..], i); } }
+		if s > 0.0 { lo = min(lo, x); hi = max(hi, x); }
+		col.push(s);
+	}
+	if hi < lo { return 0.0, 0.0; }
+	let q = (hi - lo + 1) / 4;
+	var tail = 0.0; var head = 0.0;
+	for k in q { tail += col[lo + k]; head += col[hi - k]; }
+	return (hi - lo + 1) as real * 10.0 * sin(0.45) / cos(0.45) / 720.0, tail / max(head, 1e-9);
+}
+fn vx_mesh(ball bool, front bool) int, real {
+	let _ = vx_stage(true, float3 { 0.0, 0.0, if front { 1.0 } else { -1.0 } });
+	s3d::sky.ambient = 0.05;
+	if ball { s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::translate(float3 { -1.0, 0.0, 2.0 })); }
+	shoot(2, IN_OUT);
+	let base = gfx::read_pixels(IN_OUT);
+	var e = fx::emitter();
+	e.speed_min = 0.0; e.speed_max = 0.0; e.life_min = 100.0; e.life_max = 100.0; e.gravity = 0.0; e.sizes = float4 { 0.5, 0.5, 0.5, 0.5 }; e.mesh = VX_CUBE;
+	fx::burst(fx::add(e), 1);
+	let px = vx_shots(3);
+	if !ball && front { let _ = codec_png::write(path(OUT_DIR[..], "vfx_mesh.png")[..], 1280, 720, 4, px[..]); }
+	var n = 0; var s = 0.0;
+	for i in 1280 * 720 { if sk_d(base[..], px[..], i) > 8 { n += 1; } }
+	for y in 21 { for x in 21 { s += vc_l8(px[..], (350 + y) * 1280 + 650 + x); } }
+	return n, s / 441.0;
+}
+fn vx_fire_text() byte[>..] { var t byte[>..] = []; t.append("# firework\nemitter shell\nburst 40\nshape sphere\nvolume 0.5 0 0\nat 0 1 0\nspread 0.6\nspeed 4 7\nlife 0.4 0.8\non_death star 6\nemitter star\ndir 1 0 0\nspeed 2\nlife 0.5\ngravity 0.5\non_death ember 2\nemitter ember\nspeed 0\nlife 100\ngravity 0\ncolor 1 0.5 0.2 1\nsize 0.05\n"); t }
+fn vx_live(out f32[>..]&) int { var ps fx::Part[>..] = []; fx::read_parts(ps); out.clear(); var n = 0; for p in ps { if p.vel.w > 0.0 { n += 1; out.push(p.pos.x); out.push(p.pos.y); out.push(p.pos.z); } } n }
+fn vx_fire(text bool, out f32[>..]&) int {
+	fx_fresh();
+	fx::frame = 0;
+	let at = float3 { 3.0, 0.0, -2.0 };
+	if text { if fx::play(fx::effect(vx_fire_text()[..]), at) < 0 { return -1; } }
+	else {
+		var a = fx::emitter(); a.shape = 1; a.size = float3 { 0.5, 0.0, 0.0 }; a.pos = float3 { 3.0, 1.0, -2.0 }; a.spread = 0.6; a.speed_min = 4.0; a.speed_max = 7.0; a.life_min = 0.4; a.life_max = 0.8; a.on_death = 1; a.on_death_n = 6;
+		var b = fx::emitter(); b.pos = at; b.dir = float3 { 1.0, 0.0, 0.0 }; b.speed_min = 2.0; b.speed_max = 2.0; b.life_min = 0.5; b.life_max = 0.5; b.gravity = 0.5; b.on_death = 2; b.on_death_n = 2;
+		var c = fx::emitter(); c.pos = at; c.speed_min = 0.0; c.speed_max = 0.0; c.life_min = 100.0; c.life_max = 100.0; c.gravity = 0.0; c.colors = [float4 { 1.0, 0.5, 0.2, 1.0 }; 4]; c.sizes = float4 { 0.05, 0.05, 0.05, 0.05 };
+		fx::burst(fx::add(a), 40); let _ = fx::add(b); let _ = fx::add(c);
+	}
+	fx_run(90);
+	vx_live(out)
+}
+fn vx_match(a const f32[:], b const f32[:]) real {
+	var used bool[>..] = []; used.resize(b.len / 3, false);
+	var worst = 0.0;
+	for i in a.len / 3 {
+		var best = 1.0e30; var at = -1;
+		for j in b.len / 3 { if used[j] { continue; } let d = abs((a[i * 3] - b[j * 3]) as real) + abs((a[i * 3 + 1] - b[j * 3 + 1]) as real) + abs((a[i * 3 + 2] - b[j * 3 + 2]) as real); if d < best { best = d; at = j; } }
+		if at >= 0 { used[at] = true; worst = max(worst, best); }
+	}
+	worst
+}
+fn vx_cost(trail f32) real, int {
+	let _ = vx_stage(true, float3 { 0.3, 0.8, 0.5 });
+	var e = fx::emitter();
+	e.shape = 2; e.size = float3 { 3.0, 1.5, 1.0 }; e.spread = 3.1415927; e.speed_min = 0.5; e.speed_max = 1.0; e.life_min = 100.0; e.life_max = 100.0; e.gravity = 0.0; e.curl = 0.5; e.sizes = float4 { 0.01, 0.01, 0.01, 0.01 }; e.trail = trail;
+	fx::burst(fx::add(e), 100000);
+	let _ = vx_shots(7);
+	var t real[>..] = [];
+	s3d::fx_dt = 1.0 / 60.0;
+	for _ in 21 { let a = gfx::time(); shoot(1, IN_OUT); let _ = gfx::read_pixels(IN_OUT); t.push((gfx::time() - a) * 1000.0); }
+	s3d::fx_dt = 0.0;
+	let px = gfx::read_pixels(IN_OUT);
+	if trail > 0.0 { let _ = codec_png::write(path(OUT_DIR[..], "vfx_cost.png")[..], 1280, 720, 4, px[..]); }
+	var live f32[>..] = [];
+	let n = vx_live(live);
+	return hr_mid(t), n;
+}
+fn vfx_checks() bool {
+	half_table();
+	s3d::init(64, 64);
+	let n1, w1 = vx_ring(0.0, true);
+	let n0, _ = vx_ring(0.0, false);
+	let v1 = n1 == 512 && w1 <= 0.1 && n0 == 0;
+	print("gpu: vfx V1 death events: ", n1, " live (bar 512), farthest from 1 m ", r3(w1), " m (bar <= 0.1); control with no event: ", n0, " live (bar 0)", hr_pass(v1));
+	let n2, w2 = vx_ring(1.0, true);
+	let v2 = n2 == 512 && w2 <= 0.1;
+	print("gpu: vfx V2 inherited speed: ", n2, " live (bar 512), farthest from 2 m ", r3(w2), " m (bar <= 0.1)", hr_pass(v2));
+	let n3, s3 = vx_hits(true);
+	let c3, _ = vx_hits(false);
+	let v3 = max(n3 - 800, 800 - n3) <= 40 && s3 >= 0.99 && c3 == 0;
+	print("gpu: vfx V3 hit events: ", n3, " started (bar 800 within 5 %), ", r3(s3), " of them within 0.15 m of the floor (bar >= 0.99); control with collision off: ", c3, " (bar 0)", hr_pass(v3));
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let run, fade = vx_trail(0.35);
+	let run0, _ = vx_trail(0.0);
+	let v4 = abs(run - 1.4) <= 0.21 && fade <= 0.5 && run0 <= 0.3;
+	print("gpu: vfx V4 trails: lit run ", r3(run), " m (bar 1.4 within 15 %), tail quarter ", r3(fade), " of the head quarter (bar <= 0.5); control with no trail: ", r3(run0), " m (bar <= 0.3)", hr_pass(v4));
+	let n5, lit = vx_mesh(false, true);
+	let h5, _ = vx_mesh(true, true);
+	let _, back = vx_mesh(false, false);
+	let half = h5 as real / max(n5, 1) as real;
+	let v5 = abs(n5 as real - 6150.0) <= 615.0 && half >= 0.4 && half <= 0.6 && lit >= 2.0 * back;
+	print("gpu: vfx V5 mesh particles: ", n5, " pixels covered (bar 6150 within 10 %), ", r3(half), " of them with a sphere over the left half (bar 0.4..0.6), brightness ", r3(lit), " lit from the camera side against ", r3(back), " from behind (bar >= 2 times)", hr_pass(v5));
+	var pa f32[>..] = []; var pb f32[>..] = [];
+	let na = vx_fire(true, pa);
+	let reuse_h = fx::play(0, float3 { 0.0, 0.0, 0.0 });
+	fx::stop(reuse_h);
+	let reuse = fx::play(0, float3 { 0.0, 0.0, 0.0 }) >= 0 && fx::emitters.len == 6 && fx::emitters[3].on_death == 4;
+	let nb = vx_fire(false, pb);
+	let off = vx_match(pa[..], pb[..]);
+	let refused = fx::effect("emitter a\nrate 5\nsped 2\n") == -1 && fx::error[..] == "line 3: unknown word sped";
+	let v6 = na == nb && na > 0 && off == 0.0 && refused && reuse;
+	print("gpu: vfx V6 effects as text: ", na, " live from text, ", nb, " built by hand (bar equal), largest position difference ", r3(off), " m (bar 0), a stopped effect's slots are reused: ", reuse, ", unknown word refused: ", refused, hr_pass(v6));
+	let with, nw = vx_cost(0.35);
+	let bare, n0w = vx_cost(0.0);
+	let v7 = nw == 100000 && n0w == 100000 && with - bare <= 7.0;
+	print("gpu: vfx V7 cost: ", nw, " live particles, ", r3(with), " ms a frame with trails, ", r3(bare), " ms without, trails ", r3(with - bare), " ms (bar <= 7)", hr_pass(v7));
+	gfx::release(IN_OUT);
+	fx_fresh();
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	v1 && v2 && v3 && v4 && v5 && v6 && v7
+}
 fn fx_checks() bool {
 	half_table();
 	s3d::init(64, 64);
@@ -3535,6 +3726,345 @@ fn wx_snow() real {
 	let v = -s / max(n, 1) as real;
 	print("gpu: weather W5 snow: ", n, " flakes falling at both reads, mean downward speed ", r4(v), " m/s");
 	v
+}
+fn pd_scene(tilt real) {
+	reset_scene();
+	let g = shapes::cube(float3 { 20.0, 0.1, 20.0 }, shapes::material(linalg::v3(0.4, 0.4, 0.4), 0.0, 0.8));
+	let c = linalg::f(cos(tilt)); let s = linalg::f(sin(tilt));
+	s3d::place(s3d::add(g), gfx::mat4 { c0: float4 { 1.0, 0.0, 0.0, 0.0 }, c1: float4 { 0.0, c, s, 0.0 }, c2: float4 { 0.0, -s, c, 0.0 }, c3: float4 { 0.0, -0.1, 0.0, 1.0 } });
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::sky.ambient = 0.05;
+	s3d::sun.to_sun = linalg::unit3(linalg::v3(0.2, 1.0, 0.1));
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::wet = 0.0; s3d::snow = 0.0; s3d::fx_dt = 0.0;
+}
+fn pd_cam(eye float3, target float3, up float3) { s3d::view = s3d::Camera { eye: eye, target: target, up: up, fov_y: 0.75, near: 0.1, far: 100.0 }; }
+fn pd_shot(t gfx::Texture, p f32, r f32, time f32) byte[>..] { s3d::puddles = p; s3d::ripples = r; s3d::world_time = time; shoot(1, t); gfx::read_pixels(t) }
+fn pd_lens(t gfx::Texture, amount f32, time f32) byte[>..] { s3d::look.lens_rain = amount; s3d::world_time = time; shoot(1, t); gfx::read_pixels(t) }
+fn pd_lum(px const byte[:], i int) real { (px[i * 4] as real + px[i * 4 + 1] as real + px[i * 4 + 2] as real) / 3.0 }
+fn pd_mean(px const byte[:]) real { var s = 0.0; let m = px.len / 4; for i in m { s += pd_lum(px, i); } s / m as real }
+fn pd_share(px const byte[:], dry real, full real) real { let mid = (dry + full) / 2.0; var n = 0; let m = px.len / 4; for i in m { if (full < dry) == (pd_lum(px, i) < mid) { n += 1; } } n as real / m as real }
+fn pd_half(px const byte[:], dry real, full real, w int, side int) real { let mid = (dry + full) / 2.0; var n = 0; var m = 0; for i in px.len / 4 { let x = i % w; let y = i / w; if (if side == 0 { x < w / 2 } else if side == 1 { x >= w / 2 } else if side == 2 { y < w / 2 } else { y >= w / 2 }) { m += 1; if (full < dry) == (pd_lum(px, i) < mid) { n += 1; } } } n as real / max(m, 1) as real }
+fn pd_gap(px const byte[:], dry real, full real, w int) real { max(abs(pd_half(px, dry, full, w, 0) - pd_half(px, dry, full, w, 1)), abs(pd_half(px, dry, full, w, 2) - pd_half(px, dry, full, w, 3))) }
+fn pd_diff(a const byte[:], b const byte[:]) real { var s = 0.0; for i in a.len { let d = a[i] as real - b[i] as real; s += if d < 0.0 { -d } else { d }; } s / a.len as real }
+fn pd_pair(t gfx::Texture, lens bool) real, real {
+	shoot(3, t); var on = 1000.0; var off = 1000.0;
+	for k in 510 {
+		let w = k % 2 == 0; let v = if w { 1.0 } else { 0.0 };
+		if lens { s3d::look.lens_rain = v; } else { s3d::puddles = v; s3d::ripples = v; }
+		let a = gfx::time(); shoot(1, t); let _ = gfx::read_pixels(t); let ms = (gfx::time() - a) * 1000.0;
+		if w { on = min(on, ms); } else { off = min(off, ms); }
+	}
+	return on, off;
+}
+fn pd_mask(clean const byte[:], px const byte[:], out bool[>..]&) real { out.clear(); var n = 0; for i in px.len / 4 { var c = false; for k in 3 { let d = px[i * 4 + k] as int - clean[i * 4 + k] as int; if d > 2 || d < -2 { c = true; } } out.push(c); if c { n += 1; } } n as real / (px.len / 4) as real }
+fn pd_iou(a bool[>..]&, b bool[>..]&) real { var i = 0; var u = 0; for k in a.len { if a[k] && b[k] { i += 1; } if a[k] || b[k] { u += 1; } } if u == 0 { 0.0 } else { i as real / u as real } }
+fn pd_iou_dy(a bool[>..]&, b bool[>..]&, w int, h int, dy int) real { var i = 0; var u = 0; for y in h { let sy = y - dy; for x in w { let p = if sy >= 0 && sy < h { a[sy * w + x] } else { false }; let q = b[y * w + x]; if p && q { i += 1; } if p || q { u += 1; } } } if u == 0 { 0.0 } else { i as real / u as real } }
+fn pd_slope(px const byte[:], m bool[>..]&, w int, h int, inside bool) real { var s = 0.0; var n = 0; for y in h - 1 { for x in w { let i = y * w + x; if m[i] == inside && m[i + w] == inside { s += pd_lum(px, i + w) - pd_lum(px, i); n += 1; } } } if n == 0 { 0.0 } else { s / n as real } }
+fn pd_sky(yaw real) {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 0.2, 0.2, 0.2 }, horizon: float3 { 1.5, 1.5, 1.5 }, ground: float3 { 0.5, 0.5, 0.5 }, ambient: 1.0, draw: true };
+	s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(linalg::v3(0.0, 0.3, 1.0)); s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::wet = 0.0; s3d::snow = 0.0; s3d::puddles = 0.0; s3d::ripples = 0.0; s3d::fx_dt = 0.0;
+	pd_cam(float3 { 0.0, 1.7, 0.0 }, float3 { linalg::f(sin(yaw)), 2.54, -linalg::f(cos(yaw)) }, float3 { 0.0, 1.0, 0.0 });
+}
+fn pd_ground() bool {
+	pd_scene(0.0); s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	s3d::puddle_size = 0.2;
+	let dry = pd_shot(t, 0.0, 0.0, 0.0);
+	s3d::puddle_size = 0.9;
+	let dry2 = pd_shot(t, 0.0, 1.0, 3.0);
+	s3d::puddle_size = 0.2;
+	let full = pd_shot(t, 1.0, 0.0, 0.0);
+	let d = pd_mean(dry[..]); let f = pd_mean(full[..]);
+	let q1 = pd_shot(t, 0.25, 0.0, 0.0); let q2 = pd_shot(t, 0.5, 0.0, 0.0); let q3 = pd_shot(t, 0.75, 0.0, 0.0);
+	let a1 = pd_share(q1[..], d, f); let a2 = pd_share(q2[..], d, f); let a3 = pd_share(q3[..], d, f);
+	let same = pd_diff(dry[..], dry2[..]) == 0.0;
+	let u1 = a1 >= 0.2 && a1 <= 0.3 && a2 >= 0.45 && a2 <= 0.55 && a3 >= 0.7 && a3 <= 0.8 && same && f != d;
+	print("gpu: puddle U1 share: ", r3(a1), " at 0.25, ", r3(a2), " at 0.5, ", r3(a3), " at 0.75 (bar within 0.05); dry ", r3(d), ", all puddle ", r3(f), "; puddles 0 unchanged by size and ripples: ", same, hr_pass(u1));
+	let _ = codec_png::write(path(OUT_DIR[..], "puddle_top.png")[..], 512, 512, 4, q2[..]);
+	pd_scene(0.349);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	let td = pd_shot(t, 0.0, 0.0, 0.0); let tp = pd_shot(t, 0.75, 0.0, 0.0);
+	let tm = pd_mean(td[..]);
+	let a4 = pd_share(tp[..], tm, tm + f - d);
+	let u2 = a4 <= 0.02;
+	print("gpu: puddle U2 floor tilted 20 degrees at 0.75: share ", r3(a4), " (bar <= 0.02)", hr_pass(u2));
+	pd_scene(0.0); s3d::sun.to_sun = linalg::unit3(linalg::v3(0.0, 0.5, -1.0)); s3d::puddle_size = 1.7;
+	pd_cam(float3 { 0.0, 1.7, 8.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 1.0, 0.0 });
+	let r1a = pd_shot(t, 1.0, 1.0, 5.0); let r1b = pd_shot(t, 1.0, 1.0, 5.1);
+	let r0a = pd_shot(t, 1.0, 0.0, 5.0); let r0b = pd_shot(t, 1.0, 0.0, 5.1);
+	let r3a = pd_shot(t, 1.0, 0.3, 5.0); let r3b = pd_shot(t, 1.0, 0.3, 5.1);
+	let m1 = pd_diff(r1a[..], r1b[..]); let m0 = pd_diff(r0a[..], r0b[..]); let m3 = pd_diff(r3a[..], r3b[..]);
+	let u3 = m1 >= 0.5 && m0 == 0.0 && m3 < m1 && m3 > 0.0;
+	print("gpu: puddle U3 ripples, frames 0.1 s apart: mean change ", r3(m1), " at 1 (bar >= 0.5 over the floor; measured over the whole frame), ", r3(m3), " at 0.3 (bar less), ", m0, " at 0 (bar 0)", hr_pass(u3));
+	let _ = codec_png::write(path(OUT_DIR[..], "puddle_rain.png")[..], 512, 512, 4, r1a[..]);
+	s3d::wet = 1.0;
+	let w0 = pd_shot(t, 0.0, 1.0, 5.0); let w1 = pd_shot(t, 0.0, 1.0, 5.1);
+	s3d::wet = 0.0;
+	let m4 = pd_diff(w0[..], w1[..]);
+	let u4 = m4 == 0.0;
+	print("gpu: puddle U4 wet 1, puddles 0, ripples 1, frames 0.1 s apart: change ", m4, " (bar 0)", hr_pass(u4));
+	gfx::release(t);
+	s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	pd_cam(float3 { 0.0, 3.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	let with, bare = pd_pair(big, false);
+	s3d::puddles = 0.0; s3d::ripples = 0.0;
+	let u5 = with - bare <= 0.3;
+	print("gpu: puddle U5 cost at 1280 x 720: ", r3(with), " ms all puddle with ripples, ", r3(bare), " ms without: ", r3(with - bare), " ms more (bar <= 0.3; fastest of 255 alternating frames each)", hr_pass(u5));
+	pd_scene(0.0);
+	var hp byte[>..] = [];
+	for i in 64 * 64 { let v = if i % 64 < 32 { 0 as byte } else { 255 as byte }; hp.append([v, v, v, 255 as byte]); }
+	gltf::materials[gltf::materials.len - 1].ext = true;
+	gltf::materials[gltf::materials.len - 1].height_tex = gltf::TexRef { gltf::add_texture_rgba(hp[..], 64, 64, 10497), 0 };
+	s3d::init(512, 512);
+	let t6 = gfx::render_target(512, 512, gfx::RGBA8);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	s3d::puddle_size = 0.2;
+	let hm = pd_shot(t6, 0.5, 0.0, 0.0);
+	let g6 = pd_gap(hm[..], d, f, 512); let c6 = pd_gap(q2[..], d, f, 512);
+	let u6 = g6 >= 0.4 && c6 <= 0.05;
+	print("gpu: puddle U6 height map, one half low and one half high, puddles 0.5: puddle share differs by ", r3(g6), " between the halves (bar >= 0.4), ", r3(c6), " without a height map (bar <= 0.05)", hr_pass(u6));
+	let _ = codec_png::write(path(OUT_DIR[..], "puddle_height.png")[..], 512, 512, 4, hm[..]);
+	pd_scene(0.0);
+	pd_cam(float3 { 0.0, 12.0, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	let sd = pd_shot(t6, 0.0, 0.0, 0.0);
+	s3d::wet = 1.0;
+	let sp = pd_shot(t6, 0.0, 0.0, 0.0);
+	gltf::materials[gltf::materials.len - 1].sealed = 1.0;
+	let ss = pd_shot(t6, 0.0, 0.0, 0.0);
+	s3d::wet = 0.0;
+	let dw = pd_mean(sd[..]); let pw = pd_mean(sp[..]); let sw = pd_mean(ss[..]);
+	let u7 = pw <= 0.85 * dw && sw >= 0.93 * dw && sw <= 1.07 * dw;
+	print("gpu: puddle U7 wet 1 floor brightness: dry ", r3(dw), ", porous ", r3(pw), " (bar <= 0.85 of dry), sealed 1 ", r3(sw), " (bar within 0.07 of dry)", hr_pass(u7));
+	gfx::release(t6);
+	gfx::release(big);
+	u1 && u2 && u3 && u4 && u5 && u6 && u7
+}
+fn pd_drops() bool {
+	pd_sky(0.0); s3d::init(640, 360);
+	let t = gfx::render_target(640, 360, gfx::RGBA8);
+	let clean = pd_lens(t, 0.0, 10.0);
+	let l25 = pd_lens(t, 0.25, 10.0); let l50 = pd_lens(t, 0.5, 10.0); let l100 = pd_lens(t, 1.0, 10.0);
+	let soon = pd_lens(t, 1.0, 10.0 + 1.0 / 60.0); let late = pd_lens(t, 1.0, 13.0); let mid = pd_lens(t, 1.0, 10.25); var mm bool[>..] = []; let _ = pd_mask(clean[..], mid[..], mm);
+	var m25 bool[>..] = []; var m50 bool[>..] = []; var m100 bool[>..] = []; var ms bool[>..] = []; var ml bool[>..] = []; var my bool[>..] = [];
+	let s25 = pd_mask(clean[..], l25[..], m25); let s50 = pd_mask(clean[..], l50[..], m50); let s100 = pd_mask(clean[..], l100[..], m100);
+	let _ = pd_mask(clean[..], soon[..], ms); let _ = pd_mask(clean[..], late[..], ml);
+	let n2 = s25 > 0.0 && s25 < s50 && s50 < s100 && s100 >= 0.15 && s100 <= 0.7 - 0.1;
+	print("gpu: puddle N2 lens drops change ", r3(s25), " of the frame at 0.25, ", r3(s50), " at 0.5, ", r3(s100), " at 1 (bar rising, 0.15 to 0.6 at 1)", hr_pass(n2));
+	let so = pd_slope(l100[..], m100, 640, 360, false); let si = pd_slope(l100[..], m100, 640, 360, true);
+	let n3 = so * si < 0.0;
+	print("gpu: puddle N3 brightness slope down the frame: ", r3(so), " outside drops, ", r3(si), " inside (bar opposite signs)", hr_pass(n3));
+	let _ = codec_png::write(path(OUT_DIR[..], "lens_sky.png")[..], 640, 360, 4, l100[..]);
+	pd_sky(0.5236);
+	let clean2 = pd_lens(t, 0.0, 10.0); let turned = pd_lens(t, 1.0, 10.0);
+	let _ = pd_mask(clean2[..], turned[..], my);
+	let i4 = pd_iou(m100, my);
+	let n4 = i4 >= 0.9;
+	print("gpu: puddle N4 camera turned 30 degrees: changed pixels ", r3(i4), " the same (bar >= 0.9)", hr_pass(n4));
+	let i5 = pd_iou(m100, ms); let i5l = pd_iou(m100, ml);
+	let dn = pd_iou_dy(m100, mm, 640, 360, 5); let up = pd_iou_dy(m100, mm, 640, 360, -5);
+	let n5 = i5 >= 0.9 && i5l <= 0.8 && dn > up;
+	print("gpu: puddle N5 changed pixels ", r3(i5), " the same 1/60 s later (bar >= 0.9), ", r3(i5l), " 3 s later (bar <= 0.8); after 0.25 s the set matches ", r3(dn), " moved 5 rows down and ", r3(up), " moved up (drops run down)", hr_pass(n5));
+	gfx::release(t);
+	wx_scene(); s3d::fx_dt = 0.0; s3d::init(1280, 720);
+	let big = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::look.lens_rain = 1.0; s3d::world_time = 10.0;
+	shoot(1, big);
+	let shot = gfx::read_pixels(big);
+	let _ = codec_png::write(path(OUT_DIR[..], "lens_rain.png")[..], 1280, 720, 4, shot[..]);
+	let with, bare = pd_pair(big, true);
+	s3d::look.lens_rain = 0.0; shoot(1, big);
+	let n7 = with - bare <= 0.2;
+	print("gpu: puddle N6 lens drops cost at 1280 x 720: ", r3(with), " ms against ", r3(bare), " ms: ", r3(with - bare), " ms more (bar <= 0.2; fastest of 255 alternating frames each)", hr_pass(n7));
+	let a = gfx::read_pixels(big);
+	s3d::look.letterbox = 2.39;
+	shoot(1, big);
+	let b = gfx::read_pixels(big);
+	s3d::look.letterbox = 0.0;
+	var black = 0; var same = true;
+	for y in 720 {
+		var z = true; var eq = true;
+		for x in 1280 { let i = (y * 1280 + x) * 4; if b[i] != 0 || b[i + 1] != 0 || b[i + 2] != 0 { z = false; } if b[i] != a[i] || b[i + 1] != a[i + 1] || b[i + 2] != a[i + 2] { eq = false; } }
+		let bar = y < 92 || y >= 628;
+		if bar && z { black += 1; }
+		if !bar && !eq { same = false; }
+	}
+	let h2 = black == 184 && same;
+	print("gpu: puddle H2 letterbox 2.39 at 1280 x 720: ", black, " black rows (bar 184), the rest unchanged: ", same, hr_pass(h2));
+	gfx::release(big);
+	n2 && n3 && n4 && n5 && n7 && h2
+}
+fn pd_hand() bool {
+	let c = s3d::Camera { eye: float3 { 0.0, 1.7, 8.0 }, target: float3 { 0.0, 1.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.1, far: 100.0 };
+	let f0 = linalg::unit3(linalg::v3(c.target.x - c.eye.x, c.target.y - c.eye.y, c.target.z - c.eye.z));
+	var sq = 0.0; var step = 0.0; var mx = 0.0; var my = 0.0; var mz = 0.0; var prev = f0;
+	for k in 1200 {
+		let h = s3d::handheld(c, k as f32 / 60.0, 1.0);
+		let f = linalg::unit3(linalg::v3(h.target.x - h.eye.x, h.target.y - h.eye.y, h.target.z - h.eye.z));
+		let a = linalg::length3(linalg::cross3(f0, f)) as real * 57.29578;
+		let st = linalg::length3(linalg::cross3(prev, f)) as real * 57.29578;
+		sq += a * a; mx += f.x as real; my += f.y as real; mz += f.z as real;
+		if k > 0 && st > step { step = st; }
+		prev = f;
+	}
+	let rms = sqrt(sq / 1200.0);
+	let off = linalg::length3(linalg::cross3(f0, linalg::unit3(linalg::v3(linalg::f(mx), linalg::f(my), linalg::f(mz))))) as real * 57.29578;
+	let z = s3d::handheld(c, 3.0, 0.0); let p = s3d::handheld(c, 3.0, 1.0); let q = s3d::handheld(c, 3.0, 1.0);
+	let same = z.target.x == c.target.x && z.target.y == c.target.y && z.target.z == c.target.z && z.up.x == c.up.x && z.up.y == c.up.y && z.up.z == c.up.z;
+	let rep = p.target.x == q.target.x && p.target.y == q.target.y && p.target.z == q.target.z && p.up.x == q.up.x;
+	let ok = rms >= 0.2 && rms <= 0.7 && step <= 0.05 && off <= 0.1 && same && rep;
+	print("gpu: puddle H1 hand-held camera: ", r3(rms), " degrees rms (bar 0.2 to 0.7), largest step ", r3(step), " (bar <= 0.05), mean off by ", r3(off), " (bar <= 0.1), amount 0 unchanged: ", same, ", repeats: ", rep, hr_pass(ok));
+	ok
+}
+fn puddle_checks() bool {
+	half_table();
+	let g = pd_ground();
+	let d = pd_drops();
+	let h = pd_hand();
+	s3d::puddles = 0.0; s3d::ripples = 0.0; s3d::puddle_size = 1.7; s3d::world_time = 0.0; s3d::wet = 0.0;
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	g && d && h
+}
+fn fo_box(px const byte[:], x0 int, y0 int, x1 int, y1 int) real, real, real { var r = 0.0; var g = 0.0; var b = 0.0; for yy in y1 - y0 { for xx in x1 - x0 { let i = ((y0 + yy) * 512 + x0 + xx) * 4; r += px[i] as real; g += px[i + 1] as real; b += px[i + 2] as real; } } let n = ((x1 - x0) * (y1 - y0)) as real; return r / n, g / n, b / n; }
+fn fo_leaf(model int, lift f32) gltf::Material { var m = shapes::material(linalg::v3(0.12, 0.3, 0.06), 0.0, 0.7); m.double_sided = true; m.shading = model; m.shade_a = float4 { 0.8, 1.0, 0.4, 0.5 }; m.shade_b = float4 { lift, 0.0, 0.0, 0.0 }; m }
+fn fo_shot(t gfx::Texture, model int, lift f32, wall bool, eye float3, up float3) byte[>..] {
+	reset_scene();
+	s3d::place(s3d::add(shapes::plane(0.5, fo_leaf(model, lift))), gfx::mat4_identity);
+	if wall { s3d::place(s3d::add(shapes::cube(float3 { 0.1, 0.5, 0.5 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::translate(linalg::v3(0.6, 0.5, 0.0))); }
+	pd_cam(eye, float3 { 0.0, 0.0, 0.0 }, up);
+	shoot(2, t); gfx::read_pixels(t)
+}
+fn foliage_checks() bool {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 1.5, 1.5, 1.5 }, horizon: float3 { 1.0, 1.0, 1.0 }, ground: float3 { 0.2, 0.2, 0.2 }, ambient: 0.05, draw: false };
+	s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(linalg::v3(-0.05, 1.0, 0.03)); s3d::sun.shadows = true; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::wet = 0.0; s3d::snow = 0.0; s3d::puddles = 0.0; s3d::fx_dt = 0.0;
+	let _ = s3d::add(shapes::plane(0.5, fo_leaf(0, 0.0))); s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	let below = float3 { 0.0, -2.0, 0.0 }; let zup = float3 { 0.0, 0.0, 1.0 };
+	let p0 = fo_shot(t, 0, 0.0, false, below, zup); let p5 = fo_shot(t, 5, 0.0, false, below, zup);
+	let r0, g0, b0 = fo_box(p0[..], 224, 224, 288, 288); let r5, g5, b5 = fo_box(p5[..], 224, 224, 288, 288);
+	let l1 = g5 >= 3.0 * max(g0, 1.0) && g5 > r5 && r5 > b5;
+	print("gpu: foliage FL1 leaf lit from behind, seen from its dark side: green ", r3(g0), " plain, ", r3(g5), " as foliage (bar >= 3 times plain), red ", r3(r5), ", blue ", r3(b5), " (bar green > red > blue)", hr_pass(l1));
+	let _ = codec_png::write(path(OUT_DIR[..], "foliage_back.png")[..], 512, 512, 4, p5[..]);
+	let q0 = fo_shot(t, 0, 0.0, false, float3 { 0.0, 2.0, 0.0 }, zup); let q5 = fo_shot(t, 5, 0.0, false, float3 { 0.0, 2.0, 0.0 }, zup);
+	let d2 = pd_diff(q0[..], q5[..]);
+	let l2 = d2 <= 1.0;
+	print("gpu: foliage FL2 the same leaf seen from its lit side: mean change ", r3(d2), " levels against plain (bar <= 1)", hr_pass(l2));
+	let ps = fo_shot(t, 5, 0.0, false, float3 { 0.0, -1.0, 1.732 }, float3 { 0.0, 1.0, 0.0 });
+	let rs, gs, bs = fo_box(ps[..], 224, 224, 288, 288);
+	let l3 = g5 >= 1.5 * gs && gs > g0;
+	print("gpu: foliage FL3 light through the leaf: green ", r3(g5), " looking toward the sun, ", r3(gs), " from 60 degrees off (bar >= 1.5 times, and above plain ", r3(g0), ")", hr_pass(l3));
+	s3d::sky.ambient = 1.0; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	let u0 = fo_shot(t, 0, 0.0, false, below, zup); let u5 = fo_shot(t, 5, 0.0, false, below, zup);
+	let ru0, gu0, bu0 = fo_box(u0[..], 224, 224, 288, 288); let ru5, gu5, bu5 = fo_box(u5[..], 224, 224, 288, 288);
+	let l4 = gu5 >= 1.5 * gu0;
+	print("gpu: foliage FL4 sky light only, leaf seen from below: green ", r3(gu0), " plain, ", r3(gu5), " as foliage (bar >= 1.5 times)", hr_pass(l4));
+	let top = float3 { 0.0, 3.0, 0.0 }; let zdn = float3 { 0.0, 0.0, -1.0 };
+	let a0 = fo_shot(t, 5, 0.0, true, top, zdn);
+	s3d::look.ssao = true;
+	let a1 = fo_shot(t, 5, 0.0, true, top, zdn); let a2 = fo_shot(t, 5, 1.0, true, top, zdn); let a3 = fo_shot(t, 5, 0.5, true, top, zdn);
+	s3d::look.ssao = false;
+	let ra, ga, ba = fo_box(a0[..], 321, 196, 360, 316); let rb, gb, bb = fo_box(a1[..], 321, 196, 360, 316); let rc, gc, bc = fo_box(a2[..], 321, 196, 360, 316); let rd, gd, bd = fo_box(a3[..], 321, 196, 360, 316);
+	let l5 = ga - gb >= 3.0 && abs(ga - gc) <= 1.0 && gd > gb && gd < gc;
+	print("gpu: foliage FL5 leaf beside a wall, screen occlusion: green ", r3(ga), " with occlusion off, ", r3(gb), " with it on (bar >= 3 lower), ", r3(gd), " at lift 0.5 (bar between), ", r3(gc), " at lift 1 (bar within 1 of off)", hr_pass(l5));
+	gfx::release(t);
+	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
+	l1 && l2 && l3 && l4 && l5
+}
+fn ck_tex() int {
+	var px byte[>..] = [];
+	px.resize(512 * 512 * 4, 255);
+	for i in 512 * 512 { px[i * 4 + 3] = 0; }
+	var s = 7;
+	for k in 2600 { s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let x = (s >> 8) % 512; s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let y = (s >> 8) % 500; for j in 12 { px[((y + j) * 512 + x) * 4 + 3] = 255; } }
+	gltf::add_texture_rgba(px[..], 512, 512, 33071)
+}
+fn ck_shot(t gfx::Texture, keep bool, mask bool, dist f32) real {
+	reset_scene();
+	s3d::cut_keep = keep;
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0);
+	m.unlit = true;
+	m.base_tex.texture = ck_tex();
+	if mask { m.alpha_mode = gltf::ALPHA_MASK; m.alpha_cutoff = 0.5; }
+	s3d::place(s3d::add(shapes::plane(1.0, m)), gfx::mat4_identity);
+	pd_cam(float3 { 0.0, dist, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	shoot(2, t);
+	let px = gfx::read_pixels(t);
+	var n = 0;
+	for i in px.len / 4 { if px[i * 4 + 1] > 60 { n += 1; } }
+	n as real
+}
+fn cutout_checks() bool {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 0.0, 0.0, 0.0 }, horizon: float3 { 0.0, 0.0, 0.0 }, ground: float3 { 0.0, 0.0, 0.0 }, ambient: 0.0, draw: false };
+	s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::temporal = 0; s3d::alpha_to_coverage = false;
+	s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	let nf = ck_shot(t, true, false, 1.5);
+	let n1 = ck_shot(t, true, true, 1.5);
+	let n0 = ck_shot(t, false, true, 1.5);
+	let ff = ck_shot(t, true, false, 12.0);
+	let f1 = ck_shot(t, true, true, 12.0);
+	let f0 = ck_shot(t, false, true, 12.0);
+	let near = n1 / max(nf, 1.0); let far = f1 / max(ff, 1.0); let off = f0 / max(ff, 1.0);
+	let a = near > 0.03 && abs(far - near) <= 0.25 * near && off < 0.5 * near;
+	print("gpu: cutout CK1 thin cut-out pattern: share covered ", r3(near), " up close, ", r3(far), " at one eighth the size (bar within 25% of close), ", r3(off), " with plain mips (control, under half of close)", hr_pass(a));
+	let b = n1 == n0;
+	print("gpu: cutout CK2 close view unchanged: ", n1, " pixels covered with coverage keeping, ", n0, " without (bar equal)", hr_pass(b));
+	s3d::cut_keep = true; s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	a && b
+}
+fn th_shot(t gfx::Texture, mask bool, thin f32, dist f32) real, int {
+	s3d::meshlet_thin = thin;
+	reset_scene();
+	var m = shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0);
+	m.unlit = true;
+	m.double_sided = true;
+	if mask { m.alpha_mode = gltf::ALPHA_MASK; m.alpha_cutoff = 0.5; }
+	let vfirst = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifirst = gltf::indices.len;
+	var s = 7;
+	for k in 20000 {
+		s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let x = ((s >> 8) % 10000) as real / 1000.0 - 5.0;
+		s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let z = ((s >> 8) % 10000) as real / 1000.0 - 5.0;
+		s = (s * 1103515245 + 12345) & 0x7FFFFFFF; let a = ((s >> 8) % 6283) as real / 1000.0;
+		let ux = cos(a) * 0.05; let uz = sin(a) * 0.05; let wx = -sin(a) * 0.01; let wz = cos(a) * 0.01;
+		let b = (gltf::verts.len / gltf::VERTEX_FLOATS - vfirst) as u32;
+		for c in 4 { let su = if c == 0 || c == 3 { -1.0 } else { 1.0 }; let sw = if c < 2 { -1.0 } else { 1.0 }; shapes::vertex(linalg::v3(linalg::f(x + su * ux + sw * wx), 0.0, linalg::f(z + su * uz + sw * wz)), linalg::v3(0.0, 1.0, 0.0), 0.0, 0.0, float4 { 1.0, 0.0, 0.0, 1.0 }); }
+		gltf::indices.append([b, b + 1, b + 2, b, b + 2, b + 3]);
+	}
+	s3d::place(s3d::add(shapes::finish(vfirst, ifirst, linalg::v3(-5.1, 0.0, -5.1), linalg::v3(5.1, 0.0, 5.1), m)), gfx::mat4_identity);
+	pd_cam(float3 { 0.0, dist, 0.0 }, float3 { 0.0, 0.0, 0.0 }, float3 { 0.0, 0.0, -1.0 });
+	shoot(3, t);
+	let px = gfx::read_pixels(t);
+	var n = 0;
+	for i in px.len / 4 { if px[i * 4 + 1] > 60 { n += 1; } }
+	let cam, all, lost = s3d::meshlet_stats();
+	return n as real, cam;
+}
+fn thin_checks() bool {
+	reset_scene();
+	s3d::sky = s3d::Sky { zenith: float3 { 0.0, 0.0, 0.0 }, horizon: float3 { 0.0, 0.0, 0.0 }, ground: float3 { 0.0, 0.0, 0.0 }, ambient: 0.0, draw: false };
+	s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.ssao = false; s3d::look.bloom = 0.0; s3d::temporal = 0; s3d::alpha_to_coverage = false;
+	s3d::meshlets = true; s3d::meshlet_px = 1.0;
+	s3d::init(512, 512);
+	let t = gfx::render_target(512, 512, gfx::RGBA8);
+	let p0, t0 = th_shot(t, true, 0.0, 60.0);
+	let p1, t1 = th_shot(t, true, 1.0, 60.0);
+	let a = t0 == 40000 && t1 * 4 <= t0 && abs(p1 - p0) <= 0.15 * p0 && p0 > 500.0;
+	print("gpu: thin TH1 20,000 small cards seen from 60 m: ", t0, " triangles and ", p0, " pixels covered without thinning, ", t1, " triangles and ", p1, " pixels with it (bar at most a quarter of the triangles, pixels within 15%)", hr_pass(a));
+	let q0, u0 = th_shot(t, true, 0.0, 4.0);
+	let q1, u1 = th_shot(t, true, 1.0, 4.0);
+	let b = u0 == u1 && q0 == q1 && u0 > 0;
+	print("gpu: thin TH2 the same cards from 4 m: ", u0, " triangles and ", q0, " pixels without thinning, ", u1, " and ", q1, " with it (bar equal)", hr_pass(b));
+	let r1, v1 = th_shot(t, false, 1.0, 60.0);
+	let c = v1 == 40000;
+	print("gpu: thin TH3 solid (not cut-out) cards from 60 m: ", v1, " triangles drawn (bar 40000, solid meshes are never thinned)", hr_pass(c));
+	s3d::meshlets = false; s3d::meshlet_thin = 1.0; s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	a && b && c
 }
 fn weather_checks() bool {
 	half_table();
@@ -5139,8 +5669,8 @@ fn rr_mean(px const byte[:], mask const byte[:]) real {
 	for i in mask.len { if mask[i] != 0 { s += rr_lum(px, i); n++; } }
 	if n > 0 { s / n as real } else { 0.0 }
 }
-fn rr_time(on bool) real {
-	s3d::rt_reflect = on;
+fn rr_time(on bool) real { s3d::rt_reflect = on; frame_ms() }
+fn frame_ms() real {
 	var best = 1e9;
 	for rep in 3 {
 		shoot(10, IN_OUT);
@@ -5354,6 +5884,314 @@ fn rc_int(px real, py real, pz real, vx real, vy real, vz real, l s3d::Light, ro
 		}
 	}
 	return s, sd;
+}
+let EY_W = 256;
+fn ey_render(kind int, cw f32) byte[>..] {
+	reset_scene();
+	var m = shapes::material(linalg::v3(0.02, 0.02, 0.02), 0.0, 1.0);
+	m.shading = 2; m.shade_a = float4 { 0.0, 0.0, 1.0, 1.0 }; m.shade_b = float4 { 0.0, 0.0, cw, 0.035 }; m.shade_c = float4 { 0.0001, 0.0, 0.55, 0.35 };
+	s3d::place(s3d::add(shapes::sphere(0.012, 96, 48, m)), gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.0, 0.08 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.35, near: 0.01, far: 10.0 };
+	dark_scene();
+	s3d::lights.clear();
+	let p = linalg::unit3(float3 { 0.4, 0.4, 0.8 });
+	if kind == 0 { s3d::add_rect(p, float3 { 0.0, 0.0, 0.0 }, linalg::unit3(linalg::cross3(float3 { 0.0, 1.0, 0.0 }, p)), 0.3, 0.3, float3 { 1.8, 1.8, 1.8 }, 100.0, false); } else { s3d::lights.push(s3d::Light { pos: p, range: 100.0, rgb: float3 { 1.4137167, 1.4137167, 1.4137167 }, kind: 0, radius: 0.15, .. }); }
+	s3d::init(EY_W, EY_W);
+	let out = gfx::render_target(EY_W, EY_W, gfx::RGBA8);
+	s3d::render(out);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	gfx::release(out);
+	px
+}
+fn ey_stat(px const byte[:]) int, real {
+	var n = 0;
+	var mx = 0.0;
+	for q in EY_W * EY_W {
+		let l = 0.2126 * gi_half(px, 8, q, 0) as real + 0.7152 * gi_half(px, 8, q, 1) as real + 0.0722 * gi_half(px, 8, q, 2) as real;
+		if l >= 0.1 { n += 1; }
+		mx = max(mx, l);
+	}
+	return n, mx;
+}
+fn eye_checks() bool {
+	half_table();
+	if !gz_load_lut() { print("gpu: eye FAILED: GFX_MS_LUT unset or not a 32x32 ms_lut.glsl (tools/hc/gfxtest.sh sets it)"); return false; }
+	var ok = true;
+	for k in 2 {
+		let n1, m1 = ey_stat(ey_render(k, 1.0)[..]);
+		let n0, m0 = ey_stat(ey_render(k, 0.0)[..]);
+		let r = m1 / (0.02 * 20.0);
+		let pass = n1 >= 20 && n0 < 5 && r >= 0.5 && r <= 2.5;
+		print("gpu: eye EY", k + 1, if k == 0 { " rect" } else { " sphere" }, " lamp: catchlight pixels ", n1, " (bar >= 20), control cornea off ", n0, " (bar < 5, its peak ", r3(m0 / (0.02 * 20.0)), "); EY3 peak ", r3(r), " of 0.02 x radiance (bar 0.5 to 2.5)", if pass { " PASS" } else { " FAIL" });
+		ok = ok && pass;
+	}
+	s3d::lights.clear();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	ok
+}
+fn dn_cap(cx real, base int) {
+	for i in 25 {
+		for j in 48 {
+			let th = (i as real) / 24.0 * 1.5707963267948966;
+			let ph = (j as real) / 48.0 * 6.283185307179586;
+			let r = 0.012 * sin(th);
+			let dish = if r < 0.0045 { 0.001 * (1.0 - r * r / 0.00002025) } else { 0.0 };
+			let sl = 0.002 * r / 0.00002025 - r / sqrt(0.000144 - r * r);
+			let nx = if r < 0.0045 { -sl * cos(ph) } else { sin(th) * cos(ph) };
+			let ny = if r < 0.0045 { -sl * sin(ph) } else { sin(th) * sin(ph) };
+			let nz = if r < 0.0045 { 1.0 } else { cos(th) };
+			let nl = sqrt(nx * nx + ny * ny + nz * nz);
+			let o = gltf::verts.len;
+			for k in gltf::VERTEX_FLOATS { gltf::verts.push(0.0); }
+			gltf::verts[o + gltf::AT_POS] = (cx + r * cos(ph)) as f32;
+			gltf::verts[o + gltf::AT_POS + 1] = (1.5 + r * sin(ph)) as f32;
+			gltf::verts[o + gltf::AT_POS + 2] = (0.1 + 0.012 * cos(th) - dish) as f32;
+			gltf::verts[o + gltf::AT_NRM] = (nx / nl) as f32;
+			gltf::verts[o + gltf::AT_NRM + 1] = (ny / nl) as f32;
+			gltf::verts[o + gltf::AT_NRM + 2] = (nz / nl) as f32;
+		}
+	}
+	for i in 24 { for j in 48 { let a = base + i * 48 + j; let b = base + i * 48 + (j + 1) % 48; gltf::indices.push(a as u32); gltf::indices.push((a + 48) as u32); gltf::indices.push((b + 48) as u32); gltf::indices.push(a as u32); gltf::indices.push((b + 48) as u32); gltf::indices.push(b as u32); } }
+}
+fn dn_asset(two bool) int {
+	let vf = gltf::verts.len / gltf::VERTEX_FLOATS;
+	let ifs = gltf::indices.len;
+	dn_cap(0.031, 0);
+	if two { dn_cap(-0.031, 1200); }
+	let nm = gltf::names.len;
+	gltf::names.append("eyes");
+	gltf::prims.push(gltf::Primitive { vfirst: vf, vcount: gltf::verts.len / gltf::VERTEX_FLOATS - vf, ifirst: ifs, icount: gltf::indices.len - ifs, material: -1, mfirst: 0, targets: 0, lo: float3 { -0.05, 1.4, 0.0 }, hi: float3 { 0.05, 1.6, 0.2 }, tangents: false, skinned: false });
+	gltf::meshes.push(gltf::Mesh { prims: gltf::Span { gltf::prims.len - 1, 1 }, weights: gltf::Span { 0, 0 }, name: gltf::Span { nm, 4 } });
+	let z = gltf::Span { 0, 0 };
+	gltf::assets.push(gltf::Asset { meshes: gltf::Span { gltf::meshes.len - 1, 1 }, nodes: z, materials: z, textures: z, images: z, skins: z, animations: z, roots: z, ok: true });
+	gltf::assets.len - 1
+}
+fn dn_err(a int, mid bool) real {
+	let pr = gltf::prims[gltf::meshes[gltf::assets[a].meshes.first].prims.first];
+	var w = 0.0;
+	for v in pr.vcount {
+		let o = (pr.vfirst + v) * gltf::VERTEX_FLOATS;
+		let x = gltf::verts[o] as real;
+		let dx = x - (if mid { 0.0 } else if x > 0.0 { 0.031 } else { -0.031 });
+		let dy = gltf::verts[o + 1] as real - 1.5;
+		let dz = gltf::verts[o + 2] as real - 0.1;
+		let c = (dx * gltf::verts[o + gltf::AT_NRM] as real + dy * gltf::verts[o + gltf::AT_NRM + 1] as real + dz * gltf::verts[o + gltf::AT_NRM + 2] as real) / sqrt(dx * dx + dy * dy + dz * dz);
+		w = max(w, acos(min(max(c, -1.0), 1.0)) * 57.29577951308232);
+	}
+	w
+}
+fn dome_checks() bool {
+	let a1 = dn_asset(false);
+	let e0 = dn_err(a1, false);
+	let f1 = gltf::dome_normals(a1, "eyes");
+	let e1 = dn_err(a1, false);
+	let a2 = dn_asset(true);
+	let f2 = gltf::dome_normals(a2, "eyes");
+	let e2 = dn_err(a2, false);
+	let m2 = dn_err(a2, true);
+	let p1 = e1 < 2.0 && e0 > 10.0;
+	let p2 = e2 < 2.0 && m2 > 10.0;
+	print("gpu: dome DN1 one dished eye: largest error ", r3(e1), " degrees after (bar < 2), ", r3(e0), " before (control, bar > 10), pieces fit ", f1, if p1 { " PASS" } else { " FAIL" });
+	print("gpu: dome DN2 two eyes in one mesh: largest error ", r3(e2), " degrees (bar < 2), ", r3(m2), " from the midpoint (control, bar > 10), pieces fit ", f2, if p2 { " PASS" } else { " FAIL" });
+	p1 && p2
+}
+fn up_roots(rp float3[>..]&, rn float3[>..]&) {
+	var sd = 12345;
+	while rp.len < 2000 {
+		sd = (sd * 1103515245 + 12345) & 2147483647;
+		let x = ((sd >> 7) as f32) / 16777216.0 * 2.0 - 1.0;
+		sd = (sd * 1103515245 + 12345) & 2147483647;
+		let y = ((sd >> 7) as f32) / 16777216.0 * 2.0 - 1.0;
+		sd = (sd * 1103515245 + 12345) & 2147483647;
+		let z = ((sd >> 7) as f32) / 16777216.0 * 2.0 - 1.0;
+		let l = linalg::length3(float3 { x, y, z });
+		if l > 0.2 && l <= 1.0 && y / l > 0.15 && z / l > -0.4 { let d = float3 { x / l, y / l, z / l }; rp.push(float3 { 0.0, 1.6, 0.0 } + d * 0.09); rn.push(d); }
+	}
+}
+fn up_groom(on bool, g float3, tail f32, curl f32, rise f32, fan f32, sweep f32, inner f32) byte[>..], float3[>..] {
+	var rp float3[>..];
+	var rn float3[>..];
+	up_roots(rp, rn);
+	let st = hair::Style { steps: 24, length: 0.3, curl: curl, turns: if curl > 0.0 { 2.0 } else { 3.0 }, head: if on { float4 { 0.0, 1.6, 0.0, 0.09 } } else { float4 { 0.0, 0.0, 0.0, 0.0 } }, gather: g, bun: 0.03, tail: tail, rise: rise, fan: fan, sweep: sweep, inner: inner, .. };
+	var data byte[>..];
+	hair::groom(rp[..], rn[..], st, data);
+	return data, rp;
+}
+fn updo_checks() bool {
+	let g = float3 { 0.0, 1.6, 0.0 } + linalg::unit3(float3 { 0.0, 0.5, -0.87 }) * 0.095;
+	let c = float3 { 0.0, 1.6, 0.0 };
+	var share = [0.0, 0.0, 0.0, 0.0];
+	for on in 2 {
+		let d, rp = up_groom(on == 1, g, 0.0, 0.0, 0.0, 0.12, 0.2, 1.0);
+		var near = 0;
+		var hug = 0;
+		var line = 0;
+		for i in 2000 {
+			if linalg::length3(hair::point_at(d[..], i * 24 + 23) - g) <= 0.045 { near += 1; }
+			for s in 16 {
+				let e = linalg::length3(hair::point_at(d[..], i * 24 + s) - c) - 0.09;
+				if e >= -0.001 && e <= 0.015 { hug += 1; }
+				let tl = (s as f32) / 15.0;
+				let el = linalg::length3(rp[i] * (1.0 - tl) + g * tl - c) - 0.09;
+				if el >= -0.001 && el <= 0.015 { line += 1; }
+			}
+		}
+		share[on * 2] = (near as real) / 2000.0;
+		share[on * 2 + 1] = if on == 1 { (hug as real) / 32000.0 } else { (line as real) / 32000.0 };
+	}
+	let p1 = share[2] >= 0.95 && share[0] < 0.2;
+	let p2 = share[3] >= 0.95 && share[1] < 0.5;
+	print("gpu: updo UP1 strands reach the bun: ", r3(share[2]), " (bar >= 0.95), control no head ", r3(share[0]), " (bar < 0.2)", if p1 { " PASS" } else { " FAIL" });
+	print("gpu: updo UP2 strands hug the head: ", r3(share[3]), " (bar >= 0.95), control straight lines ", r3(share[1]), " (bar < 0.5)", if p2 { " PASS" } else { " FAIL" });
+	p1 && p2
+}
+fn tail_checks() bool {
+	let c = float3 { 0.0, 1.6, 0.0 };
+	let gs = c + linalg::unit3(float3 { 1.0, 0.6, -0.3 }) * 0.12;
+	let gc = c + float3 { 0.0, 0.12, 0.0 };
+	var hang = [0, 0];
+	var out = [0, 0];
+	var tie = [0, 0];
+	for v in 3 {
+		let d, _ = up_groom(true, if v == 2 { gc } else { gs }, if v == 1 { 0.0 } else { 0.3 }, 0.0, 0.0, 0.12, 0.2, 1.0);
+		let gp = if v == 2 { gc } else { gs };
+		for i in 2000 {
+			if v < 2 && hair::point_at(d[..], i * 24 + 23).y <= gp.y - 0.24 { hang[v] += 1; }
+			if v == 0 && linalg::length3(hair::point_at(d[..], i * 24 + 8) - gp) <= 0.045 { tie[0] += 1; }
+			if v == 0 && linalg::length3(hair::point_at(d[..], i * 24 + 23) - gp) <= 0.045 { tie[1] += 1; }
+			if v != 1 { for s in 16 { if linalg::length3(hair::point_at(d[..], i * 24 + 8 + s) - c) > 0.09 { out[v / 2] += 1; } } }
+		}
+	}
+	let h1 = (hang[0] as real) / 2000.0;
+	let h0 = (hang[1] as real) / 2000.0;
+	let o1 = (out[0] as real) / 32000.0;
+	let o0 = (out[1] as real) / 32000.0;
+	let t1 = (tie[0] as real) / 2000.0;
+	let t0 = (tie[1] as real) / 2000.0;
+	let p1 = h1 >= 0.99 && h0 < 0.2;
+	let p2 = o1 >= 0.99 && o0 < 0.99;
+	let p3 = t1 >= 0.99 && t0 < 0.2;
+	print("gpu: tails TT1 tails hang their length: ", r3(h1), " (bar >= 0.99), control bun ", r3(h0), " (bar < 0.2)", if p1 { " PASS" } else { " FAIL" });
+	print("gpu: tails TT2 tails clear the head: ", r3(o1), " (bar >= 0.99), control gather on the crown ", r3(o0), " (bar < 0.99)", if p2 { " PASS" } else { " FAIL" });
+	print("gpu: tails TT3 tied at the gather: ", r3(t1), " (bar >= 0.99), control the tips ", r3(t0), " (bar < 0.2)", if p3 { " PASS" } else { " FAIL" });
+	let dw, _ = up_groom(true, gs, 0.3, 0.02, 0.0, 0.12, 0.2, 1.0);
+	var tp float3[>..];
+	var ep float3[>..];
+	for i in 2000 { tp.push(hair::point_at(dw[..], i * 24 + 8)); ep.push(hair::point_at(dw[..], i * 24 + 23)); }
+	var wn = 0;
+	var wr = 0;
+	for i in 2000 {
+		var best = 0;
+		var bd f32 = 1e9;
+		for j in 2000 {
+			let e = linalg::length3(tp[j] - tp[i]);
+			if j != i && e < bd { bd = e; best = j; }
+		}
+		if linalg::length3(ep[best] - ep[i]) <= 0.005 { wn += 1; }
+		if linalg::length3(ep[(i + 1) % 2000] - ep[i]) <= 0.005 { wr += 1; }
+	}
+	let w1 = (wn as real) / 2000.0;
+	let w0 = (wr as real) / 2000.0;
+	let p4 = w1 >= 0.7 && w0 < 0.2;
+	print("gpu: tails TT4 neighbors wave together: ", r3(w1), " (bar >= 0.7), control random partner ", r3(w0), " (bar < 0.2)", if p4 { " PASS" } else { " FAIL" });
+	p1 && p2 && p3 && p4
+}
+fn rise_checks() bool {
+	let gs = float3 { 0.0, 1.6, 0.0 } + linalg::unit3(float3 { 1.0, 0.6, -0.3 }) * 0.12;
+	var up = [0, 0];
+	for v in 2 {
+		let d, _ = up_groom(true, gs, 0.3, 0.0, if v == 0 { 0.03 } else { 0.0 }, 0.12, 0.2, 1.0);
+		for i in 2000 {
+			var hi = false;
+			for s in 16 { if hair::point_at(d[..], i * 24 + 8 + s).y >= gs.y + 0.015 { hi = true; } }
+			if hi { up[v] += 1; }
+		}
+	}
+	var sp = [0.0, 0.0, 0.0, 0.0];
+	for v in 2 {
+		let d, _ = up_groom(true, gs, 0.3, 0.0, 0.0, if v == 0 { 0.3 } else { 0.12 }, 0.2, 1.0);
+		for e in 2 {
+			let at = if e == 0 { 23 } else { 8 };
+			var m = float3 { 0.0, 0.0, 0.0 };
+			for i in 2000 { m = m + hair::point_at(d[..], i * 24 + at); }
+			m = m * (1.0 / 2000.0);
+			var s = 0.0;
+			for i in 2000 { s += linalg::length3(hair::point_at(d[..], i * 24 + at) - m) as real; }
+			sp[v * 2 + e] = s / 2000.0;
+		}
+	}
+	let u1 = (up[0] as real) / 2000.0;
+	let u0 = (up[1] as real) / 2000.0;
+	let f1 = sp[0] / sp[2];
+	let f0 = sp[1] / sp[3];
+	let c = float3 { 0.0, 1.6, 0.0 };
+	let gh = linalg::unit3(float3 { gs.x - c.x, 0.0, gs.z - c.z });
+	var sw = [0.0, 0.0, 0.0, 0.0];
+	var rc = [0.0, 0.0, 0.0, 0.0];
+	for v in 2 {
+		let d, _ = up_groom(true, gs, 0.3, 0.0, 0.0, 0.12, if v == 0 { 0.4 } else { 0.2 }, 1.0);
+		let e, _ = up_groom(true, gs, 0.3, 0.0, 0.0, 0.3, 0.0, if v == 0 { 0.2 } else { 1.0 });
+		for i in 2000 {
+			let q = hair::point_at(d[..], i * 24 + 23);
+			let q0 = hair::point_at(d[..], i * 24 + 8);
+			sw[v * 2] += linalg::length3(float3 { q.x - c.x, 0.0, q.z - c.z }) as real;
+			sw[v * 2 + 1] += linalg::length3(float3 { q0.x - c.x, 0.0, q0.z - c.z }) as real;
+			let o = linalg::dot3(hair::point_at(e[..], i * 24 + 23) - gs, gh) as real;
+			rc[v * 2] += max(0.0 - o, 0.0);
+			rc[v * 2 + 1] += max(o, 0.0);
+		}
+	}
+	let s1 = sw[0] / sw[2];
+	let s0 = sw[1] / sw[3];
+	let n1 = rc[0] / rc[2];
+	let n0 = rc[1] / rc[3];
+	let p5 = u1 >= 0.9 && u0 < 0.1;
+	let p6 = f1 >= 1.8 && f0 < 1.3;
+	let p7 = s1 >= 1.25 && s0 < 1.15;
+	let p8 = n1 <= 0.3 && n0 > 0.3;
+	print("gpu: rise TT7 sweep moves tails out: ", r3(s1), " (bar >= 1.25), control at the tie ", r3(s0), " (bar < 1.15)", if p7 { " PASS" } else { " FAIL" });
+	print("gpu: rise TT8 inner pulls in the head side: ", r3(n1), " (bar <= 0.3), control the outer side ", r3(n0), " (bar > 0.3)", if p8 { " PASS" } else { " FAIL" });
+	print("gpu: rise TT5 tails spring up: ", r3(u1), " (bar >= 0.9), control rise 0 ", r3(u0), " (bar < 0.1)", if p5 { " PASS" } else { " FAIL" });
+	print("gpu: rise TT6 fan widens tails: ", r3(f1), " (bar >= 1.8), control at the tie ", r3(f0), " (bar < 1.3)", if p6 { " PASS" } else { " FAIL" });
+	p5 && p6 && p7 && p8
+}
+fn drape_checks() bool {
+	let c = float3 { 0.0, 1.6, 0.0 };
+	var rp float3[>..];
+	var rn float3[>..];
+	up_roots(rp, rn);
+	var v = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+	for m in 4 {
+		let st = hair::Style { steps: 24, length: 0.25, droop: if m == 3 { 0.0 } else { 3.0 }, head: if m == 1 { float4 { 0.0, 0.0, 0.0, 0.0 } } else { float4 { 0.0, 1.6, 0.0, 0.09 } }, drape: if m == 2 { 0.03 } else { 0.004 }, .. };
+		var d byte[>..];
+		hair::groom(rp[..], rn[..], st, d);
+		var out = 0;
+		var up = 0;
+		var near = 0;
+		var fall = 0;
+		for i in 2000 {
+			for s in 24 {
+				let p = hair::point_at(d[..], i * 24 + s);
+				let e = linalg::length3(p - c) - 0.09;
+				if e >= -0.001 { out += 1; }
+				if p.y > 1.6 { up += 1; if e >= -0.001 && e <= 0.015 { near += 1; } }
+			}
+			if hair::point_at(d[..], i * 24 + 23).y < 1.6 { fall += 1; }
+		}
+		if m == 0 { v[0] = (out as real) / 48000.0; }
+		if m != 1 && m != 3 { v[2 + m / 2] = (near as real) / max(up as real, 1.0); }
+		if m == 0 || m == 3 { v[4 + m / 3] = (fall as real) / 2000.0; }
+	}
+	var lo = 0;
+	for i in 2000 { for s in 24 { if linalg::length3(rp[i] - float3 { 0.0, 0.25 * (s as f32) / 23.0, 0.0 } - c) >= 0.089 { lo += 1; } } }
+	v[1] = (lo as real) / 48000.0;
+	let p1 = v[0] >= 0.99 && v[1] < 0.9;
+	let p2 = v[2] >= 0.95 && v[3] < 0.2;
+	let p3 = v[4] >= 0.95 && v[5] < 0.2;
+	print("gpu: drape DR1 strands stay outside the head: ", r3(v[0]), " (bar >= 0.99), control straight down ", r3(v[1]), " (bar < 0.9)", if p1 { " PASS" } else { " FAIL" });
+	print("gpu: drape DR2 strands lie on the head: ", r3(v[2]), " (bar >= 0.95), control 3 cm gap ", r3(v[3]), " (bar < 0.2)", if p2 { " PASS" } else { " FAIL" });
+	print("gpu: drape DR3 strands fall: ", r3(v[4]), " (bar >= 0.95), control no gravity ", r3(v[5]), " (bar < 0.2)", if p3 { " PASS" } else { " FAIL" });
+	p1 && p2 && p3
 }
 fn rect_checks() bool {
 	half_table();
@@ -5881,6 +6719,27 @@ fn meshlet_checks() bool {
 	let n9 = t_on * 2.0 <= t_off && lost9 == 0 && cam9 > 0;
 	print("gpu: meshlet N9 64 balls, 16.7 M triangles: ", r3(t_off), " ms off, ", r3(t_on), " ms on = ", r3(t_on / t_off), " (bar <= 0.5); camera list ", cam9, " triangles, shadow list ", all9, ", draws dropped by the budget ", lost9, "; frames mean ", r3(mean9), " / 255 apart, ", r3(frac9 * 1000.0), " per 1000 pixels more than 8 / 255", if n9 { " PASS" } else { " FAIL" });
 	good = good && n9;
+	let _ = ml_scene(true, true, float3 { 0.0, 1.5, 0.0 }, sun);
+	ml_eye(float3 { 0.0, 2.0, 5.0 }, float3 { 0.0, 1.0, 0.0 });
+	let _ = ml_frame(true, 1.0);
+	let cams, alls, losts = s3d::meshlet_stats();
+	gltf::materials[gltf::materials.len - 1].no_shadow = true;
+	let _ = ml_frame(true, 1.0);
+	let camq, allq, lostq = s3d::meshlet_stats();
+	gltf::materials[gltf::materials.len - 1].no_shadow = false;
+	let n10 = alls > 0 && allq == 0 && camq == cams && cams > 0 && losts == 0 && lostq == 0;
+	print("gpu: meshlet N10 no_shadow material: shadow list ", alls, " triangles before, ", allq, " after (bar 0), camera list ", cams, " and ", camq, " (bar equal)", if n10 { " PASS" } else { " FAIL" });
+	good = good && n10;
+	s3d::meshlet_grow = false; s3d::meshlet_budget = 3000;
+	let _ = ml_frame(true, 1.0);
+	let camt, allt, lostt = s3d::meshlet_stats();
+	s3d::meshlet_grow = true; s3d::meshlet_budget = 4000;
+	let _ = ml_frame(true, 1.0);
+	let camg, allg, lostg = s3d::meshlet_stats();
+	let n11 = lostt > 0 && lostg == 0 && camg == cams && allg == alls && s3d::meshlet_budget > 4000;
+	print("gpu: meshlet N11 budget 3000 with meshlet_grow off: ", lostt, " lists dropped (bar > 0); budget 4000 with it on, third frame: ", lostg, " dropped (bar 0), budget now ", s3d::meshlet_budget, ", lists ", camg, " and ", allg, " triangles (bar ", cams, " and ", alls, ")", if n11 { " PASS" } else { " FAIL" });
+	good = good && n11;
+	s3d::meshlet_budget = 8000000;
 	s3d::meshlets = false; s3d::meshlet_px = 1.0; s3d::meshlet_cone = true; s3d::meshlet_cpu = false;
 	gfx::release(IN_OUT);
 	reset_scene();
@@ -5891,26 +6750,2289 @@ fn meshlet_checks() bool {
 const SUB_BAR_MS = 500.0;
 var SUB_LOG byte[>..] = [];
 var SUB_AT = 0;
+var SK_EY = 0.3;
+var SK_EZ = 0.0;
+var SK_C = 1.0;
+var SK_S = 0.0;
+var SK_PS = 914.57;
+var SK_IMG real[>..] = [];
+var SK_FUZZ f32 = 0.0;
+fn sk_skin(base f32, rough f32, pores f32, fuzz f32) gltf::Material { var m = shapes::material(linalg::v3(base, base, base), 0.0, rough); m.shading = 1; m.shade_a = gltf::shade_preset(1, 0); m.shade_b = gltf::shade_preset(1, 1); m.shade_c = gltf::shade_preset(1, 2); m.shade_c.y = pores; m.shade_c.z = fuzz; m }
+fn sk_mat() gltf::Material { sk_skin(1.0, 1.0, 0.0, SK_FUZZ) }
+fn sk_cam(dist real, tilt real) {
+	SK_PS = 360.0 / tan(0.375);
+	SK_C = cos(tilt);
+	SK_S = sin(tilt);
+	SK_EY = dist * SK_C;
+	SK_EZ = dist * SK_S;
+	s3d::view = s3d::Camera { eye: float3 { 0.0, linalg::f(SK_EY), linalg::f(SK_EZ) }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.75, near: 0.02, far: 20.0 };
+}
+fn sk_sheet(dist real, tilt real, gain f32) {
+	reset_scene();
+	dark_scene();
+	let _ = s3d::add(shapes::plane(2.0, sk_mat()));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.0, 0.1, 0.0 }, range: 1.0, rgb: float3 { gain, gain, gain }, kind: 1, cone: linalg::f(atan2(0.0199, 0.1)), edge: linalg::f(1.0 - atan2(0.0195, 0.1) / atan2(0.0199, 0.1)), .. });
+	sk_cam(dist, tilt);
+}
+fn sk_un(px real, py real) real, real, real { let a = (px - 640.0) / SK_PS; let b = (360.0 - py) / SK_PS; let t = -SK_EY / (SK_S * b - SK_C); return t * a, SK_EZ - t * (SK_S + SK_C * b), t; }
+fn sk_pr(x real, z real) real, real { let vz = z - SK_EZ; let zc = SK_EY * SK_C - vz * SK_S; return 640.0 + SK_PS * x / zc, 360.0 + SK_PS * (SK_EY * SK_S + vz * SK_C) / zc; }
+fn sk_bil(x real, y real) real {
+	let x0 = floor(x - 0.5);
+	let y0 = floor(y - 0.5);
+	let ax = x - 0.5 - x0;
+	let ay = y - 0.5 - y0;
+	let xa = min(max(x0 as int, 0), 1279);
+	let xb = min(max(x0 as int + 1, 0), 1279);
+	let ya = min(max(y0 as int, 0), 719) * 1280;
+	let yb = min(max(y0 as int + 1, 0), 719) * 1280;
+	(SK_IMG[ya + xa] * (1.0 - ax) + SK_IMG[ya + xb] * ax) * (1.0 - ay) + (SK_IMG[yb + xa] * (1.0 - ax) + SK_IMG[yb + xb] * ax) * ay
+}
+fn sk_ref(px int, py int, dc real) real {
+	let x0, z0, t0 = sk_un(px as real + 0.5, py as real + 0.5);
+	var sw = 0.0;
+	var sv = 0.0;
+	for j in 240 {
+		let r = (j as real + 0.5) * dc / 8.0;
+		let w = exp(-r / dc) + exp(-r / (3.0 * dc));
+		let na = min(max((6.283185307179586 * r * SK_PS / t0 / 0.7) as int + 1, 8), 160);
+		var a = 0.0;
+		let cd = cos(6.283185307179586 / na as real);
+		let sd = sin(6.283185307179586 / na as real);
+		var cx = r * cos(j as real * 2.39996322972865332);
+		var cz = r * sin(j as real * 2.39996322972865332);
+		for k in na { let sx, sy = sk_pr(x0 + cx, z0 + cz); a += sk_bil(sx, sy); let nx = cx * cd - cz * sd; cz = cz * cd + cx * sd; cx = nx; }
+		sw += w;
+		sv += w * a / na as real;
+	}
+	sv / sw
+}
+fn sk_low(v real[>..]&, k int) real { min(v[k * 3], min(v[k * 3 + 1], v[k * 3 + 2])) }
+fn sk_x1(dist real, tilt real, sx int) bool {
+	sk_sheet(dist, tilt, 1.0);
+	shoot(2, IN_OUT);
+	let plain = gfx::read_pixels(s3d::sss_plain());
+	let scat = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = false;
+	shoot(2, IN_OUT);
+	let flat = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = true;
+	var px int[>..] = [];
+	var y = 0;
+	while y < 720 { var x = 0; while x < 1280 { let wx, wz, t = sk_un(x as real + 0.5, y as real + 0.5); if abs(sqrt(wx * wx + wz * wz) - 0.0197) <= 0.0084 { px.push(y * 1280 + x); } x += sx; } y += sx + 1; }
+	var top real[>..] = [];
+	var sum real[>..] = [];
+	top.resize(12, 0.0);
+	sum.resize(12, 0.0);
+	if SK_IMG.len == 0 { SK_IMG.resize(921600, 0.0); }
+	var pr = 0.0;
+	for c in 3 {
+		let d = if c == 0 { 0.0021 } else if c == 1 { 0.0008 } else { 0.00045 };
+		for i in 921600 { SK_IMG[i] = gi_half(plain[..], 8, i, c) as real; }
+		let pl = SK_IMG[461440];
+		pr = if c == 0 { pl } else { pr };
+		for i in px {
+			let ra = sk_ref(i % 1280, i / 1280, d);
+			let rb = sk_ref(i % 1280, i / 1280, 2.0 * d);
+			let s = gi_half(scat[..], 8, i, c) as real;
+			let e = [abs(s - ra), abs(SK_IMG[i] - ra), abs(s - rb), abs(gi_half(flat[..], 8, i, c) as real - ra)];
+			for k in 4 { top[k * 3 + c] = max(top[k * 3 + c], e[k] / pl); sum[k * 3 + c] += e[k] / pl / px.len as real; }
+		}
+	}
+	let ok = max(top[0], max(top[1], top[2])) <= 0.04 && max(sum[0], max(sum[1], sum[2])) <= 0.01 && sk_low(top, 1) > 0.04 && sk_low(sum, 1) > 0.01 && sk_low(top, 2) > 0.04 && sk_low(sum, 2) > 0.01 && (tilt == 0.0 || (sk_low(top, 3) > 0.04 && sk_low(sum, 3) > 0.01));
+	print("gpu: sss X1 ", r2(dist), " m, swung ", round(tilt * 180.0 / PI), " degrees, ", px.len, " pixels, plateau ", r4(pr), ": largest ", r4(top[0]), " ", r4(top[1]), " ", r4(top[2]), " (bar <= 0.04), mean ", r4(sum[0]), " ", r4(sum[1]), " ", r4(sum[2]), " (bar <= 0.01); controls, least channel, largest and mean: plain ", r4(sk_low(top, 1)), " ", r4(sk_low(sum, 1)), ", twice the distances ", r4(sk_low(top, 2)), " ", r4(sk_low(sum, 2)), ", depth off ", r4(sk_low(top, 3)), " ", r4(sk_low(sum, 3)), if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sk_sum(px const byte[:], c int) real { var s = 0.0; for y in 340 { for x in 340 { s += gi_half(px, 8, (190 + y) * 1280 + 470 + x, c) as real; } } s }
+fn sk_x26() bool {
+	sk_sheet(0.3, 0.0, 1.0);
+	shoot(2, IN_OUT);
+	let plain = gfx::read_pixels(s3d::sss_plain());
+	let scat = gfx::read_pixels(s3d::sss_target());
+	let on = gfx::read_pixels(s3d::hdr_target());
+	let shot = gfx::read_pixels(IN_OUT);
+	s3d::sss_on = false;
+	shoot(2, IN_OUT);
+	let off = gfx::read_pixels(s3d::hdr_target());
+	let bare = gfx::read_pixels(IN_OUT);
+	let _ = codec_png::write(path(OUT_DIR[..], "sss_sheet_on.png")[..], 1280, 720, 4, shot[..]) && codec_png::write(path(OUT_DIR[..], "sss_sheet_off.png")[..], 1280, 720, 4, bare[..]);
+	s3d::sss_on = true;
+	sk_sheet(0.3, 0.0, 0.95);
+	shoot(2, IN_OUT);
+	let dim = gfx::read_pixels(s3d::sss_target());
+	var rat real[>..] = [];
+	for c in 3 { let p = sk_sum(plain[..], c); rat.push(sk_sum(scat[..], c) / p); rat.push(sk_sum(dim[..], c) / p); }
+	let x2 = abs(rat[0] - 1.0) <= 0.01 && abs(rat[2] - 1.0) <= 0.01 && abs(rat[4] - 1.0) <= 0.01 && abs(rat[1] - 1.0) > 0.01 && abs(rat[3] - 1.0) > 0.01 && abs(rat[5] - 1.0) > 0.01;
+	print("gpu: sss X2 scattered sum over plain sum ", r4(rat[0]), " ", r4(rat[2]), " ", r4(rat[4]), " (bar within 0.01 of 1); control light 5% dimmer ", r4(rat[1]), " ", r4(rat[3]), " ", r4(rat[5]), if x2 { " PASS" } else { " FAIL" });
+	var x = 640;
+	while x < 1270 && gi_half(plain[..], 8, 460800 + x, 0) as real >= 0.001 * gi_half(plain[..], 8, 461440, 0) as real { x += 1; }
+	let i = 460800 + x + 3;
+	let red = gi_half(on[..], 8, i, 0) as real / gi_half(on[..], 8, 461440, 0) as real;
+	let blue = gi_half(on[..], 8, i, 0) as real / max(gi_half(on[..], 8, i, 2) as real, 1e-9);
+	let dark = gi_half(off[..], 8, i, 0) as real / gi_half(off[..], 8, 461440, 0) as real;
+	let x6 = red >= 0.15 && blue >= 2.0 && dark <= 0.01;
+	print("gpu: sss X6 pixel ", x + 3, " on the middle row: red ", r4(red), " of the middle (bar >= 0.15), red over blue ", r2(blue), " (bar >= 2); control off: red ", r4(dark), " of the middle (bar <= 0.01)", if x6 { " PASS" } else { " FAIL" });
+	x2 && x6
+}
+fn sk_x3() bool {
+	reset_scene();
+	dark_scene();
+	sk_cam(0.35, 0.0);
+	let _ = s3d::add(shapes::plane(2.0, sk_mat()));
+	s3d::place(s3d::add(shapes::cube(float3 { linalg::f(9.075 / SK_PS), 0.0005, 0.03 }, sk_mat())), gfx::translate(float3 { 0.0, 0.0495, 0.0 }));
+	s3d::lights.push(s3d::Light { pos: float3 { -0.0707, 0.1207, 0.0 }, range: 1.0, rgb: float3 { 1.0, 1.0, 1.0 }, kind: 1, dir: float3 { 0.7071, -0.7071, 0.0 }, cone: 0.17, edge: 0.1, .. });
+	shoot(2, IN_OUT);
+	let plain = gfx::read_pixels(s3d::sss_plain());
+	let on = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = false;
+	shoot(2, IN_OUT);
+	let off = gfx::read_pixels(s3d::sss_target());
+	s3d::sss_depth = true;
+	let mid = max(gi_half(on[..], 8, 461440, 0) as real, 1e-9);
+	var top = 0.0;
+	var mean = 0.0;
+	for y in 41 { for x in 10 { let i = (340 + y) * 1280 + 600 + x; top = max(top, gi_half(on[..], 8, i, 0) as real / mid); mean += gi_half(off[..], 8, i, 0) as real / mid / 410.0; } }
+	let edge = gi_half(plain[..], 8, 461409, 0) as real <= 0.001 * mid && gi_half(plain[..], 8, 461410, 0) as real >= 0.5 * mid;
+	let ok = edge && top <= 0.02 && mean > 0.1;
+	print("gpu: sss X3 card from pixel 610 ", edge, ", wall pixels 600 to 609 on 41 rows: largest ", r4(top), " of the card's middle (bar <= 0.02); control depth off: mean ", r4(mean), " (bar > 0.1)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sk_ball(glow f32, at float3) {
+	reset_scene();
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::look = DEF_LOOK;
+	s3d::look.bloom = 0.0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::temporal = 0;
+	var m = sk_mat();
+	m.emissive = float3 { 0.0, glow, 0.0 };
+	let _ = s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7)));
+	s3d::place(s3d::add(shapes::sphere(0.1, 48, 24, m)), gfx::translate(at));
+	s3d::place(s3d::add(shapes::sphere(0.1, 48, 24, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { 0.12, 0.1, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 0.25, 0.7 }, target: float3 { 0.0, 0.1, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.02, far: 50.0 };
+}
+fn sk_apart(a const byte[:], b const byte[:]) int { var top = 0; for i in a.len { let d = a[i] as int - b[i] as int; top = if i % 4 == 3 { top } else { max(top, max(d, -d)) }; } top }
+fn sk_pair() int { s3d::sss_on = false; let off = rr_frame(2); s3d::sss_on = true; let on = rr_frame(2); sk_apart(on[..], off[..]) }
+fn sk_x45() bool {
+	sk_ball(0.0, float3 { -0.12, 0.1, 0.0 });
+	s3d::sss_on = false;
+	let off = rr_frame(2);
+	let again = rr_frame(2);
+	s3d::sss_on = true;
+	let on = rr_frame(2);
+	sk_ball(50.0, float3 { -0.12, 0.1, 0.0 });
+	s3d::sss_on = false;
+	let lit = rr_frame(2);
+	s3d::sss_on = true;
+	var skin = 0;
+	var changed = 0;
+	var top = 0;
+	for i in 921600 {
+		var d = 0;
+		var g = 0;
+		for c in 3 { let a = on[i * 4 + c] as int - off[i * 4 + c] as int; let b = lit[i * 4 + c] as int - off[i * 4 + c] as int; d = max(d, max(a, -a)); g = max(g, max(b, -b)); }
+		skin += if g > 0 { 1 } else { 0 };
+		changed += if g > 0 && d > 0 { 1 } else { 0 };
+		top = if g > 0 { top } else { max(top, d) };
+	}
+	let same = sk_apart(off[..], again[..]) == 0;
+	let _ = codec_png::write(path(OUT_DIR[..], "sss_ball_on.png")[..], 1280, 720, 4, on[..]) && codec_png::write(path(OUT_DIR[..], "sss_ball_off.png")[..], 1280, 720, 4, off[..]);
+	let x4 = same && top == 0 && changed > 1000;
+	print("gpu: sss X4 pixels without skin: largest change ", top, " / 255 (bar 0), frame repeats ", same, "; control skin pixels changed ", changed, " of ", skin, " (bar > 1000)", if x4 { " PASS" } else { " FAIL" });
+	sk_ball(0.0, float3 { 0.0, 0.1, 5.0 });
+	let none = sk_pair();
+	let ran = s3d::sss_ran;
+	sk_sheet(5.0, 0.0, 1.0);
+	let far = sk_pair();
+	sk_sheet(0.3, 0.0, 1.0);
+	let near = sk_pair();
+	let x5 = !ran && none == 0 && far <= 1 && near > 8;
+	print("gpu: sss X5 no skin in view: pass ran ", ran, ", change ", none, " / 255 (bar 0); sheet 5 m away: change ", far, " / 255 (bar <= 1); control 0.3 m: change ", near, " / 255 (bar > 8)", if x5 { " PASS" } else { " FAIL" });
+	x4 && x5
+}
+fn sk_x7() bool {
+	sk_sheet(0.3, 0.0, 1.0);
+	s3d::sss_on = false;
+	let base = frame_ms();
+	s3d::sss_on = true;
+	let full = frame_ms();
+	s3d::sss_taps = 16;
+	let few = frame_ms();
+	s3d::sss_taps = 64;
+	let ok = full - base <= 4.0;
+	print("gpu: sss X7 frame ", r2(base), " ms off, ", r2(full), " ms on with 64 taps: ", r2(full - base), " ms more (bar <= 4), ", r2(few - base), " ms more with 16 taps", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sk_q(dist real, m gltf::Material, gain f32) {
+	reset_scene();
+	dark_scene();
+	let _ = s3d::add(shapes::plane(0.15, m));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.1, 0.1732, 0.0 }, range: 1.0, rgb: float3 { gain, gain, gain }, kind: 1, dir: float3 { -0.5, -0.866, 0.0 }, cone: 0.9, edge: 0.1, .. });
+	sk_cam(dist, 0.0);
+}
+fn sk_red(px const byte[:], r int) real[>..] {
+	var v real[>..] = [];
+	for i in 921600 { v.push(gi_half(px, 8, i, 0) as real); }
+	for pass in if r > 0 { 2 } else { 0 } {
+		var o real[>..] = [];
+		for i in 921600 { let x = i % 1280; let y = i / 1280; var s = 0.0; for k in 2 * r + 1 { s += v[if pass == 0 { y * 1280 + min(max(x + k - r, 0), 1279) } else { min(max(y + k - r, 0), 719) * 1280 + x }]; } o.push(s / (2 * r + 1) as real); }
+		v = copy(o);
+	}
+	v
+}
+fn sk_stat(px const real[:], half int, blk int) real, real {
+	let bk = if blk > 0 { blk } else { half * 2 };
+	let nb = half * 2 / bk;
+	var s = 0.0;
+	var dv = 0.0;
+	for by in nb { for bx in nb {
+		var bs = 0.0;
+		var bq = 0.0;
+		var gx = 0.0;
+		var gy = 0.0;
+		for y in bk { for x in bk { let v = px[(360 - half + by * bk + y) * 1280 + 640 - half + bx * bk + x]; bs += v; bq += v * v; gx += v * (x as real - (bk - 1) as real / 2.0); gy += v * (y as real - (bk - 1) as real / 2.0); } }
+		s += bs;
+		let tilt = if blk > 0 { (gx * gx + gy * gy) * 12.0 / (bk * bk * (bk * bk - 1)) as real } else { 0.0 };
+		dv += bq - bs * bs / (bk * bk) as real - tilt;
+	} }
+	let n = (nb * nb * bk * bk) as real;
+	let m = s / n;
+	return m, sqrt(max(dv / n, 0.0)) / max(m, 1e-12);
+}
+fn sk_qs(dist real, m gltf::Material, gain f32, half int, blk int, plain bool) real, real {
+	sk_q(dist, m, gain);
+	shoot(2, IN_OUT);
+	let px = gfx::read_pixels(if plain { s3d::sss_plain() } else { s3d::hdr_target() });
+	let m, d = sk_stat(sk_red(px[..], 0)[..], half, blk);
+	return m, d;
+}
+fn sk_y14() bool {
+	s3d::sss_on = false;
+	let n1, d1 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 200, 4, false);
+	let n0, d0 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 200, 4, false);
+	let y1 = d1 >= 0.05 && d0 <= 0.005;
+	print("gpu: sss Y1 near, middle 400 x 400, deviation from the plane of each 4 x 4 block over mean: ", r4(d1), " with pores 0.7 (bar >= 0.05); control pores 0: ", r4(d0), " (bar <= 0.005)", if y1 { " PASS" } else { " FAIL" });
+	let f1, e1 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 50, 0, false);
+	let f0, e0 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 50, 0, false);
+	let fc, ec = sk_qs(1.2, sk_skin(0.02, 0.4, -0.7, 0.0), 1.0, 50, 0, false);
+	let y3 = e1 <= e0 + 0.002 && ec >= e1 + 0.01;
+	print("gpu: sss Y3 far, middle 100 x 100: deviation over mean ", r4(e1), " with pores 0.7, ", r4(e0), " with pores 0 (bar: at most 0.002 above); control no fade: ", r4(ec), " (bar: at least 0.01 above)", if y3 { " PASS" } else { " FAIL" });
+	let a1, b1 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 183, 0, false);
+	let a0, b0 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 183, 0, false);
+	let c1, g1 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 8, 0, false);
+	let c0, g0 = sk_qs(1.2, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 8, 0, false);
+	let near = a1 / a0;
+	let far = c1 / c0;
+	let y4 = abs(near - 1.0) >= 0.05 && abs(far - near) < abs(far - 1.0);
+	print("gpu: sss Y4 middle 20 mm square, pores 0.7 over pores 0: near ", r4(near), " (bar: at least 0.05 from 1), far ", r4(far), " (bar: closer to near than to 1); control pores 0 far: 1.0, fails as required", if y4 { " PASS" } else { " FAIL" });
+	s3d::sss_on = true;
+	let p1, q1 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 1.0, 200, 0, true);
+	let p0, q0 = sk_qs(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0, 200, 0, true);
+	let pd, qd = sk_qs(0.05, sk_skin(0.02, 0.4, 0.7, 0.0), 0.95, 200, 0, true);
+	let y2 = abs(p1 / p0 - 1.0) <= 0.01 && abs(pd / p0 - 1.0) > 0.01;
+	print("gpu: sss Y2 near, plain light, pores 0.7 over pores 0: ", r4(p1 / p0), " (bar within 0.01 of 1); control light 5% dimmer ", r4(pd / p0), if y2 { " PASS" } else { " FAIL" });
+	y1 && y2 && y3 && y4
+}
+fn sk_d(a const byte[:], b const byte[:], i int) int { var top = 0; for c in 3 { let d = a[i * 4 + c] as int - b[i * 4 + c] as int; top = max(top, max(d, -d)); } top }
+fn sk_up(a const byte[:], b const byte[:], i int) int { var s = 0; for c in 3 { s += a[i * 4 + c] as int - b[i * 4 + c] as int; } s }
+fn sk_y5() bool {
+	s3d::sss_on = false;
+	sk_ball(0.0, float3 { -0.12, 0.1, 0.0 });
+	let off = rr_frame(2);
+	let again = rr_frame(2);
+	SK_FUZZ = 0.35;
+	sk_ball(0.0, float3 { -0.12, 0.1, 0.0 });
+	let on = rr_frame(2);
+	SK_FUZZ = 0.0;
+	sk_ball(50.0, float3 { -0.12, 0.1, 0.0 });
+	let lit = rr_frame(2);
+	var mask int[>..] = [];
+	mask.resize(921600, 0);
+	var cx = 0;
+	var cy = 0;
+	var cnt = 0;
+	for i in 921600 { let g = sk_d(lit[..], off[..], i); mask[i] = if g > 0 { 1 } else { 0 }; cx += if g > 0 { i % 1280 } else { 0 }; cy += if g > 0 { i / 1280 } else { 0 }; cnt += mask[i]; }
+	cx = cx / max(cnt, 1);
+	cy = cy / max(cnt, 1);
+	var edge = 0;
+	var rise = 0;
+	var rise0 = 0;
+	var mid = 0;
+	var out = 0;
+	for i in 921600 {
+		let x = i % 1280;
+		let y = i / 1280;
+		let d = sk_d(on[..], off[..], i);
+		out = if mask[i] == 0 { max(out, d) } else { out };
+		mid = if mask[i] == 1 && (x - cx) * (x - cx) + (y - cy) * (y - cy) <= 2304 { max(mid, d) } else { mid };
+		if mask[i] == 1 && x >= 4 && x < 1276 && y >= 4 && y < 716 && mask[i - 4] * mask[i + 4] * mask[i - 5120] * mask[i + 5120] * mask[i - 3843] * mask[i - 3837] * mask[i + 3837] * mask[i + 3843] == 0 { edge += 1; rise += sk_up(on[..], off[..], i); rise0 += sk_up(again[..], off[..], i); }
+	}
+	let up = rise as real / 3.0 / max(edge, 1) as real;
+	let up0 = rise0 as real / 3.0 / max(edge, 1) as real;
+	let ok = up >= 3.0 && mid <= 1 && out == 0 && up0 < 3.0;
+	print("gpu: sss Y5 fuzz 0.35: ", edge, " rim pixels rise ", r2(up), " / 255 on average (bar >= 3), middle largest change ", mid, " / 255 (bar <= 1), pixels without skin ", out, " / 255 (bar 0); control fuzz 0: rim rise ", r2(up0), if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sk_shot(pores f32) byte[>..] {
+	reset_scene();
+	dark_scene();
+	var m = sk_skin(1.0, 0.45, pores, 0.0);
+	m.base = float4 { 0.9, 0.72, 0.62, 1.0 };
+	let _ = s3d::add(shapes::plane(0.15, m));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.1, 0.1732, 0.0 }, range: 1.0, rgb: float3 { 0.7, 0.7, 0.7 }, kind: 1, dir: float3 { -0.5, -0.866, 0.0 }, cone: 0.9, edge: 0.1, .. });
+	sk_cam(0.05, 0.0);
+	rr_frame(2)
+}
+fn sk_y6() bool {
+	s3d::sss_on = false;
+	sk_q(0.05, sk_skin(0.02, 0.4, 0.0, 0.0), 1.0);
+	let base = frame_ms();
+	sk_q(0.05, sk_skin(0.02, 0.4, 0.7, 0.35), 1.0);
+	let full = frame_ms();
+	let ok = full - base <= 0.3;
+	print("gpu: sss Y6 sheet filling the frame: ", r2(base), " ms without, ", r2(full), " ms with pores 0.7 and fuzz 0.35: ", r2(full - base), " ms more (bar <= 0.3)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn sc_hue(px const byte[:], half int) real {
+	var s = 0.0;
+	var q = 0.0;
+	for y in half * 2 { for x in half * 2 { let i = (360 - half + y) * 1280 + 640 - half + x; let v = gi_half(px, 8, i, 1) as real / max(gi_half(px, 8, i, 0) as real, 0.000001); s += v; q += v * v; } }
+	let n = (half * half * 4) as real;
+	sqrt(max(q / n - s * s / (n * n), 0.0)) / (s / n)
+}
+fn skin_checks() bool {
+	half_table();
+	let was = s3d::sss_on;
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::sss_on = false;
+	sk_q(0.05, sk_skin(0.8, 1.0, 1.1, 0.0), 1.0);
+	shoot(2, IN_OUT);
+	let off = gfx::read_pixels(s3d::hdr_target());
+	let _, d0 = sk_stat(sk_red(off[..], 0)[..], 200, 16);
+	let _, dc = sk_stat(sk_red(off[..], 18)[..], 200, 16);
+	let h1 = sc_hue(off[..], 200);
+	sk_q(0.05, sk_skin(0.8, 1.0, 0.0, 0.0), 1.0);
+	shoot(2, IN_OUT);
+	let h0 = sc_hue(gfx::read_pixels(s3d::hdr_target())[..], 200);
+	s3d::sss_on = true;
+	let _, d1 = sk_qs(0.05, sk_skin(0.8, 1.0, 1.1, 0.0), 1.0, 200, 16, false);
+	s3d::sss_on = was;
+	let r = d1 / d0;
+	let rc = dc / d0;
+	let s1 = r >= 0.7 && rc < 0.7;
+	let s2 = h1 >= 0.01 && h0 <= 0.002;
+	print("gpu: skin SC1 pores 1.1, deviation from the plane of each 16 x 16 block over mean: ", r4(d1), " scattering on, ", r4(d0), " off: ", r4(r), " (bar >= 0.7); control, the off frame blurred over a 37-pixel (2 mm) box: ", r4(rc), " (bar < 0.7)", if s1 { " PASS" } else { " FAIL" });
+	print("gpu: skin SC2 spread of green over red: ", r4(h1), " with strength 1.1 (bar >= 0.01); control strength 0: ", r4(h0), " (bar <= 0.002)", if s2 { " PASS" } else { " FAIL" });
+	s1 && s2
+}
+fn sss_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::sss_on = true;
+	var good = true;
+	for cfg in 4 { good = sk_x1(if cfg == 0 { 0.15 } else if cfg == 2 { 0.6 } else { 0.3 }, if cfg == 3 { PI / 3.0 } else { 0.0 }, if cfg == 0 { 6 } else if cfg == 2 { 2 } else { 3 }) && good; }
+	good = sk_x26() && good;
+	good = sk_x3() && good;
+	good = sk_x45() && good;
+	good = sk_x7() && good;
+	good = sk_y14() && good;
+	good = sk_y5() && good;
+	good = sk_y6() && good;
+	s3d::sss_on = true;
+	let pon = sk_shot(0.7);
+	let pof = sk_shot(0.0);
+	s3d::sss_on = false;
+	let _ = codec_png::write(path(OUT_DIR[..], "pore_on.png")[..], 1280, 720, 4, pon[..]) && codec_png::write(path(OUT_DIR[..], "pore_off.png")[..], 1280, 720, 4, pof[..]);
+	s3d::sss_on = false;
+	good
+}
 fn shoot(n int, t gfx::Texture) { for k in n { s3d::render(t); gfx::flush(); } }
-fn sub_since(at int) int, real, int {
+fn cl_world(drape bool) {
+	reset_scene();
+	s3d::sky = DEF_SKY;
+	s3d::sun = DEF_SUN;
+	s3d::sun.shadows = true;
+	s3d::look = DEF_LOOK;
+	s3d::look.bloom = 0.0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::temporal = 0;
+	if drape {
+		s3d::place(s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7))), gfx::mat4_identity);
+		s3d::place(s3d::add(shapes::sphere(0.3, 48, 24, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { 0.0, 0.5, 0.0 }));
+	}
+	s3d::view = s3d::Camera { eye: if drape { float3 { 0.0, 1.3, 1.9 } } else { float3 { 0.0, 1.5, 2.5 } }, target: if drape { float3 { 0.0, 0.45, 0.0 } } else { float3 { 0.0, 1.5, 0.0 } }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.75, near: 0.05, far: 50.0 };
+}
+fn cl_sheet(n int, flat bool) int {
+	var m = shapes::material(linalg::v3(0.2, 0.35, 0.8), 0.0, 0.8);
+	m.double_sided = true;
+	shapes::sheet(n, if flat { float3 { -0.5, 0.85, -0.5 } } else { float3 { -0.5, 2.0, 0.0 } }, float3 { 1.0, 0.0, 0.0 }, if flat { float3 { 0.0, 0.0, 1.0 } } else { float3 { 0.0, -1.0, 0.0 } }, m)
+}
+fn cl_z8() bool {
+	cl_world(true);
+	let a = cl_sheet(33, true);
+	let k = s3d::add_cloth(a);
+	s3d::place(s3d::add(a), gfx::mat4_identity);
+	cloth::ball(0.0, 0.5, 0.0, 0.3);
+	cloth::ground(0.0);
+	for s in 180 { s3d::step_cloth(k, 1.0 / 60.0, float3 { 0.0, 0.0, 0.0 }); }
+	let got = rr_frame(2);
+	let c = s3d::cloths[k].c;
+	var pn f32[>..] = [];
+	for v in 1089 { let i = cloth::particle(c, v) * 3; for j in 3 { pn.push(cloth::pos[i + j] as f32); } for j in 3 { pn.push(cloth::nrm[i + j] as f32); } }
+	let lo = gltf::prims[s3d::cloths[k].prim].lo;
+	let hi = gltf::prims[s3d::cloths[k].prim].hi;
+	cl_world(true);
+	let b = cl_sheet(33, true);
+	let pb = gltf::meshes[gltf::assets[b].meshes.first].prims.first;
+	let vb = gltf::prims[pb].vfirst * gltf::VERTEX_FLOATS;
+	for v in 1089 { for j in 3 { gltf::verts[vb + v * gltf::VERTEX_FLOATS + gltf::AT_POS + j] = pn[v * 6 + j]; gltf::verts[vb + v * gltf::VERTEX_FLOATS + gltf::AT_NRM + j] = pn[v * 6 + 3 + j]; } }
+	gltf::prims[pb].lo = lo;
+	gltf::prims[pb].hi = hi;
+	s3d::place(s3d::add(b), gfx::mat4_identity);
+	let want = rr_frame(2);
+	cl_world(true);
+	s3d::place(s3d::add(cl_sheet(33, true)), gfx::mat4_identity);
+	let rest = rr_frame(2);
+	let db = psnr(got[..], want[..]);
+	let ap = sk_apart(got[..], want[..]);
+	let cdb = psnr(rest[..], want[..]);
+	let ok = db >= 50.0 && ap <= 2 && cdb < 30.0;
+	print("gpu: cloth Z8 cloth frame against a plain mesh of the same step: ", r2(db), " dB (bar >= 50), largest difference ", ap, " / 255 (bar <= 2); control rest shape ", r2(cdb), " dB (bar < 30)", if ok { " PASS" } else { " FAIL" }, " image ", codec_png::write(path(OUT_DIR[..], "cloth_drape.png")[..], 1280, 720, 4, got[..]));
+	ok
+}
+fn cl_z9(still bool) real, int {
+	cl_world(false);
+	let a = cl_sheet(33, false);
+	let k = s3d::add_cloth(a);
+	s3d::place(s3d::add(a), gfx::mat4_identity);
+	let c = s3d::cloths[k].c;
+	for v in 1089 { let i = cloth::particle(c, v) * 3; cloth::pin(c, v, cloth::rest[i], cloth::rest[i + 1], cloth::rest[i + 2]); }
+	s3d::motion_vectors = true;
+	shoot(2, IN_OUT);
+	let before = to_uv(s3d::view_proj_nj, float3 { 0.0, 1.5, 0.0 });
+	for v in 1089 { let i = cloth::particle(c, v) * 3; cloth::pin(c, v, cloth::rest[i] + 0.02, cloth::rest[i + 1], cloth::rest[i + 2]); }
+	s3d::step_cloth(k, 1.0 / 60.0, float3 { 0.0, 0.0, 0.0 });
+	s3d::test_morph_still = still;
+	shoot(1, IN_OUT);
+	let now = to_uv(s3d::view_proj_nj, float3 { 0.02, 1.5, 0.0 });
+	let mv = gfx::read_pixels(s3d::motion_target());
+	s3d::test_morph_still = false;
+	s3d::motion_vectors = false;
+	var e = 0.0;
+	var n = 0;
+	for i in 921600 {
+		let m = motion_at(mv[..], 1280, i % 1280, i / 1280);
+		let dx = ((m.x - (now.x - before.x)) * 1280.0) as real;
+		let dy = ((m.y - (now.y - before.y)) * 720.0) as real;
+		n += if m.z < 1000.0 { 1 } else { 0 };
+		e += if m.z < 1000.0 { sqrt(dx * dx + dy * dy) } else { 0.0 };
+	}
+	return if n > 0 { e / n as real } else { 99.0 }, n;
+}
+fn wv_mat(base f32, rough f32, wrap f32, spec f32, s f32, twill f32, weft f32) gltf::Material { var m = shapes::material(linalg::v3(base, base, base), 0.0, rough); m.shading = 3; m.shade_a = float4 { wrap, 0.0, spec, 0.0 }; m.shade_c = float4 { s, 700.0, twill, weft }; m }
+fn wv_r(dist real, half int, m gltf::Material, z gltf::Material) real { let a, b = sk_qs(dist, m, 1.0, half, 0, false); let c, d = sk_qs(dist, z, 1.0, half, 0, false); a / c }
+fn wv_checks() bool {
+	s3d::sss_on = false;
+	let n1, d1 = sk_qs(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 1.0, 0.0), 1.0, 200, 8, false);
+	let n0, d0 = sk_qs(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 1.0, 0.0), 1.0, 200, 8, false);
+	let nd, dd = sk_qs(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 1.0, 0.0), 0.95, 200, 8, false);
+	let w1 = d1 >= 0.03 && d0 <= 0.005;
+	print("gpu: weave W1 near, middle 400 x 400, deviation from the plane of each 8 x 8 block over mean: ", r4(d1), " with strength 0.7 (bar >= 0.03); control strength 0: ", r4(d0), " (bar <= 0.005)", if w1 { " PASS" } else { " FAIL" });
+	let w2 = abs(n1 / n0 - 1.0) <= 0.01 && abs(nd / n0 - 1.0) > 0.01;
+	print("gpu: weave W2 near, strength 0.7 over strength 0: ", r4(n1 / n0), " (bar within 0.01 of 1); control light 5% dimmer ", r4(nd / n0), if w2 { " PASS" } else { " FAIL" });
+	let f1, e1 = sk_qs(1.2, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), 1.0, 50, 0, false);
+	let f0, e0 = sk_qs(1.2, wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8), 1.0, 50, 0, false);
+	let fc, ec = sk_qs(1.2, wv_mat(0.2, 0.8, 0.25, 0.0, -0.7, 3.0, 0.8), 1.0, 50, 0, false);
+	let w3 = e1 <= e0 + 0.002 && ec >= e1 + 0.01;
+	print("gpu: weave W3 far, middle 100 x 100: deviation over mean ", r4(e1), " with strength 0.7, ", r4(e0), " with strength 0 (bar: at most 0.002 above); control no fade: ", r4(ec), " (bar: at least 0.01 above)", if w3 { " PASS" } else { " FAIL" });
+	let near = wv_r(0.05, 183, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8));
+	let far = wv_r(1.2, 8, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8));
+	let flat = wv_r(1.2, 8, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.0), wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.0));
+	let w4 = near >= 1.5 && far >= 1.5 && abs(far / near - 1.0) <= 0.04 && flat < 1.5;
+	print("gpu: weave W4 twill, weft lightness 0.8, middle 20 mm square, strength 0.7 over strength 0: near ", r4(near), ", far ", r4(far), " (bar: both >= 1.5, far within 4% of near); control weft lightness 0 far: ", r4(flat), " (must fail)", if w4 { " PASS" } else { " FAIL" });
+	let hn = wv_r(0.05, 183, wv_mat(0.02, 0.4, 0.0, 1.0, 0.7, 1.0, 0.0), wv_mat(0.02, 0.4, 0.0, 1.0, 0.0, 1.0, 0.0));
+	let hf = wv_r(1.2, 8, wv_mat(0.02, 0.4, 0.0, 1.0, 0.7, 1.0, 0.0), wv_mat(0.02, 0.4, 0.0, 1.0, 0.0, 1.0, 0.0));
+	let w5 = abs(hn - 1.0) >= 0.05 && abs(hf - hn) < abs(hf - 1.0);
+	print("gpu: weave W5 highlight, middle 20 mm square, strength 0.7 over strength 0: near ", r4(hn), " (bar: at least 0.05 from 1), far ", r4(hf), " (bar: closer to near than to 1); control strength 0 far: 1.0, fails as required", if w5 { " PASS" } else { " FAIL" });
+	sk_q(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.0, 3.0, 0.8), 1.0);
+	let base = frame_ms();
+	sk_q(0.05, wv_mat(0.2, 0.8, 0.25, 0.0, 0.7, 3.0, 0.8), 1.0);
+	let full = frame_ms();
+	let w6 = full - base <= 0.3;
+	print("gpu: weave W6 sheet filling the frame: ", r2(base), " ms without, ", r2(full), " ms with a 3/1 twill at strength 0.7: ", r2(full - base), " ms more (bar <= 0.3)", if w6 { " PASS" } else { " FAIL" });
+	var dm = shapes::material(linalg::v3(0.05, 0.1, 0.35), 0.0, 0.8);
+	dm.shading = 3;
+	dm.shade_a = float4 { 0.25, 0.3, 0.3, 0.0 };
+	dm.shade_c = float4 { 0.7, 700.0, 3.0, 0.8 };
+	sk_q(0.02, dm, 1.0);
+	let st = rr_frame(2);
+	print("gpu: weave twill still ", codec_png::write(path(OUT_DIR[..], "cloth_weave.png")[..], 1280, 720, 4, st[..]));
+	w1 && w2 && w3 && w4 && w5 && w6
+}
+fn kn_mat(s f32, d f32, kind f32) gltf::Material { var m = wv_mat(0.2, 0.8, 0.25, 0.0, s, kind, 8.0); m.shade_c = float4 { s, d, kind, 8.0 }; m }
+fn kn_cols(m gltf::Material) real {
+	sk_q(0.05, m, 1.0);
+	shoot(2, IN_OUT);
+	let px = gfx::read_pixels(s3d::hdr_target());
+	let v = sk_red(px[..], 0);
+	var c real[>..] = [];
+	for x in 1280 { var s = 0.0; for y in 400 { s += v[(160 + y) * 1280 + x]; } c.push(s / 400.0); }
+	var a = 0.0;
+	var q = 0.0;
+	for x in 400 { var s = 0.0; for k in 91 { s += c[min(max(395 + x + k, 0), 1279)]; } let b = s / 91.0; a += b; q += b * b; }
+	let mn = a / 400.0;
+	sqrt(max(q / 400.0 - mn * mn, 0.0)) / max(mn, 1e-12)
+}
+fn kn_still(name const byte[:], dist real, kind f32, d f32, rgb float3) {
+	var m = shapes::material(rgb, 0.0, 0.9);
+	m.shading = 3;
+	m.shade_a = float4 { 0.3, 0.5, 0.2, 0.0 };
+	m.shade_c = float4 { 0.8, d, kind, 8.0 };
+	sk_q(dist, m, 1.0);
+	let st = rr_frame(2);
+	print("gpu: knit still ", codec_png::write(path(OUT_DIR[..], name)[..], 1280, 720, 4, st[..]));
+}
+fn kn_checks() bool {
+	s3d::sss_on = false;
+	let n1, d1 = sk_qs(0.05, kn_mat(0.7, 60.0, -1.0), 1.0, 200, 8, false);
+	let n0, d0 = sk_qs(0.05, kn_mat(0.0, 60.0, -1.0), 1.0, 200, 8, false);
+	let nd, dd = sk_qs(0.05, kn_mat(0.7, 60.0, -1.0), 0.93, 200, 8, false);
+	let k1 = d1 >= 0.03 && d0 <= 0.005;
+	print("gpu: knit K1 near stockinette, middle 400 x 400, deviation from the plane of each 8 x 8 block over mean: ", r4(d1), " with strength 0.7 (bar >= 0.03); control strength 0: ", r4(d0), " (bar <= 0.005)", if k1 { " PASS" } else { " FAIL" });
+	let k2 = abs(n1 / n0 - 1.0) <= 0.03 && abs(nd / n0 - 1.0) > 0.03;
+	print("gpu: knit K2 near stockinette, strength 0.7 over strength 0: ", r4(n1 / n0), " (bar within 0.03 of 1); control light 7% dimmer ", r4(nd / n0), if k2 { " PASS" } else { " FAIL" });
+	let f1, e1 = sk_qs(1.2, kn_mat(0.7, 200.0, -1.0), 1.0, 50, 0, false);
+	let f0, e0 = sk_qs(1.2, kn_mat(0.0, 200.0, -1.0), 1.0, 50, 0, false);
+	let fc, ec = sk_qs(1.2, kn_mat(-0.7, 200.0, -1.0), 1.0, 50, 0, false);
+	let k3 = e1 <= e0 + 0.002 && ec >= e1 + 0.01;
+	print("gpu: knit K3 far, 200 stitches a UV unit, middle 100 x 100: deviation over mean ", r4(e1), " with strength 0.7, ", r4(e0), " with strength 0 (bar: at most 0.002 above); control no fade: ", r4(ec), " (bar: at least 0.01 above)", if k3 { " PASS" } else { " FAIL" });
+	let rb = kn_cols(kn_mat(0.7, 60.0, -3.0));
+	let sn = kn_cols(kn_mat(0.7, 60.0, -1.0));
+	let k4 = rb >= 0.02 && sn <= rb * 0.5;
+	print("gpu: knit K4 column means blurred over a stitch, deviation over mean: 2x2 rib ", r4(rb), " (bar >= 0.02); control stockinette ", r4(sn), " (bar <= half the rib)", if k4 { " PASS" } else { " FAIL" });
+	let ca, cd = sk_qs(1.2, kn_mat(0.7, 200.0, -6.0), 1.0, 100, 16, false);
+	let ra, rd = sk_qs(1.2, kn_mat(0.7, 200.0, -3.0), 1.0, 100, 16, false);
+	let k5 = cd >= 0.02 && rd <= cd / 3.0;
+	print("gpu: knit K5 far, 200 stitches a UV unit, middle 200 x 200 in 16 x 16 blocks: cable ", r4(cd), " (bar >= 0.02); control 2x2 rib ", r4(rd), " (bar <= a third of the cable)", if k5 { " PASS" } else { " FAIL" });
+	sk_q(0.05, kn_mat(0.0, 60.0, -6.0), 1.0);
+	let base = frame_ms();
+	sk_q(0.05, kn_mat(0.7, 60.0, -6.0), 1.0);
+	let full = frame_ms();
+	let k6 = full - base <= 0.5;
+	print("gpu: knit K6 sheet filling the frame: ", r2(base), " ms without, ", r2(full), " ms with a cable at strength 0.7: ", r2(full - base), " ms more (bar <= 0.5)", if k6 { " PASS" } else { " FAIL" });
+	kn_still("knit_cable.png", 0.12, -6.0, 60.0, float3 { 0.55, 0.5, 0.42 });
+	kn_still("knit_rib.png", 0.07, -3.0, 60.0, float3 { 0.12, 0.2, 0.35 });
+	kn_still("knit_far.png", 0.6, -6.0, 60.0, float3 { 0.45, 0.08, 0.07 });
+	k1 && k2 && k3 && k4 && k5 && k6
+}
+fn knit_only() bool { half_table(); s3d::init(1280, 720); IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8); kn_checks() }
+fn cloth_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let wv = wv_checks();
+	let kn = kn_checks();
+	let z8 = cl_z8();
+	let e, n = cl_z9(false);
+	let ce, cn = cl_z9(true);
+	let z9 = n >= 100000 && e <= 0.05 && ce > 1.0;
+	print("gpu: cloth Z9 motion vectors over ", n, " sheet pixels: ", r3(e), " px from the shift on average (bar <= 0.05); control last step ignored ", r3(ce), " px over ", cn, " (bar > 1)", if z9 { " PASS" } else { " FAIL" });
+	cl_world(false);
+	s3d::place(s3d::add(shapes::plane(4.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7))), gfx::mat4_identity);
+	let fa = cl_sheet(65, false);
+	let fk = s3d::add_cloth(fa);
+	s3d::place(s3d::add(fa), gfx::mat4_identity);
+	for i in 65 { cloth::pin(s3d::cloths[fk].c, i, i as real / 64.0 - 0.5, 2.0, 0.0); }
+	for s in 180 { s3d::step_cloth(fk, 1.0 / 60.0, float3 { 1.5, 0.0, 3.0 }); }
+	s3d::view.eye = float3 { 1.8, 1.6, 2.4 };
+	let fl = rr_frame(2);
+	print("gpu: cloth wind still ", codec_png::write(path(OUT_DIR[..], "cloth_wind.png")[..], 1280, 720, 4, fl[..]));
+	z8 && z9 && wv && kn
+}
+fn sub_since(at int) int, real, int, real {
 	gfx::flush();
 	var ns real[>..] = [];
 	gputime_lines(SUB_LOG[..], ns);
 	var top = 0.0;
 	var slow = 0;
+	var mid = 0.0;
+	let half = (ns.len - at) / 2;
 	for k in at..ns.len { top = max(top, ns[k]); if ns[k] > 1.0e8 { slow += 1; } }
-	return ns.len, top / 1.0e6, slow;
+	if ns.len - at <= 64 { for k in at..ns.len { var less = 0; var same = 0; for j in at..ns.len { if ns[j] < ns[k] { less += 1; } else if ns[j] == ns[k] { same += 1; } } if less <= half && less + same > half { mid = ns[k]; } } }
+	return ns.len, top / 1.0e6, slow, mid / 1.0e6;
+}
+var VC_N = 0;
+var VC_C = 0;
+var VC_COVER f32 = 0.5;
+fn vc_world(baked f32) {
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+	s3d::atmosphere(float3 { 0.7071068, 0.7071068, 0.0 }, 3.5, 1.0, baked);
+	s3d::sun.shadows = false;
+	envmap::intensity = 1.0;
+	s3d::world_time = 1.0;
+	s3d::clouds = s3d::Clouds { on: true };
+}
+fn vc_cam(eye float3, dir float3, up float3, fov f32) { s3d::view = s3d::Camera { eye: eye, target: float3 { eye.x + dir.x, eye.y + dir.y, eye.z + dir.z }, up: up, fov_y: fov, near: 1.0, far: 8000.0 }; }
+fn vc_view() { vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { -0.8660254, 0.5, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0); }
+fn vc_lum(px const byte[:], i int) real { 0.2126 * gi_half(px, 8, i, 0) as real + 0.7152 * gi_half(px, 8, i, 1) as real + 0.0722 * gi_half(px, 8, i, 2) as real }
+fn vc_l8(px const byte[:], i int) real { 0.25 * px[i * 4] as real + 0.625 * px[i * 4 + 1] as real + 0.125 * px[i * 4 + 2] as real }
+fn vc_map(mp const byte[:], x real, z real) real {
+	let u = (s3d::cloud_cu.x as real * x + s3d::cloud_cu.z as real * z + s3d::cloud_cu.w as real) * 512.0 - 0.5;
+	let v = (s3d::cloud_cv.x as real * x + s3d::cloud_cv.z as real * z + s3d::cloud_cv.w as real) * 512.0 - 0.5;
+	let x0 = max(min(floor(u) as int, 510), 0);
+	let y0 = max(min(floor(v) as int, 510), 0);
+	let fx = u - x0 as real;
+	let fy = v - y0 as real;
+	let a = gi_half(mp, 2, y0 * 512 + x0, 0) as real;
+	let b = gi_half(mp, 2, y0 * 512 + x0 + 1, 0) as real;
+	let c = gi_half(mp, 2, y0 * 512 + 512 + x0, 0) as real;
+	let d = gi_half(mp, 2, y0 * 512 + 513 + x0, 0) as real;
+	(a * (1.0 - fx) + b * fx) * (1.0 - fy) + (c * (1.0 - fx) + d * fx) * fy
+}
+fn vc_t(ct const byte[:], x int, y int) real {
+	let cw = (1280.0 * s3d::clouds.res) as int;
+	gi_half(ct, 8, (y * ((720.0 * s3d::clouds.res) as int) / 720) * cw + x * cw / 1280, 3) as real
+}
+fn vc_v1() bool {
+	var cover f32 = 0.5; var lo = 0; var hi = 0; var e = 0.0; var ec = 0.0;
+	for k in 19 {
+		let sg f32 = if k % 2 == 1 { 0.05 } else { -0.05 };
+		cover = 0.5 + sg * ((k + 1) / 2) as f32;
+		vc_world(0.5);
+		s3d::clouds.cover = cover;
+		lo = 0; hi = 0; e = 0.0; ec = 0.0;
+		for i in 25 {
+			let x = (i % 5 - 2) as f32 * 400.0;
+			let z = (i / 5 - 2) as f32 * 400.0;
+			vc_cam(float3 { x, 0.0, z }, float3 { 0.7071068, 0.7071068, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+			s3d::clouds.wind = float3 { 0.0, 0.0, 0.0 };
+			shoot(1, IN_OUT);
+			let ct = gfx::read_pixels(s3d::cloud_target());
+			let mp = gfx::read_pixels(s3d::cloud_shadow_target());
+			let t = vc_t(ct[..], 640, 360);
+			s3d::clouds.wind = float3 { 1000.0, 0.0, 0.0 };
+			shoot(1, IN_OUT);
+			let mc = gfx::read_pixels(s3d::cloud_shadow_target());
+			e += abs(t - vc_map(mp[..], x as real, z as real)) / 25.0;
+			ec += abs(t - vc_map(mc[..], x as real, z as real)) / 25.0;
+			let below = if t < 0.5 { 1 } else { 0 };
+			lo += below; hi += 1 - below;
+		}
+		if lo >= 7 && hi >= 7 { break; }
+	}
+	VC_COVER = cover;
+	let ok = lo >= 7 && hi >= 7 && e <= 0.05 && ec >= 0.15;
+	print("gpu: cloud V1 shadow map against the clouds seen toward the sun from 25 ground points, cover ", r2(cover as real), " (", lo, " below 0.5, ", hi, " above; bar >= 7 each): mean difference ", r4(e), " (bar <= 0.05); control map built with the clouds moved 1 km: ", r4(ec), " (bar >= 0.15)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_ground(mode int) {
+	vc_world(0.5);
+	envmap::intensity = 0.0;
+	s3d::sky.ambient = 0.0;
+	let _ = s3d::add(shapes::plane(4000.0, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0)));
+	vc_cam(float3 { 0.0, 1400.0, 0.0 }, float3 { 0.0, -1.0, 0.0 }, float3 { 0.0, 0.0, -1.0 }, 1.6);
+	s3d::clouds.cover = VC_COVER;
+	s3d::clouds.on = mode > 0;
+	s3d::clouds.shadow = if mode == 2 { 0.0 } else { 1.0 };
+}
+fn vc_v2() bool {
+	vc_ground(0);
+	let off = rr_hdr(2);
+	vc_ground(2);
+	let ctl = rr_hdr(2);
+	vc_ground(1);
+	let on = rr_hdr(2);
+	let mp = gfx::read_pixels(s3d::cloud_shadow_target());
+	let st = gfx::read_pixels(IN_OUT);
+	print("gpu: cloud ground shadow still ", codec_png::write(path(OUT_DIR[..], "cloud_ground.png")[..], 1280, 720, 4, st[..]));
+	let ps = 360.0 / tan(0.8);
+	var e = 0.0; var s1 = 0.0; var s2 = 0.0; var worst = 0.0;
+	for y in 400 { for x in 400 {
+		let i = (160 + y) * 1280 + 440 + x;
+		let b = max(gi_half(off[..], 8, i, 0) as real, 1e-9);
+		let q = gi_half(on[..], 8, i, 0) as real / b;
+		e += abs(q - vc_map(mp[..], ((x - 200) as real + 0.5) / ps * 1400.0, ((y - 200) as real + 0.5) / ps * 1400.0));
+		s1 += q; s2 += q * q;
+		worst = max(worst, abs(gi_half(ctl[..], 8, i, 0) as real / b - 1.0));
+	} }
+	e = e / 160000.0;
+	let m = s1 / 160000.0;
+	let sd = sqrt(max(s2 / 160000.0 - m * m, 0.0));
+	let ok = e <= 0.02 && sd >= 0.1 && worst <= 0.002;
+	print("gpu: cloud V2 ground from 1.4 km up, middle 400 x 400: red with over red without against the map, mean difference ", r4(e), " (bar <= 0.02), ratio mean ", r4(m), ", spread ", r4(sd), " (bar >= 0.1); control shadow strength 0: at most ", r4(worst), " from 1 (bar <= 0.002)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_v3() bool {
+	vc_world(0.5);
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { 0.0, 0.0, 1.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	s3d::clouds.cover = VC_COVER;
+	s3d::clouds.wind = float3 { 10.0, 0.0, 0.0 };
+	s3d::world_time = 0.0;
+	shoot(1, IN_OUT);
+	let a = gfx::read_pixels(s3d::cloud_shadow_target());
+	var mg byte[>..] = [];
+	for i in 262144 { let v = max(min((gi_half(a[..], 2, i, 0) as real * 255.0) as int, 255), 0) as byte; mg.push(v); mg.push(v); mg.push(v); mg.push(255 as byte); }
+	print("gpu: cloud shadow map still ", codec_png::write(path(OUT_DIR[..], "cloud_map.png")[..], 512, 512, 4, mg[..]));
+	s3d::world_time = 31.25;
+	shoot(1, IN_OUT);
+	let b = gfx::read_pixels(s3d::cloud_shadow_target());
+	var e = 0.0; var c = 0.0;
+	for y in 512 { for x in 472 {
+		let p = gi_half(a[..], 2, y * 512 + x, 0) as real;
+		e += abs(gi_half(b[..], 2, y * 512 + x + 40, 0) as real - p);
+		c += abs(gi_half(b[..], 2, y * 512 + x, 0) as real - p);
+	} }
+	e = e / 241664.0; c = c / 241664.0;
+	let ok = e <= 0.02 && c >= 0.05;
+	print("gpu: cloud V3 wind 10 m/s along +x, 31.25 s apart: later map 40 texels back against the earlier one ", r4(e), " (bar <= 0.02); control no shift ", r4(c), " (bar >= 0.05)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_fog(mode int, name const byte[:]) real, real {
+	vc_world(0.5);
+	envmap::intensity = 0.0;
+	s3d::sky.draw = false;
+	s3d::fog_on = true; s3d::fog_density = 0.002; s3d::fog_falloff = 0.0; s3d::fog_height = 0.0; s3d::fog_far = 2000.0; s3d::fog_steps = 64; s3d::fog_g = 0.0; s3d::fog_sun = 1.0;
+	s3d::fog_ambient = float3 { 0.0, 0.0, 0.0 };
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { 0.0, 0.0, 1.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	s3d::clouds.on = mode > 0;
+	s3d::clouds.shadow = if mode == 2 { 0.0 } else { 1.0 };
+	s3d::clouds.cover = if mode == 3 { 0.0 } else { VC_COVER };
+	let px = rr_hdr(2);
+	if name.len > 0 { let st = gfx::read_pixels(IN_OUT); print("gpu: cloud fog still ", codec_png::write(path(OUT_DIR[..], name)[..], 1280, 720, 4, st[..])); }
+	var s = 0.0; var q = 0.0;
+	for x in 1280 {
+		var c = 0.0;
+		for y in 720 { c += gi_half(px[..], 8, y * 1280 + x, 0) as real; }
+		c = c / 720.0;
+		s += c; q += c * c;
+	}
+	let m = s / 1280.0;
+	return m, sqrt(max(q / 1280.0 - m * m, 0.0)) / max(m, 1e-12);
+}
+fn vc_v4() bool {
+	let m0, d0 = vc_fog(0, "");
+	let m1, d1 = vc_fog(1, "cloud_fog.png");
+	let m2, d2 = vc_fog(2, "");
+	let m3, d3 = vc_fog(3, "");
+	let ok = d1 >= 0.05 && d2 <= 0.005 && abs(m3 / m0 - 1.0) <= 0.01;
+	print("gpu: cloud V4 fog shafts (same scattering in every direction), spread of the column means over their mean: ", r4(d1), " with cloud shadows (bar >= 0.05), ", r4(d2), " without (bar <= 0.005), ", r4(d0), " clouds off; cover 0 frame mean ", r4(m3 / m0), " x the frame without clouds (bar within 1%)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_v5() bool {
+	vc_world(0.0);
+	vc_view();
+	s3d::clouds.cover = 0.0;
+	let a = rr_frame(2);
+	s3d::clouds.on = false;
+	let b = rr_frame(2);
+	s3d::clouds.on = true;
+	s3d::clouds.cover = 0.5;
+	let c = rr_frame(2);
+	let d = sk_apart(a[..], b[..]);
+	let dc = sk_apart(c[..], b[..]);
+	let ok = d <= 1 && dc > 1;
+	print("gpu: cloud V5 clear sky, cover 0, clouds on against off: largest difference ", d, "/255 (bar <= 1); control cover 0.5: ", dc, "/255 (must fail)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_box(cube bool, on bool, baked f32) byte[>..] {
+	vc_world(baked);
+	s3d::clouds.shadow = 0.0;
+	s3d::clouds.on = on;
+	if cube { s3d::place(s3d::add(shapes::cube(float3 { 1.0, 1.0, 1.0 }, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { -6.761481, 3.811733, 0.0 })); }
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { -0.9659258, 0.258819, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	rr_frame(2)
+}
+fn vc_v6() bool {
+	let sky = vc_box(false, false, 0.5);
+	let b0 = vc_box(true, false, 0.5);
+	let b1 = vc_box(true, true, 0.5);
+	let c0 = vc_box(true, false, 0.0);
+	var hit byte[>..] = [];
+	for i in 921600 { hit.push(if sk_d(sky[..], b0[..], i) > 0 { 1 as byte } else { 0 as byte }); }
+	var nb = 0; var bd = 0; var ns = 0; var sd = 0;
+	for y in 1..719 { for x in 1..1279 {
+		var c = 0;
+		for k in 9 { c += hit[(y + k / 3 - 1) * 1280 + x + k % 3 - 1] as int; }
+		let df = sk_d(b0[..], b1[..], y * 1280 + x);
+		if c == 9 { nb += 1; bd = max(bd, df); } else if c == 0 { ns += 1; sd += if sk_d(c0[..], b1[..], y * 1280 + x) > 8 { 1 } else { 0 }; }
+	} }
+	let part = sd as real / max(ns, 1) as real;
+	let ok = nb > 1000 && bd == 0 && part >= 0.3;
+	print("gpu: cloud V6 box in front, camera 15 degrees up, cloud shadows off: ", nb, " box pixels differ by at most ", bd, "/255 (bar 0); ", r4(part * 100.0), " % of ", ns, " sky pixels differ by more than 8/255 from the clear sky (bar >= 30 %)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vc_sky(sun f32, white real) real, real, real {
+	vc_world(0.5);
+	s3d::clouds.sun = sun;
+	vc_view();
+	let hd = rr_hdr(2);
+	let ct = gfx::read_pixels(s3d::cloud_target());
+	var hist int[>..] = [];
+	for i in 4000 { hist.push(0); }
+	var ts = 0.0; var tn = 0; var cs = 0.0; var cn = 0;
+	for y in 720 { for x in 1280 {
+		let t = vc_t(ct[..], x, y);
+		let l = vc_lum(hd[..], y * 1280 + x);
+		if t < 0.1 { ts += l; tn += 1; hist[max(min((l / white * 1000.0) as int, 3999), 0)] += 1; } else if t > 0.99 { cs += l; cn += 1; }
+	} }
+	var acc = 0; var p = 3999;
+	for i in 4000 { acc += hist[i]; if acc * 20 >= tn * 19 { p = i; break; } }
+	VC_N = tn; VC_C = cn;
+	return ts / max(tn, 1) as real, cs / max(cn, 1) as real, (p + 1) as real / 1000.0;
+}
+fn vc_rough(px const byte[:]) real {
+	var s = 0.0;
+	for y in 720 { for x in 1279 { s += abs(vc_l8(px, y * 1280 + x + 1) - vc_l8(px, y * 1280 + x)); } }
+	s / 920880.0
+}
+fn vc_v78() bool {
+	vc_world(0.5);
+	envmap::intensity = 0.0; s3d::sky.ambient = 0.0; s3d::clouds.on = false;
+	s3d::sun.to_sun = float3 { 0.0, 1.0, 0.0 };
+	let _ = s3d::add(shapes::plane(50.0, shapes::material(linalg::v3(1.0, 1.0, 1.0), 0.0, 1.0)));
+	vc_cam(float3 { 10.0, 10.0, 0.0 }, float3 { -0.7071068, -0.7071068, 0.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+	let wp = rr_hdr(2);
+	let white = vc_lum(wp[..], 360 * 1280 + 640);
+	let thick, clear, top = vc_sky(1.0, white);
+	let tn = VC_N; let cn = VC_C;
+	let on = gfx::read_pixels(IN_OUT);
+	print("gpu: cloud still ", codec_png::write(path(OUT_DIR[..], "cloud_sky.png")[..], 1280, 720, 4, on[..]));
+	let dk, dc, dt = vc_sky(0.0, white);
+	let v7 = tn > 1000 && cn > 1000 && thick >= 3.0 * clear && top <= 1.2 && dk < 3.0 * dc;
+	print("gpu: cloud V7 sun behind the camera, 30 degrees up: thick cloud (", tn, " px) ", r4(thick / white), ", clear sky (", cn, " px) ", r4(clear / white), " x a white surface facing the sun: ", r3(thick / max(clear, 1e-9)), " x (bar >= 3), 95th percentile of thick cloud ", r3(top), " x white (bar <= 1.2); control sunlight on clouds 0: ", r3(dk / max(dc, 1e-9)), " x (must fail)", if v7 { " PASS" } else { " FAIL" });
+	s3d::clouds.sun = 1.0;
+	s3d::clouds.on = false;
+	let bk = rr_frame(2);
+	print("gpu: cloud baked still ", codec_png::write(path(OUT_DIR[..], "cloud_baked.png")[..], 1280, 720, 4, bk[..]));
+	let ra = vc_rough(on[..]);
+	let rb = vc_rough(bk[..]);
+	let v8 = ra >= 2.0 * rb;
+	print("gpu: cloud V8 detail, mean luma step between neighbors across: ", r4(ra), " real-time against ", r4(rb), " baked: ", r3(ra / max(rb, 1e-9)), " x (bar >= 2)", if v8 { " PASS" } else { " FAIL" });
+	v7 && v8
+}
+fn vc_v9() bool {
+	vc_world(0.5);
+	vc_view();
+	s3d::clouds.on = false;
+	let a0 = frame_ms();
+	s3d::clouds.on = true;
+	let a1 = frame_ms();
+	vc_ground(0);
+	let g0 = frame_ms();
+	vc_ground(1);
+	let g1 = frame_ms();
+	let ok = a1 - a0 <= 2.0 && g1 - g0 <= 2.0;
+	print("gpu: cloud V9 cost: sky view ", r2(a0), " ms without, ", r2(a1), " ms with (", r2(a1 - a0), " ms more), ground view ", r2(g0), " ms without, ", r2(g1), " ms with (", r2(g1 - g0), " ms more; bar <= 2 each)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vf_world() {
+	reset_scene();
+	s3d::fog_volumes.clear();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::sss_on = false;
+	s3d::clouds = s3d::Clouds { on: false };
+	s3d::sky.draw = false; s3d::sky.ambient = 0.0; s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 }; s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 }; s3d::sky.ground = float3 { 0.0, 0.0, 0.0 };
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::sun.shadows = false;
+	envmap::on = false;
+	s3d::world_time = 0.0;
+	s3d::fog_on = true; s3d::fog_density = 0.0; s3d::fog_falloff = 0.0; s3d::fog_height = 0.0; s3d::fog_far = 30.0; s3d::fog_steps = 64; s3d::fog_g = 0.0; s3d::fog_sun = 1.0;
+	s3d::fog_ambient = float3 { 1.0, 1.0, 1.0 }; s3d::fog_noise = 0.0; s3d::fog_noise_size = 20.0; s3d::fog_wind = float3 { 0.0, 0.0, 0.0 }; s3d::fog_lights = 1.0;
+	vc_cam(float3 { 0.0, 2.0, 0.0 }, float3 { 0.0, 0.0, 1.0 }, float3 { 0.0, 1.0, 0.0 }, 1.0);
+}
+fn vf_blk(px const byte[:], cx int, cy int, w int, h int, c int) real {
+	var s = 0.0;
+	for y in h { for x in w { s += gi_half(px, 8, (cy - h / 2 + y) * 1280 + cx - w / 2 + x, c) as real; } }
+	s / (w * h) as real
+}
+fn vf_still(name const byte[:]) { let st = gfx::read_pixels(IN_OUT); print("gpu: vfog still ", codec_png::write(path(OUT_DIR[..], name)[..], 1280, 720, 4, st[..])); }
+fn vf_vol(den f32, soft f32, round bool, half float3, rgb float3) byte[>..] {
+	s3d::fog_volumes.clear();
+	s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { 0.0, 2.0, 10.0 }, half: half, density: den, rgb: rgb, soft: soft, round: round });
+	rr_hdr(2)
+}
+fn vf_h1(unit real) bool {
+	vf_world();
+	let a = vf_vol(0.5, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let c = vf_blk(a[..], 640, 360, 8, 8, 0) / unit;
+	let o = vf_blk(a[..], 840, 360, 8, 8, 0) / unit;
+	let z = vf_vol(0.0, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let cz = vf_blk(z[..], 640, 360, 8, 8, 0) / unit;
+	let ex = 1.0 - exp(-2.0);
+	let ok = abs(c / ex - 1.0) <= 0.01 && o <= 0.001 && cz <= 0.001;
+	print("gpu: vfog H1 box volume, density 0.5 over 4 m: center ", r4(c), " against ", r4(ex), " (bar within 1%), 200 px right ", r4(o), " (bar <= 0.001); control density 0: ", r4(cz), " (bar <= 0.001)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vf_e2(tint real) real { 1.0 - exp(-0.4) + exp(-0.4) * (0.05 + 0.5 * tint) / 0.55 * (1.0 - exp(-2.2)) + exp(-2.6) * (1.0 - exp(-0.9)) }
+fn vf_h2(unit real) bool {
+	vf_world();
+	s3d::fog_density = 0.05;
+	let a = vf_vol(0.5, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 0.5, 0.25 });
+	let r = vf_blk(a[..], 640, 360, 8, 8, 0) / unit;
+	let g = vf_blk(a[..], 640, 360, 8, 8, 1) / unit;
+	let b = vf_blk(a[..], 640, 360, 8, 8, 2) / unit;
+	let wt = vf_vol(0.5, 0.0, false, float3 { 1.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let bw = vf_blk(wt[..], 640, 360, 8, 8, 2) / unit;
+	let ok = abs(r / vf_e2(1.0) - 1.0) <= 0.02 && abs(g / vf_e2(0.5) - 1.0) <= 0.02 && abs(b / vf_e2(0.25) - 1.0) <= 0.02 && abs(bw / vf_e2(0.25) - 1.0) > 0.1;
+	print("gpu: vfog H2 colored volume in fog: center ", r4(r), " ", r4(g), " ", r4(b), " against ", r4(vf_e2(1.0)), " ", r4(vf_e2(0.5)), " ", r4(vf_e2(0.25)), " (bar within 2% each); control white volume: blue ", r4(bw), " (must be more than 10% off)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vf_h3(unit real) bool {
+	vf_world();
+	let a = vf_vol(0.3, 0.5, true, float3 { 2.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	vf_still("vfog_round.png");
+	let c = vf_blk(a[..], 640, 360, 8, 8, 0) / unit;
+	var up = 0.0; var prev = c; var last = c;
+	for k in 1..41 { last = vf_blk(a[..], 640 + k * 8, 360, 8, 8, 0) / unit; up = max(up, last - prev); prev = last; }
+	let h = vf_vol(0.3, 0.0, true, float3 { 2.0, 1.0, 2.0 }, float3 { 1.0, 1.0, 1.0 });
+	let ch = vf_blk(h[..], 640, 360, 8, 8, 0) / unit;
+	let ex = 1.0 - exp(-0.9);
+	let ok = abs(c / ex - 1.0) <= 0.02 && up <= 0.005 && last <= 0.001 && abs(ch / ex - 1.0) > 0.02;
+	print("gpu: vfog H3 round soft volume: center ", r4(c), " against ", r4(ex), " (bar within 2%), largest rise along the row ", r4(up), " (bar <= 0.005), 320 px right ", r4(last), " (bar <= 0.001); control soft 0: center ", r4(ch), " (must be more than 2% off)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn vf_noise(k f32, wind f32, t f32, name const byte[:]) real[>..] {
+	vf_world();
+	s3d::fog_density = 0.05; s3d::fog_far = 20.0; s3d::fog_noise = k; s3d::fog_wind = float3 { wind, 0.0, 0.0 }; s3d::world_time = t;
+	let px = rr_hdr(2);
+	if name.len > 0 { vf_still(name); }
+	var o real[>..] = [];
+	for by in 45 { for bx in 80 { o.push(vf_blk(px[..], bx * 16 + 8, by * 16 + 8, 16, 16, 0)); } }
+	o
+}
+fn vf_stat(a const real[:]) real, real {
+	var s = 0.0; var q = 0.0;
+	for v in a { s += v; q += v * v; }
+	let m = s / a.len as real;
+	return m, sqrt(max(q / a.len as real - m * m, 0.0)) / max(m, 1e-12);
+}
+fn vf_diff(a const real[:], b const real[:]) real {
+	var d = 0.0; var s = 0.0;
+	for i in a.len { d += abs(a[i] - b[i]); s += b[i]; }
+	d / max(s, 1e-12)
+}
+fn vf_h45() bool {
+	let a0 = vf_noise(0.0, 0.0, 0.0, "");
+	let a1 = vf_noise(1.0, 0.0, 0.0, "vfog_noise.png");
+	let m0, s0 = vf_stat(a0[..]);
+	let m1, s1 = vf_stat(a1[..]);
+	let h4 = s0 <= 0.005 && s1 >= 0.05 && abs(m1 / m0 - 1.0) <= 0.1;
+	print("gpu: vfog H4 noise, spread of 3600 block means over their mean: ", r4(s0), " at noise 0 (bar <= 0.005), ", r4(s1), " at noise 1 (bar >= 0.05); frame mean ", r4(m1 / m0), " x the noise-0 frame (bar within 10%)", if h4 { " PASS" } else { " FAIL" });
+	let b0 = vf_noise(1.0, 1.0, 0.0, "");
+	let b40 = vf_noise(1.0, 1.0, 40.0, "");
+	let b80 = vf_noise(1.0, 1.0, 80.0, "");
+	let d80 = vf_diff(b80[..], b0[..]);
+	let d40 = vf_diff(b40[..], b0[..]);
+	let h5 = d80 <= 0.01 && d40 >= 0.03;
+	print("gpu: vfog H5 wind 1 m/s along x: time 80 against time 0 differs by ", r4(d80), " (bar <= 0.01); control time 40: ", r4(d40), " (bar >= 0.03)", if h5 { " PASS" } else { " FAIL" });
+	h4 && h5
+}
+fn vf_slab(o real, e real, lo real, hi real, a real, b real) real, real {
+	if abs(e) < 1e-12 { if o < lo || o > hi { return 1.0, 0.0; } return a, b; }
+	let u = (lo - o) / e;
+	let v = (hi - o) / e;
+	return max(a, min(u, v)), min(b, max(u, v));
+}
+fn vf_hit(px real, py real, pz real) bool {
+	let a1, b1 = vf_slab(px, -3.0 - px, -1.55, -1.45, 0.0, 1.0);
+	let a2, b2 = vf_slab(py, 2.0 - py, 2.0, 3.2, a1, b1);
+	let a3, b3 = vf_slab(pz, 7.0 - pz, 6.0, 8.0, a2, b2);
+	a3 <= b3
+}
+fn vf_ref(cx int, cy int, spot bool, box bool) real {
+	let th = tan(0.5);
+	let sx = if to_uv(s3d::view_proj_nj, float3 { 1.0, 2.0, 10.0 }).x > 0.5 { 1.0 } else { -1.0 };
+	let dx = sx * (cx as real / 640.0 - 1.0) * th * 1280.0 / 720.0;
+	let dy = (1.0 - cy as real / 360.0) * th;
+	let n = sqrt(dx * dx + dy * dy + 1.0);
+	let c0 = cos(0.3);
+	let c1 = cos(0.24);
+	var s = 0.0;
+	for i in 20000 {
+		let t = (i as real + 0.5) * 0.001;
+		let px = dx / n * t;
+		let py = 2.0 + dy / n * t;
+		let pz = t / n;
+		let d2 = (px + 3.0) * (px + 3.0) + (py - 2.0) * (py - 2.0) + (pz - 7.0) * (pz - 7.0);
+		let q = max(1.0 - d2 / 144.0, 0.0);
+		let u = clamp(((px + 3.0) / max(sqrt(d2), 1e-9) - c0) / (c1 - c0), 0.0, 1.0);
+		let cone = if spot { u * u * (3.0 - 2.0 * u) } else { 1.0 };
+		let vis = if box && vf_hit(px, py, pz) { 0.0 } else { 1.0 };
+		s += 0.05 * exp(-0.05 * t) * 50.0 * q * q / (1.0 + d2) * cone * vis * 0.0795774715 * 0.001;
+	}
+	s
+}
+fn vf_spot(spot bool, shad bool, box bool) byte[>..] {
+	vf_world();
+	s3d::fog_density = 0.05; s3d::fog_far = 20.0; s3d::fog_ambient = float3 { 0.0, 0.0, 0.0 };
+	if box { s3d::place(s3d::add(shapes::cube(float3 { 0.05, 0.6, 1.0 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::translate(float3 { -1.5, 2.6, 7.0 })); }
+	s3d::lights.push(s3d::Light { pos: float3 { -3.0, 2.0, 7.0 }, range: 12.0, rgb: float3 { 50.0, 50.0, 50.0 }, kind: if spot { 1 } else { 0 }, dir: float3 { 1.0, 0.0, 0.0 }, cone: 0.3, edge: 0.2, shadows: shad, .. });
+	rr_hdr(2)
+}
+fn vf_h67(unit real) bool {
+	let a = vf_spot(true, false, false);
+	vf_still("vfog_spot.png");
+	let r0 = vf_ref(640, 360, true, false);
+	let rows = [360, 320, 284, 240];
+	var worst = 0.0; var out = 0.0;
+	for y in rows { let g = vf_blk(a[..], 640, y, 24, 4, 0) / unit; worst = max(worst, abs(g - vf_ref(640, y, true, false)) / r0); out = g / r0; }
+	let gs = vf_blk(a[..], 840, 360, 24, 4, 0) / unit;
+	worst = max(worst, abs(gs - vf_ref(840, 360, true, false)) / r0);
+	let pt = vf_spot(false, false, false);
+	let po = vf_blk(pt[..], 640, 240, 24, 4, 0) / unit / r0;
+	let h6 = worst <= 0.05 && out <= 0.01 && po > 0.01;
+	print("gpu: vfog H6 spot cone in fog, 5 blocks against the CPU integral: center ", r4(vf_blk(a[..], 640, 360, 24, 4, 0) / unit), " against ", r4(r0), ", side ", r4(gs), " against ", r4(vf_ref(840, 360, true, false)), ", worst difference ", r4(worst), " of the center (bar <= 0.05), outside the cone ", r4(out), " (bar <= 0.01); control point light outside: ", r4(po), " (must be above 0.01)", if h6 { " PASS" } else { " FAIL" });
+	let b = vf_spot(true, true, true);
+	vf_still("vfog_shadow.png");
+	let sh = vf_blk(b[..], 640, 320, 24, 4, 0) / unit / r0;
+	let lit = abs(vf_blk(b[..], 640, 400, 24, 4, 0) / unit - vf_ref(640, 400, true, true)) / r0;
+	let c = vf_spot(true, false, true);
+	let cs = vf_blk(c[..], 640, 320, 24, 4, 0) / unit / r0;
+	let p = vf_spot(false, true, true);
+	let p1 = vf_ref(640, 320, false, true);
+	let p2 = vf_ref(640, 400, false, true);
+	let p3 = vf_ref(840, 320, false, true);
+	let top = max(p1, max(p2, p3));
+	let g1 = vf_blk(p[..], 640, 320, 24, 4, 0) / unit;
+	let g2 = vf_blk(p[..], 640, 400, 24, 4, 0) / unit;
+	let g3 = vf_blk(p[..], 840, 320, 24, 4, 0) / unit;
+	let pw = max(abs(g1 - p1), max(abs(g2 - p2), abs(g3 - p3))) / top;
+	let h7 = sh <= 0.02 && lit <= 0.05 && cs > 0.02 && pw <= 0.05;
+	print("gpu: vfog H7 local shadows in fog: spot, behind the box ", r4(sh), " of the open center (bar <= 0.02), lit side off by ", r4(lit), " (bar <= 0.05); point light ", r4(g1), " ", r4(g2), " ", r4(g3), " against ", r4(p1), " ", r4(p2), " ", r4(p3), ", worst ", r4(pw), " of the largest (bar <= 0.05); control spot shadows off: ", r4(cs), " (must be above 0.02)", if h7 { " PASS" } else { " FAIL" });
+	h6 && h7
+}
+fn vf_h8() bool {
+	let a = vf_spot(true, false, true);
+	s3d::fog_steps = 32;
+	let t0 = frame_ms();
+	let b = vf_spot(true, true, true);
+	s3d::fog_steps = 32; s3d::fog_noise = 1.0;
+	for k in 4 { s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { if k % 2 == 0 { -3.0 } else { 3.0 }, 2.0, if k < 2 { 10.0 } else { 15.0 } }, density: 0.3, soft: 0.5, .. }); }
+	let t1 = frame_ms();
+	vf_still("vfog_all.png");
+	let ok = t1 - t0 <= 2.0;
+	print("gpu: vfog H8 cost: plain fog ", r2(t0), " ms a frame, with noise, 4 volumes and spot shadows ", r2(t1), " ms (", r2(t1 - t0), " ms more; bar <= 2)", if ok { " PASS" } else { " FAIL" });
+	ok
+}
+fn se_h(px real, pz real, tm real, w float4) real {
+	var qx = px;
+	var qz = pz;
+	var f = w.x as real;
+	var a = w.y as real;
+	var ang real = 0.7;
+	var h real = 0.0;
+	for i in 11 {
+		let dx = cos(ang);
+		let dz = sin(ang);
+		let s = sin((qx * dx + qz * dz) * f + tm * sqrt(9.81 * f) * w.z as real) * a / f;
+		h += s;
+		qx += dx * s * 0.5;
+		qz += dz * s * 0.5;
+		f *= 1.31;
+		a *= 0.87;
+		ang += 2.4;
+	}
+	h
+}
+fn se_world() { reset_scene(); dark_scene(); s3d::caustics = s3d::Caustics { .. }; s3d::sea = s3d::Sea { .. }; s3d::world_time = 3.0; s3d::debug_view = 0; }
+fn se_floor() { s3d::place(s3d::add(shapes::cube(float3 { 40.0, 0.1, 40.0 }, shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0))), gfx::translate(float3 { 0.0, -3.1, 0.0 })); }
+fn se_sea(swell f32, foam f32) {
+	let a = shapes::sea(7.0, 129);
+	gltf::materials[gltf::materials.len - 1].shade_a.w = swell;
+	gltf::materials[gltf::materials.len - 1].shade_c.w = foam;
+	let _ = s3d::add(a);
+}
+fn se_top() { s3d::view = s3d::Camera { eye: float3 { 0.0, 8.0, 0.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 0.9, near: 0.05, far: 80.0 }; }
+fn se_w123() bool {
+	let wv = float4 { 1.1, 0.062, 1.0, 0.0 };
+	let top = 0.062 / 1.1 * 2.94427;
+	let np = 1280 * 720;
+	se_world();
+	se_sea(1.0, 0.0);
+	se_top();
+	s3d::debug_view = 11;
+	let p = rr_hdr(2);
+	s3d::debug_view = 1;
+	let nm = rr_hdr(2);
+	s3d::debug_view = 0;
+	var in3 = 0;
+	var in0 = 0;
+	var n1 = 0;
+	var nf = 0;
+	var hs f32[>..] = [];
+	for i in np {
+		let x = gi_half(p[..], 8, i, 0) as real;
+		let y = gi_half(p[..], 8, i, 1) as real;
+		let z = gi_half(p[..], 8, i, 2) as real;
+		let h3 = se_h(x, z, 3.0, wv);
+		hs.push((h3 / top) as f32);
+		if abs(y - h3) < 0.005 { in3 += 1; }
+		if abs(y - se_h(x, z, 0.0, wv)) < 0.005 { in0 += 1; }
+		let sx = (se_h(x + 0.001, z, 3.0, wv) - se_h(x - 0.001, z, 3.0, wv)) * 500.0;
+		let sz = (se_h(x, z + 0.001, 3.0, wv) - se_h(x, z - 0.001, 3.0, wv)) * 500.0;
+		let nx = gi_half(nm[..], 8, i, 0) as real * 2.0 - 1.0;
+		let ny = gi_half(nm[..], 8, i, 1) as real * 2.0 - 1.0;
+		let nz = gi_half(nm[..], 8, i, 2) as real * 2.0 - 1.0;
+		let nl = sqrt(nx * nx + ny * ny + nz * nz) + 1e-9;
+		if (ny - sx * nx - sz * nz) / (nl * sqrt(1.0 + sx * sx + sz * sz)) > 0.9998477 { n1 += 1; }
+		if ny / nl > 0.9998477 { nf += 1; }
+	}
+	se_world();
+	se_sea(0.0, 0.0);
+	se_top();
+	s3d::debug_view = 11;
+	let q = rr_hdr(2);
+	s3d::debug_view = 0;
+	var flat real = 0.0;
+	for i in np { flat = max(flat, abs(gi_half(q[..], 8, i, 1) as real)); }
+	let w1 = in3 * 100 >= np * 99 && in0 * 2 < np && flat <= 0.0001;
+	print("gpu: sea W1 height within 5 mm: ", r2(in3 as real * 100.0 / np as real), "% (bar >= 99), against time 0: ", r2(in0 as real * 100.0 / np as real), "% (control < 50), swell 0 largest: ", r4(flat * 1000.0), " mm (control <= 0.1): ", if w1 { "ok" } else { "FAIL" });
+	let w2 = n1 * 100 >= np * 99 && nf * 2 < np;
+	print("gpu: sea W2 normals within 1 degree: ", r2(n1 as real * 100.0 / np as real), "% (bar >= 99), against flat: ", r2(nf as real * 100.0 / np as real), "% (control < 50): ", if w2 { "ok" } else { "FAIL" });
+	var rat real[2] = [0.0, 0.0];
+	for k in 2 {
+		se_world();
+		se_floor();
+		se_sea(1.0, (1 - k) as f32);
+		se_top();
+		s3d::sun.to_sun = CA_L; s3d::sun.rgb = float3 { 3.0, 3.0, 3.0 }; s3d::sun.shadows = false;
+		let f = rr_hdr(2);
+		var hi real = 0.0;
+		var lo real = 0.0;
+		var nh = 0;
+		var nl = 0;
+		for i in np {
+			if hs[i] >= 0.6 { hi += vc_lum(f[..], i); nh += 1; }
+			if hs[i] <= 0.2 { lo += vc_lum(f[..], i); nl += 1; }
+		}
+		rat[k] = (hi / max(nh, 1) as real) / max(lo / max(nl, 1) as real, 1e-9);
+		print("gpu: sea W3 foam ", 1 - k, ": crest pixels ", nh, " mean ", r4(hi / max(nh, 1) as real), ", low pixels ", nl, " mean ", r4(lo / max(nl, 1) as real));
+	}
+	let w3 = rat[0] >= 2.0 && rat[1] <= 1.3;
+	print("gpu: sea W3 crest over low: ", r3(rat[0]), " (bar >= 2), foam 0: ", r3(rat[1]), " (control <= 1.3): ", if w3 { "ok" } else { "FAIL" });
+	w1 && w2 && w3
+}
+fn se_flat(half f32, amp f32, ab float3, sc float3, ior f32) {
+	let a = shapes::water(half);
+	let k = gltf::materials.len - 1;
+	gltf::materials[k].shade_b.y = amp;
+	gltf::materials[k].shade_a.x = ab.x; gltf::materials[k].shade_a.y = ab.y; gltf::materials[k].shade_a.z = ab.z;
+	gltf::materials[k].shade_c.x = sc.x; gltf::materials[k].shade_c.y = sc.y; gltf::materials[k].shade_c.z = sc.z;
+	gltf::materials[k].shade_c.w = 0.0;
+	gltf::materials[k].ior = ior;
+	let _ = s3d::add(a);
+}
+fn se_mirror(panel bool) {
+	se_world();
+	se_floor();
+	se_flat(20.0, 0.0, float3 { 50.0, 50.0, 50.0 }, float3 { 0.0, 0.0, 0.0 }, 1.333);
+	if panel {
+		var m = shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0);
+		m.emissive = float3 { 2.0, 2.0, 2.0 };
+		s3d::place(s3d::add(shapes::cube(float3 { 1.5, 1.0, 0.02 }, m)), gfx::translate(float3 { 0.0, 1.2, 3.02 }));
+	}
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 2.0, -6.0 }, target: float3 { 0.0, 0.5, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.05, far: 80.0 };
+}
+fn se_w48() bool {
+	se_mirror(true);
+	s3d::debug_view = 11;
+	let p = rr_hdr(2);
+	s3d::debug_view = 0;
+	let t = rr_hdr(2);
+	s3d::sea.under = false;
+	let tu = rr_hdr(2);
+	s3d::sea.under = true;
+	s3d::sea.reflect = false;
+	let o = rr_hdr(2);
+	se_mirror(false);
+	s3d::sea.reflect = false;
+	s3d::sky.zenith = float3 { 2.0, 2.0, 2.0 }; s3d::sky.horizon = float3 { 2.0, 2.0, 2.0 }; s3d::sky.ground = float3 { 2.0, 2.0, 2.0 }; s3d::sky.ambient = 1.0;
+	let r = rr_hdr(2);
+	var wat byte[>..] = [];
+	var ins byte[>..] = [];
+	for i in 1280 * 720 {
+		let x = gi_half(p[..], 8, i, 0) as real;
+		let y = gi_half(p[..], 8, i, 1) as real;
+		let z = gi_half(p[..], 8, i, 2) as real;
+		let w = abs(y) < 0.002 && abs(x) + abs(z) > 0.01;
+		let k = 9.0 / max(z + 6.0, 1e-6);
+		let qy = 2.0 * k - 2.0;
+		wat.push((if w { 1 } else { 0 }) as byte);
+		ins.push((if w && z < 3.0 && abs(x * k) <= 1.5 && qy >= 0.2 && qy <= 2.2 { 1 } else { 0 }) as byte);
+	}
+	var ni = 0;
+	var no = 0;
+	var bi = 0;
+	var bo = 0;
+	var bc = 0;
+	var wi real = 0.0;
+	var wo real = 0.0;
+	var wc real = 0.0;
+	for y in 714 {
+		for x in 1274 {
+			let i = (y + 3) * 1280 + x + 3;
+			if wat[i] as int == 0 { continue; }
+			var s = 0;
+			for dy in 7 { for dx in 7 { s += ins[(y + dy) * 1280 + x + dx] as int; } }
+			if s != 49 && s != 0 { continue; }
+			var e real = 0.0;
+			var c real = 0.0;
+			for ch in 3 {
+				let rv = max(gi_half(r[..], 8, i, ch) as real, 1e-9);
+				let tv = gi_half(t[..], 8, i, ch) as real;
+				e = max(e, if s == 49 { abs(tv - rv) / rv } else { tv / rv });
+				c = max(c, gi_half(o[..], 8, i, ch) as real / rv);
+			}
+			if s == 49 { ni += 1; wi = max(wi, e); wc = max(wc, c); if e > 0.05 { bi += 1; } if c > 0.1 { bc += 1; } }
+			if s == 0 { no += 1; wo = max(wo, e); if e > 0.05 { bo += 1; } }
+		}
+	}
+	let w4 = ni > 1000 && no > 1000 && bi == 0 && bo == 0 && bc == 0;
+	print("gpu: sea W4 inside ", ni, " pixels, off by > 5%: ", bi, " (worst ", r4(wi), "), outside ", no, " pixels above 5%: ", bo, " (worst ", r4(wo), "), reflections off above 10%: ", bc, " (worst ", r4(wc), "): ", if w4 { "ok" } else { "FAIL" });
+	var df = 0;
+	for i in t.len { if t[i] != tu[i] { df += 1; } }
+	print("gpu: sea W8 bytes that differ with sea.under off: ", df, " (bar 0): ", if df == 0 { "ok" } else { "FAIL" });
+	w4 && df == 0
+}
+fn se_w5() bool {
+	var lo real[2] = [9.0, 9.0];
+	var mid real[2] = [9.0, 9.0];
+	var out real[2] = [0.0, 0.0];
+	for k in 2 {
+		se_world();
+		s3d::sky.zenith = float3 { 1.0, 1.0, 1.0 }; s3d::sky.horizon = float3 { 1.0, 1.0, 1.0 }; s3d::sky.ground = float3 { 1.0, 1.0, 1.0 };
+		se_flat(20.0, 0.0, float3 { 0.45, 0.09, 0.07 }, float3 { 0.012, 0.07, 0.08 }, if k == 0 { 1.333 } else { 1.5 });
+		s3d::sea.under = false;
+		s3d::view = s3d::Camera { eye: float3 { 0.0, -1.0, 0.0 }, target: float3 { 0.0, 0.0, 0.0 }, up: float3 { 0.0, 0.0, -1.0 }, fov_y: 2.0, near: 0.05, far: 80.0 };
+		let f = rr_hdr(2);
+		for y in 720 {
+			let a = atan(abs(y as real + 0.5 - 360.0) / 360.0 * tan(1.0)) * 57.29578;
+			let i = y * 1280 + 640;
+			let mn = min(gi_half(f[..], 8, i, 0), min(gi_half(f[..], 8, i, 1), gi_half(f[..], 8, i, 2))) as real;
+			let mx = max(gi_half(f[..], 8, i, 0), max(gi_half(f[..], 8, i, 1), gi_half(f[..], 8, i, 2))) as real;
+			if a >= 10.0 && a <= 35.0 { lo[k] = min(lo[k], mn); }
+			if a >= 44.5 && a <= 45.5 { mid[k] = min(mid[k], mn); out[k] = if k == 1 { max(out[k], mx) } else { out[k] }; }
+			if a >= 51.0 && k == 0 { out[k] = max(out[k], mx); }
+		}
+	}
+	let w5 = lo[0] >= 0.9 && mid[0] >= 0.5 && out[0] <= 0.05 && out[1] <= 0.05;
+	print("gpu: sea W5 lowest at 10 to 35 degrees: ", r4(lo[0]), " (bar >= 0.9), at 45: ", r4(mid[0]), " (bar >= 0.5), highest at 51 and beyond: ", r4(out[0]), " (bar <= 0.05), ior 1.5 at 45: ", r4(out[1]), " (control <= 0.05): ", if w5 { "ok" } else { "FAIL" });
+	w5
+}
+fn se_deep(amp f32, wall bool, slab bool) {
+	se_world();
+	se_flat(20.0, amp, float3 { 0.45, 0.09, 0.07 }, float3 { 0.012, 0.07, 0.08 }, 1.333);
+	if wall {
+		var m = shapes::material(linalg::v3(0.0, 0.0, 0.0), 0.0, 1.0);
+		m.emissive = float3 { 2.0, 2.0, 2.0 };
+		s3d::place(s3d::add(shapes::cube(float3 { 4.0, 0.9, 0.02 }, m)), gfx::translate(float3 { 0.0, -1.0, 4.02 }));
+	}
+	if slab { s3d::place(s3d::add(shapes::cube(float3 { 2.0, 0.1, 2.0 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 1.0))), gfx::translate(float3 { 0.0, 0.3, 7.0 })); }
+	s3d::view = s3d::Camera { eye: float3 { 0.0, -1.0, 0.0 }, target: float3 { 0.0, -1.0, 1.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.05, far: 80.0 };
+}
+fn se_sun(l float3, sh bool) { s3d::sun.to_sun = l; s3d::sun.rgb = float3 { 3.0, 3.0, 3.0 }; s3d::sun.shadows = sh; }
+fn se_cv(a const byte[:], b const byte[:]) real {
+	var r real[80] = [0.0; 80];
+	var m real = 0.0;
+	for k in 80 {
+		var sa real = 0.0;
+		var sb real = 0.0;
+		for y in 240 { for x in 16 { sa += vc_lum(a, (360 + y) * 1280 + k * 16 + x); sb += vc_lum(b, (360 + y) * 1280 + k * 16 + x); } }
+		r[k] = sa / max(sb, 1e-12);
+		m += r[k] / 80.0;
+	}
+	var v real = 0.0;
+	for k in 80 { v += (r[k] - m) * (r[k] - m) / 80.0; }
+	sqrt(v) / max(m, 1e-12)
+}
+fn se_w67() bool {
+	let ab = [0.45, 0.09, 0.07];
+	let sc = [0.012, 0.07, 0.08];
+	se_deep(0.0, true, false);
+	let fa = rr_hdr(2);
+	s3d::sea.under = false;
+	let ga = rr_hdr(2);
+	se_deep(0.0, false, false);
+	se_sun(CA_L, false);
+	s3d::sea.shafts = 0.0;
+	let fb = rr_hdr(2);
+	se_deep(0.0, false, true);
+	se_sun(CA_L, true);
+	s3d::sea.shafts = 0.0;
+	let fs = rr_hdr(2);
+	s3d::sun.shadows = false;
+	let gs = rr_hdr(2);
+	var w6 = true;
+	for ch in 3 {
+		let wa = 2.0 * exp(-4.0 * ab[ch]);
+		let va = vf_blk(fa[..], 640, 360, 8, 8, ch);
+		let ca = vf_blk(ga[..], 640, 360, 8, 8, ch);
+		let wb = sc[ch] * 3.0 * 0.8660254 / 3.14159265 * exp(-ab[ch] / 0.9270248) * (1.0 - exp(-20.0 * ab[ch]));
+		let vb = vf_blk(fb[..], 640, 360, 8, 8, ch);
+		let ok = abs(va - wa) <= 0.02 * wa && abs(ca - 2.0) <= 0.02 && abs(vb - wb) <= 0.03 * wb;
+		print("gpu: sea W6 channel ", ch, ": wall ", r4(va), " (closed form ", r4(wa), ", bar 2%), under off ", r4(ca), " (control 2 within 1%), scatter ", r4(vb * 100.0), " (closed form ", r4(wb * 100.0), " x 0.01, bar 3%): ", if ok { "ok" } else { "FAIL" });
+		w6 = w6 && ok;
+	}
+	let l2 = sc[2] * 3.0 * 0.8660254 / 3.14159265 * exp(-ab[2] / 0.9270248);
+	let ws = l2 * ((1.0 - exp(-5.0 * ab[2])) + (exp(-9.0 * ab[2]) - exp(-20.0 * ab[2])));
+	let vs = vf_blk(fs[..], 640, 360, 8, 8, 2);
+	let cs = vf_blk(gs[..], 640, 360, 8, 8, 2);
+	se_deep(0.062, false, false);
+	s3d::view = s3d::Camera { eye: float3 { 0.0, -2.0, 0.0 }, target: float3 { 0.0, -2.0, 1.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 1.0, near: 0.05, far: 80.0 };
+	se_sun(float3 { 0.3015113, 0.9045340, 0.3015113 }, false);
+	let s1 = rr_hdr(2);
+	s3d::sea.shafts = 0.0;
+	let s0 = rr_hdr(2);
+	s3d::world_time = 4.0;
+	let s4 = rr_hdr(2);
+	let cv = se_cv(s1[..], s0[..]);
+	let cc = se_cv(s4[..], s0[..]);
+	let w7 = cv >= 0.005 && cc <= 0.001 && abs(vs - ws) <= 0.05 * ws && cs > 1.15 * ws;
+	print("gpu: sea W7 shaft spread across 80 blocks: ", r4(cv), " (bar >= 0.005), shafts 0 at two times: ", r4(cc), " (control <= 0.001); slab shadow blue ", r4(vs * 100.0), " (closed form ", r4(ws * 100.0), " x 0.01, bar 5%), sun shadows off ", r4(cs * 100.0), " (control > ", r4(ws * 115.0), "): ", if w7 { "ok" } else { "FAIL" });
+	s3d::world_time = 3.0;
+	s3d::sea.shafts = 1.0;
+	let on = frame_ms();
+	s3d::sea.under = false;
+	let off = frame_ms();
+	se_world();
+	se_sea(1.0, 1.0);
+	se_top();
+	let full = frame_ms();
+	se_world();
+	se_sea(0.0, 0.0);
+	se_top();
+	s3d::sea.reflect = false;
+	let bare = frame_ms();
+	let w9 = full - bare <= 3.0 && on - off <= 3.0;
+	print("gpu: sea W9 swell, foam and reflections: ", r2(full), " ms against ", r2(bare), " ms bare (bar +3 ms); underwater pass: ", r2(on), " ms against ", r2(off), " ms off (bar +3 ms): ", if w9 { "ok" } else { "FAIL" });
+	w6 && w7 && w9
+}
+fn sea_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let cs = s3d::caustics;
+	let wt = s3d::world_time;
+	let a = se_w123();
+	let b = se_w48();
+	let c = se_w5();
+	let d = se_w67();
+	reset_scene();
+	s3d::caustics = cs; s3d::sea = s3d::Sea { .. }; s3d::world_time = wt; s3d::debug_view = 0;
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	a && b && c && d
+}
+fn fog_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let son = envmap::on;
+	let fo = s3d::fog_on; let fd = s3d::fog_density; let ff = s3d::fog_falloff; let fh = s3d::fog_height; let fr = s3d::fog_far; let fs = s3d::fog_steps; let fg = s3d::fog_g; let fa = s3d::fog_ambient;
+	vf_world();
+	s3d::fog_density = 50.0;
+	let u = rr_hdr(2);
+	let unit = vf_blk(u[..], 640, 360, 8, 8, 0);
+	print("gpu: vfog unit (opaque fog under ambient 1): ", r4(unit));
+	let h1 = vf_h1(unit);
+	let h2 = vf_h2(unit);
+	let h3 = vf_h3(unit);
+	let h45 = vf_h45();
+	let h67 = vf_h67(unit);
+	let h8 = vf_h8();
+	reset_scene();
+	s3d::fog_volumes.clear();
+	s3d::fog_noise = 0.0; s3d::fog_wind = float3 { 0.0, 0.0, 0.0 };
+	s3d::world_time = 0.0;
+	envmap::on = son;
+	s3d::fog_on = fo; s3d::fog_density = fd; s3d::fog_falloff = ff; s3d::fog_height = fh; s3d::fog_far = fr; s3d::fog_steps = fs; s3d::fog_g = fg; s3d::fog_ambient = fa;
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	h1 && h2 && h3 && h45 && h67 && h8
+}
+fn cloud_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let son = envmap::on; let si = envmap::intensity;
+	let fo = s3d::fog_on; let fd = s3d::fog_density; let ff = s3d::fog_falloff; let fh = s3d::fog_height; let fr = s3d::fog_far; let fs = s3d::fog_steps; let fg = s3d::fog_g; let fa = s3d::fog_ambient;
+	let v1 = vc_v1();
+	let v2 = vc_v2();
+	let v3 = vc_v3();
+	let v4 = vc_v4();
+	let v5 = vc_v5();
+	let v6 = vc_v6();
+	let v78 = vc_v78();
+	let v9 = vc_v9();
+	reset_scene();
+	s3d::clouds = s3d::Clouds { on: false };
+	s3d::world_time = 0.0;
+	envmap::on = son; envmap::intensity = si;
+	s3d::fog_on = fo; s3d::fog_density = fd; s3d::fog_falloff = ff; s3d::fog_height = fh; s3d::fog_far = fr; s3d::fog_steps = fs; s3d::fog_g = fg; s3d::fog_ambient = fa;
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK;
+	v1 && v2 && v3 && v4 && v5 && v6 && v78 && v9
+}
+fn vsm_frame(virt bool, n int) byte[>..] { s3d::sun.virt = virt; shoot(n, IN_OUT); gfx::read_pixels(IN_OUT) }
+fn vsm_soft(p const byte[:], e const byte[:], m const byte[:]) int {
+	var lo = 255;
+	for i in m.len { if m[i] != 0 { lo = min(lo, sh_luma(p, i)); } }
+	var n = 0;
+	for i in m.len { let g = p[i * 4 + 1] as int; if g > p[i * 4] as int + 8 && g > p[i * 4 + 2] as int + 8 { continue; } let l = sh_luma(p, i); if l + 7 < sh_luma(e, i) && l > lo + 7 { n++; } }
+	n
+}
+fn vsm_checks() bool {
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	reset_scene();
+	dark_scene();
+	s3d::sky = DEF_SKY; s3d::sky.draw = true; s3d::sun = DEF_SUN; s3d::sun.to_sun = linalg::unit3(float3 { 0.5, 0.8, 0.3 }); s3d::sun.shadows = true; s3d::sun.map_size = 4096; s3d::sun.shadow_far = 24.0;
+	let green = shapes::material(linalg::v3(0.2, 0.8, 0.2), 0.0, 0.7);
+	let _ = s3d::add(shapes::plane(40.0, shapes::material(linalg::v3(0.8, 0.8, 0.8), 0.0, 1.0)));
+	let a = s3d::add(shapes::sphere(0.5, 64, 32, green));
+	let b = s3d::add(shapes::cube(linalg::v3(0.3, 0.3, 0.3), green));
+	s3d::place(a, gfx::translate(float3 { 0.0, 1.2, 0.0 }));
+	s3d::place(b, gfx::translate(float3 { 2.0, 0.8, -1.0 }));
+	s3d::meshlets = false;
+	s3d::init(1280, 720);
+	ml_eye(float3 { 0.0, 2.5, 5.0 }, float3 { 0.0, 0.7, 0.0 });
+	s3d::items[a].visible = false; s3d::items[b].visible = false;
+	let e = vsm_frame(false, 3);
+	s3d::items[a].visible = true; s3d::items[b].visible = true;
+	let c1 = vsm_frame(false, 3);
+	let v1 = vsm_frame(true, 3);
+	let d1, l1, x1 = s3d::vsm_stats();
+	s3d::vsm_test_blank(true);
+	let k1 = vsm_frame(true, 3);
+	s3d::vsm_test_blank(false);
+	let mc = ml_mask(c1[..], e[..], true); let mv = ml_mask(v1[..], e[..], true); let mk = ml_mask(k1[..], e[..], true);
+	let i1 = ml_iou(mc[..], mv[..]); let ik = ml_iou(mc[..], mk[..]);
+	let o1 = i1 >= 0.97 && ml_n(mc[..]) >= 2000 && ik < 0.5;
+	print("gpu: virtual shadows V1 shadow pixels cascades ", ml_n(mc[..]), " virtual ", ml_n(mv[..]), " IoU ", r3(i1), " (bar >= 0.97); control with a blank page table IoU ", r3(ik), " (bar < 0.5)", if o1 { " PASS" } else { " FAIL" });
+	let o2 = d1 == 0 && l1 > 0 && x1 == 0;
+	print("gpu: virtual shadows V2 still scene, third frame: pages drawn ", d1, " (bar 0), pages in use ", l1, ", pages that did not fit ", x1, " (bar 0)", if o2 { " PASS" } else { " FAIL" });
+	let _ = vsm_frame(true, 3);
+	s3d::place(b, gfx::translate(float3 { 2.3, 0.8, -1.0 }));
+	let v3 = vsm_frame(true, 1);
+	let d3, l3, x3 = s3d::vsm_stats();
+	let c3 = vsm_frame(false, 3);
+	let i3 = ml_iou(ml_mask(c3[..], e[..], true)[..], ml_mask(v3[..], e[..], true)[..]);
+	let o3 = d3 > 0 && d3 * 2 <= l3 && i3 >= 0.97;
+	print("gpu: virtual shadows V3 one box moved: pages drawn ", d3, " of ", l3, " in use (bar > 0 and at most half), IoU ", r3(i3), " (bar >= 0.97)", if o3 { " PASS" } else { " FAIL" });
+	ml_eye(float3 { 3.0, 1.6, 4.0 }, float3 { 0.5, 0.2, -0.5 });
+	s3d::items[a].visible = false; s3d::items[b].visible = false;
+	let e4 = vsm_frame(false, 3);
+	s3d::items[a].visible = true; s3d::items[b].visible = true;
+	let c4 = vsm_frame(false, 3);
+	let v4 = vsm_frame(true, 3);
+	let d4, l4, x4 = s3d::vsm_stats();
+	let i4 = ml_iou(ml_mask(c4[..], e4[..], true)[..], ml_mask(v4[..], e4[..], true)[..]);
+	let o4 = i4 >= 0.97 && x4 == 0 && d4 == 0;
+	print("gpu: virtual shadows V4 camera moved: IoU ", r3(i4), " (bar >= 0.97), pages in use ", l4, ", did not fit ", x4, " (bar 0), drawn on the third frame ", d4, " (bar 0)", if o4 { " PASS" } else { " FAIL" });
+	ml_eye(float3 { -0.75, 0.25, 0.6 }, float3 { -0.75, 0.0, -0.1 });
+	s3d::sun.map_size = 2048; s3d::sun.shadow_far = 60.0;
+	s3d::items[a].visible = false; s3d::items[b].visible = false;
+	let e5 = vsm_frame(false, 3);
+	s3d::items[a].visible = true; s3d::items[b].visible = true;
+	let c5 = vsm_frame(false, 3);
+	let v5 = vsm_frame(true, 3);
+	let d5, l5, x5 = s3d::vsm_stats();
+	let m5 = ml_mask(c5[..], e5[..], true); let n5 = ml_mask(v5[..], e5[..], true);
+	let sc = vsm_soft(c5[..], e5[..], m5[..]); let sv = vsm_soft(v5[..], e5[..], n5[..]);
+	let o5 = ml_n(n5[..]) >= 2000 && sv * 2 <= sc && x5 == 0;
+	print("gpu: virtual shadows V5 close to the shadow edge: half-lit pixels cascades (2048 map, 60 m) ", sc, ", virtual ", sv, " (bar at most half), shadow pixels ", ml_n(n5[..]), ", pages in use ", l5, ", did not fit ", x5, if o5 { " PASS" } else { " FAIL" });
+	ml_eye(float3 { 0.0, 2.5, 5.0 }, float3 { 0.0, 0.7, 0.0 });
+	s3d::sun.map_size = 4096; s3d::sun.shadow_far = 24.0;
+	let h6 = vsm_frame(true, 3);
+	s3d::sun.angle = 0.07;
+	let c6 = vsm_frame(false, 3);
+	let v6 = vsm_frame(true, 3);
+	let d6, l6, x6 = s3d::vsm_stats();
+	s3d::sun.angle = 0.0;
+	let m6 = ml_mask(c6[..], e[..], true); let n6 = ml_mask(v6[..], e[..], true); let mh = ml_mask(h6[..], e[..], true);
+	let s6 = vsm_soft(c6[..], e[..], m6[..]); let t6 = vsm_soft(v6[..], e[..], n6[..]); let sh = vsm_soft(h6[..], e[..], mh[..]);
+	var a6 = 0; var ah = 0; var u6 = 0;
+	for i in m6.len { if m6[i] != 0 || n6[i] != 0 || mh[i] != 0 { u6++; a6 += abs(sh_luma(c6[..], i) - sh_luma(v6[..], i)); ah += abs(sh_luma(c6[..], i) - sh_luma(h6[..], i)); } }
+	let e6 = a6 as real / max(u6, 1) as real; let eh = ah as real / max(u6, 1) as real;
+	let o6 = t6 >= sh * 2 && t6 * 10 >= s6 * 7 && t6 * 10 <= s6 * 14 && e6 * 2.0 <= eh && x6 == 0 && d6 == 0;
+	print("gpu: virtual shadows V6 soft sun (angle 0.07): half-lit pixels cascades ", s6, ", virtual ", t6, " (bar 0.7x to 1.4x of cascades and >= 2x the hard virtual count ", sh, "); mean shade difference from cascades ", r3(e6), ", hard control ", r3(eh), " (bar at most half the control); did not fit ", x6, ", drawn on the third frame ", d6, if o6 { " PASS" } else { " FAIL" });
+	s3d::sun.virt = false;
+	o1 && o2 && o3 && o4 && o5 && o6
+}
+fn hr_world() {
+	for g in hair::grooms.len { hair::unload(g); }
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::sun.shadows = true; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+}
+fn hr_cam(x f32, y f32, z f32) { s3d::view = s3d::Camera { eye: float3 { x, y + z / 90.0, z }, target: float3 { x, y, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.5, near: 0.05, far: 50.0 }; }
+fn hr_head(at float3, sc f32) int, int {
+	let a = shapes::sphere(0.1, 32, 16, shapes::material(linalg::v3(0.75, 0.6, 0.5), 0.0, 0.6));
+	let it = s3d::add(a);
+	s3d::place(it, gfx::mul(gfx::translate(at), gfx::scale(float3 { sc, sc, sc })));
+	return it, gltf::assets[a].nodes.first as int;
+}
+fn hr_data(node int, st hair::Style, n int, low f32, d byte[>..]&) {
+	var rp float3[>..] = [];
+	var rn float3[>..] = [];
+	let _ = hair::mesh_roots(node, float3 { -1.0, low, -1.0 }, float3 { 1.0, 1.0, 1.0 }, n, 7, rp, rn);
+	hair::groom(rp[..], rn[..], st, d);
+}
+fn hr_frame(dt f32) byte[>..] {
+	if s3d::render_begin() { hair::draw(dt); s3d::render_end(IN_OUT); }
+	gfx::flush();
+	gfx::read_pixels(IN_OUT)
+}
+fn hr_shot() byte[>..] { let _ = hr_frame(0.0); hr_frame(0.0) }
+fn hr_run(n int) { for _ in n { if s3d::render_begin() { hair::draw(1.0 / 60.0); s3d::render_end(IN_OUT); } gfx::flush(); } }
+fn hr_ch(a const byte[:], b const byte[:], thr int, x0 int, x1 int) int, real {
+	var n = 0;
+	var sx = 0.0;
+	for y in 720 { for x in x0..x1 { if sk_d(a, b, y * 1280 + x) > thr { n += 1; sx += x as real; } } }
+	return n, sx / max(n, 1) as real;
+}
+fn hr_far(a const byte[:], b const byte[:], cx real, cy real, r real) int {
+	var n = 0;
+	for y in 720 { for x in 1280 { if (x as real - cx) * (x as real - cx) + (y as real - cy) * (y as real - cy) > r * r && sk_d(a, b, y * 1280 + x) > 2 { n += 1; } } }
+	n
+}
+fn hr_lum(px const byte[:], a const byte[:], b const byte[:], rin real) real {
+	var n = 0;
+	var s = 0.0;
+	let rr = rin * rin;
+	for y in 720 { for x in 1280 { if ((x - 640) * (x - 640) + (y - 360) * (y - 360)) as real > rr && sk_d(a, b, y * 1280 + x) > 8 { n += 1; s += vc_l8(px, y * 1280 + x); } } }
+	s / max(n, 1) as real
+}
+fn hr_tip(g int) real { let _ = hair::probe(g, 2); hr_run(1); hair::probe(g, 2) as real }
+fn hr_f(d const byte[:], at int) real { hair::f32_at(d, at) as real }
+fn hr_pass(ok bool) const byte[:] { if ok { " PASS" } else { " FAIL" } }
+fn hr_mid(v real[>..]&) real {
+	var mid = 0.0;
+	for k in v.len { var less = 0; var same = 0; for j in v.len { if v[j] < v[k] { less += 1; } else if v[j] == v[k] { same += 1; } } if less <= v.len / 2 && less + same > v.len / 2 { mid = v[k]; } }
+	mid
+}
+fn hr_cpu() bool {
+	reset_scene();
+	let _, node = hr_head(float3 { 0.0, 0.0, 0.0 }, 1.0);
+	var d0 byte[>..] = [];
+	var d1 byte[>..] = [];
+	var d2 byte[>..] = [];
+	var d3 byte[>..] = [];
+	hr_data(node, hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, .. }, 700, 0.02, d0);
+	hr_data(node, hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, .. }, 700, 0.02, d1);
+	hr_data(node, hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, seed: 8, .. }, 700, 0.02, d2);
+	var same = d0.len == d1.len;
+	var diff = 0;
+	for i in min(d0.len, d1.len) { if d0[i] != d1[i] { same = false; } if d0[i] != d2[i] { diff += 1; } }
+	let want = 16 + 700 * 14 * 48 + 700 * 13 * 16;
+	let h1 = same && diff > 0 && d0.len == want;
+	print("gpu: hair H1 generator: same seed identical ", same, ", other seed differs in ", diff, " bytes, size ", d0.len, " (bar ", want, ")", hr_pass(h1));
+	let bad = "HMX2000000000000000000000000";
+	let b0 = hair::load("", 12);
+	let b1 = hair::load(bad, 12);
+	let b2 = hair::load(d0[0..d0.len - 16], 12);
+	let b3 = hair::load(d0[..], 12);
+	let h2 = b0 == -1 && b1 == -1 && b2 == -1 && b3 >= 0;
+	print("gpu: hair H2 load: empty ", b0, ", wrong magic ", b1, ", truncated ", b2, " (bar -1 each), whole ", b3, " (bar >= 0)", hr_pass(h2));
+	hair::unload(b3);
+	let c = hair::card_mesh(d0[..], shapes::material(linalg::v3(0.3, 0.2, 0.1), 0.0, 0.5));
+	let cn = hair::find_cards(c, "");
+	let rt = hair::card_data(c, cn, -1, d3);
+	var worst = 0.0;
+	var counts = rt && d3.len >= d0.len;
+	if counts {
+		for i in 12 { if d3[4 + i] != d0[4 + i] { counts = false; } }
+		for p in 700 * 14 { for k in 3 { worst = max(worst, abs(hr_f(d3[..], 16 + p * 48 + k * 4) - hr_f(d0[..], 16 + p * 48 + k * 4))); } }
+	}
+	let vc = gltf::prims[gltf::meshes[gltf::nodes[gltf::assets[c].nodes.first as int].mesh as int].prims.first as int].vcount;
+	let h14 = counts && worst <= 0.00001;
+	print("gpu: hair H14 cards round trip: read back ", rt, ", counts equal ", counts, ", largest point error ", worst, " m (bar <= 0.00001)", hr_pass(h14));
+	HR_VC = vc == 2 * 700 * 14;
+	h1 && h2 && h14
+}
+var HR_VC = false;
+var HR_IT = 0;
+var HR_NODE = 0;
+let HR_AT = float3 { 0.0, 1.6, 0.0 };
+fn hr_r() real { 0.1 * 360.0 / tan(0.25) / 1.8 }
+fn hr_disc() real { 3.14159265 * hr_r() * hr_r() }
+fn hr_style() hair::Style { hair::Style { steps: 14, length: 0.16, clumps: 40, curl: 0.004, .. } }
+fn hr_setup(st hair::Style, n int, strands int, low f32, at float3, sc f32) int {
+	let it, node = hr_head(at, sc);
+	HR_IT = it;
+	HR_NODE = node;
+	var d byte[>..] = [];
+	hr_data(node, st, n, low, d);
+	let g = hair::load(d[..], strands);
+	hair::follow(g, it, -1);
+	g
+}
+fn hr_pair(g int) byte[>..], byte[>..] {
+	let a = hr_shot();
+	hair::grooms[g].show = false;
+	let b = hr_shot();
+	hair::grooms[g].show = true;
+	return a, b;
+}
+fn hr_look() bool {
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let g = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	let a, b = hr_pair(g);
+	let a2, b2 = hr_pair(g);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair.png")[..], 1280, 720, 4, a[..]);
+	let n, cx = hr_ch(a[..], b[..], 8, 0, 1280);
+	let far = hr_far(a[..], b[..], 640.0, 360.0, 3.2 * hr_r());
+	let n0, _ = hr_ch(b[..], b2[..], 8, 0, 1280);
+	let h3 = n as real / hr_disc() >= 0.4 && far == 0 && n0 == 0;
+	print("gpu: hair H3 coverage: ", n, " changed pixels, ", r3(n as real / hr_disc()), " of the head's disc (bar >= 0.4), ", far, " beyond 3.2 radii (bar 0); control hidden twice ", n0, " (bar 0)", hr_pass(h3));
+	let rep = sk_apart(a[..], a2[..]);
+	print("gpu: hair H12 repeat: largest difference ", rep, " / 255 (bar <= 2)", hr_pass(rep <= 2));
+	let sky = s3d::sky;
+	s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.ground = float3 { 0.0, 0.0, 0.0 };
+	let ka, kb = hr_pair(g);
+	let l1 = hr_lum(ka[..], ka[..], kb[..], hr_r() + 2.0);
+	let rgb = s3d::sun.rgb;
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	let d = hr_shot();
+	s3d::sun.rgb = rgb;
+	s3d::sky = sky;
+	let ld = hr_lum(d[..], ka[..], kb[..], hr_r() + 2.0);
+	let h9 = ld <= 0.7 * l1;
+	print("gpu: hair H9 sun: mean hair brightness ", r3(ld), " with the sun off, ratio ", r3(ld / max(l1, 0.001)), " (bar <= 0.7)", hr_pass(h9));
+	let wall = s3d::add(shapes::cube(float3 { 0.6, 0.6, 0.01 }, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7)));
+	s3d::place(wall, gfx::translate(float3 { 0.0, 1.6, 0.6 }));
+	let w1, w0 = hr_pair(g);
+	s3d::items[wall].visible = false;
+	let wd = sk_apart(w1[..], w0[..]);
+	let ws = sk_apart(w1[..], a[..]);
+	let h4 = wd <= 2 && ws > 8;
+	print("gpu: hair H4 wall: largest difference shown vs hidden ", wd, " / 255 (bar <= 2), wall frame vs open frame ", ws, " (must be > 8)", hr_pass(h4));
+	s3d::place(HR_IT, gfx::translate(float3 { 0.3, 1.6, 0.0 }));
+	let m1, m0 = hr_pair(g);
+	let _, cm = hr_ch(m1[..], m0[..], 8, 0, 1280);
+	hair::follow(g, HR_IT, HR_NODE);
+	let k1 = hr_shot();
+	let _, ck = hr_ch(k1[..], m0[..], 8, 0, 1280);
+	hair::grooms[g].item = -1;
+	hair::place(g, gfx::translate(HR_AT));
+	let s1 = hr_shot();
+	let _, cs = hr_ch(s1[..], m0[..], 8, 0, 1280);
+	let h13 = abs(cm - cx - 235.0) <= 15.0 && abs(ck - cm) <= 1.0 && abs(cs - cx) < 40.0;
+	print("gpu: hair H13 follow: center moved ", r3(cm - cx), " px (bar 235 within 15), anchored to the node ", r3(ck - cx), " (bar within 1 of the first); control not following ", r3(cs - cx), " (bar below 40)", hr_pass(h13));
+	h3 && rep <= 2 && h9 && h4 && h13
+}
+fn hr_near(g int) real, bool {
+	var p byte[>..] = [];
+	hair::points(g, p);
+	var best = 1e9;
+	var fin = p.len > 0;
+	for i in p.len / 48 {
+		let x = hr_f(p[..], i * 48);
+		let y = hr_f(p[..], i * 48 + 4);
+		let z = hr_f(p[..], i * 48 + 8);
+		let d = sqrt(x * x + y * y + z * z);
+		fin = fin && d == d && d < 1e6;
+		best = min(best, d);
+	}
+	return best, fin;
+}
+fn hr_sim() bool {
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	var st = hr_style();
+	st.droop = 0.0;
+	st.clumps = 0;
+	st.curl = 0.0;
+	let g = hr_setup(st, 700, 12, 0.02, HR_AT, 1.0);
+	hr_run(120);
+	let t1 = hr_tip(g);
+	let _ = hair::probe(g, 2);
+	s3d::place(HR_IT, gfx::translate(float3 { 0.1, 1.6, 0.0 }));
+	hr_run(1);
+	let lag = hair::probe(g, 2) as real;
+	hr_run(180);
+	let rest = hr_tip(g);
+	hair::grooms[g].phys = hair::Physics { styled: 0.0, tip: 0.0, root: 0.0, bend: 0.0, .. };
+	hr_run(120);
+	let t0 = hr_tip(g);
+	let h5 = t1 <= 3.0 && t0 >= 10.0;
+	print("gpu: hair H5 style: mean tip offset ", r3(t1), " mm after 120 steps (bar <= 3); control styling and hold 0: ", r3(t0), " mm (bar >= 10)", hr_pass(h5));
+	let h7 = lag >= 5.0 && rest <= 3.0;
+	print("gpu: hair H7 inertia: tip offset ", r3(lag), " mm right after a 0.1 m jump (bar >= 5), ", r3(rest), " mm 180 steps later (bar <= 3)", hr_pass(h7));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let it, node = hr_head(HR_AT, 1.0);
+	var rp float3[>..] = [];
+	var rn float3[>..] = [];
+	for i in 200 {
+		let a = i as real * 0.0314159265;
+		rp.push(float3 { linalg::f(0.02 * cos(a)), 0.09798, linalg::f(0.02 * sin(a)) });
+		rn.push(float3 { linalg::f(cos(a)), 0.0, linalg::f(sin(a)) });
+	}
+	var d byte[>..] = [];
+	hair::groom(rp[..], rn[..], hair::Style { steps: 14, length: 0.16, vary: 0.0, droop: 0.0, .. }, d);
+	let f = hair::load(d[..], 4);
+	hair::follow(f, it, -1);
+	hair::grooms[f].phys = hair::Physics { styled: 0.0, tip: 0.0, root: 0.0, bend: 0.0, .. };
+	hr_run(300);
+	let n0, _ = hr_near(f);
+	hair::solid(f, node);
+	hair::grooms[f].reset = true;
+	hr_run(300);
+	let n1, fin = hr_near(f);
+	let h6 = n1 >= 0.095 && n0 <= 0.085 && fin;
+	print("gpu: hair H6 collision: nearest point to the head's center ", r3(n1 * 1000.0), " mm with the collider (bar >= 95), parts ", hair::grooms[f].parts, ", cells ", hair::grooms[f].cells, "; control without ", r3(n0 * 1000.0), " mm (bar <= 85)", hr_pass(h6));
+	hr_world();
+	var d0 byte[>..] = [];
+	var d1 byte[>..] = [];
+	var px byte[>..] = [];
+	let _, hn = hr_head(float3 { 0.0, 0.0, 0.0 }, 1.0);
+	hr_data(hn, hr_style(), 700, 0.02, d0);
+	let c = hair::card_mesh(d0[..], shapes::material(linalg::v3(0.3, 0.2, 0.1), 0.0, 0.5));
+	let cn = gltf::assets[c].nodes.first as int;
+	let pr = gltf::prims[gltf::meshes[gltf::nodes[cn].mesh as int].prims.first as int];
+	for v in pr.vcount { gltf::verts[(pr.vfirst + v) * gltf::VERTEX_FLOATS + gltf::AT_JOINT] = ((v / 28) % 2) as f32; }
+	let nm = gltf::names.len;
+	gltf::names.append("j0j1");
+	for k in 2 {
+		gltf::nodes.push(gltf::Node { parent: -1, mesh: -1, skin: -1, children: gltf::Span { gltf::ints.len, 0 }, t: float3 { 0.0, 0.0, 0.0 }, r: linalg::quat_identity(), s: float3 { 1.0, 1.0, 1.0 }, matrix: gfx::mat4_identity, has_matrix: false, weights: gltf::Span { gltf::floats.len, 0 }, name: gltf::Span { nm + 2 * k, 2 } });
+		gltf::ints.push(cn + 1 + k);
+		gltf::matrices.push(gfx::mat4_identity);
+	}
+	gltf::assets[c].nodes.count += 2;
+	gltf::assets[c].roots.count += 2;
+	gltf::skins.push(gltf::Skin { gltf::Span { gltf::ints.len - 2, 2 }, gltf::Span { gltf::matrices.len - 2, 2 }, -1, gltf::Span { 0, 0 } });
+	gltf::nodes[cn].skin = gltf::skins.len - 1;
+	let made = hair::card_data(c, hair::find_cards(c, ""), -1, d1);
+	let b = if made { hair::load(d1[..], 4) } else { -1 };
+	var h15 = b >= 0 && hair::grooms[b].bones == 2;
+	var bound = 0.0;
+	var loose = 0.0;
+	var parts = 0;
+	var cells = 0;
+	var fin2 = false;
+	if h15 {
+		let ci = s3d::add(c);
+		s3d::items[ci].visible = false;
+		hair::follow(b, ci, -1);
+		gltf::nodes[cn + 2].t = float3 { 0.05, 0.0, 0.0 };
+		let _ = hr_shot();
+		hair::points(b, px);
+		for p in 700 * 14 {
+			let dx = hr_f(px[..], p * 48) - hr_f(d0[..], 16 + p * 48);
+			let dy = hr_f(px[..], p * 48 + 4) - hr_f(d0[..], 16 + p * 48 + 4);
+			let dz = hr_f(px[..], p * 48 + 8) - hr_f(d0[..], 16 + p * 48 + 8);
+			if (p / 14) % 2 == 1 { bound = max(bound, sqrt((dx - 0.05) * (dx - 0.05) + dy * dy + dz * dz)); } else { loose = max(loose, sqrt(dx * dx + dy * dy + dz * dz)); }
+		}
+		hair::body(b, c, "", ["j0"], [""]);
+		parts = hair::grooms[b].parts;
+		cells = hair::grooms[b].cells;
+		hr_run(10);
+		let _, f2 = hr_near(b);
+		fin2 = f2;
+		h15 = bound <= 0.0005 && loose < 0.0005 && parts == 1 && cells > 0 && fin2;
+	}
+	print("gpu: hair H15 bones: groom ", b, ", worst error of bound points ", bound, " m (bar <= 0.0005), unbound points moved ", loose, " m (bar < 0.0005), collider parts ", parts, " (bar 1), cells ", cells, " (bar > 0), finite ", fin2, hr_pass(h15));
+	h5 && h7 && h6 && h15
+}
+fn hr_psnr(a const byte[:], b const byte[:]) real {
+	let k = (3.2 * hr_r()) as int;
+	var s = 0.0;
+	for y in 360 - k..360 + k { for x in 640 - k..640 + k { for c in 3 { let d = (a[(y * 1280 + x) * 4 + c] as int - b[(y * 1280 + x) * 4 + c] as int) as real; s += d * d; } } }
+	10.0 * log10(65025.0 * (12 * k * k) as real / max(s, 1e-9))
+}
+fn hr_more() bool {
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let ga = hr_setup(hr_style(), 700, 12, 0.02, float3 { -0.35, 1.6, 0.0 }, 1.0);
+	let gb = hr_setup(hr_style(), 700, 12, 0.02, float3 { 0.35, 1.6, 0.0 }, 1.0);
+	let both = hr_shot();
+	hair::grooms[gb].show = false;
+	let one = hr_shot();
+	hair::grooms[ga].show = false;
+	let none = hr_shot();
+	let na, _ = hr_ch(both[..], none[..], 8, 0, 640);
+	let nb, _ = hr_ch(both[..], none[..], 8, 640, 1280);
+	let ka, _ = hr_ch(one[..], both[..], 2, 0, 640);
+	let kb, _ = hr_ch(one[..], none[..], 2, 640, 1280);
+	let h10 = na as real / hr_disc() >= 0.4 && nb as real / hr_disc() >= 0.4 && ka == 0 && kb == 0;
+	print("gpu: hair H10 two grooms: ", r3(na as real / hr_disc()), " and ", r3(nb as real / hr_disc()), " of each head's disc changed (bar >= 0.4 each); one hidden: ", ka, " pixels differ on the other's half, ", kb, " on its own half against no hair (bar 0 each)", hr_pass(h10));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	s3d::sun.shadows = false;
+	let g = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	let s1, s0 = hr_pair(g);
+	s3d::place(HR_IT, gfx::mul(gfx::translate(HR_AT), gfx::scale(float3 { 2.0, 2.0, 2.0 })));
+	hr_cam(0.0, 1.6, 3.6);
+	let s2 = hr_shot();
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_x2.png")[..], 1280, 720, 4, s2[..]);
+	let ps = hr_psnr(s1[..], s2[..]);
+	let pc = hr_psnr(s1[..], s0[..]);
+	let h11 = ps >= 30.0 && pc < 30.0;
+	print("gpu: hair H11 scale: PSNR ", r3(ps), " dB at twice the size and distance (bar >= 30); control hair hidden ", r3(pc), " dB (bar < 30)", hr_pass(h11));
+	s3d::place(HR_IT, gfx::translate(HR_AT));
+	hr_cam(0.0, 1.6, 1.8);
+	s3d::sun.shadows = true;
+	var th real[>..] = [];
+	var t0 real[>..] = [];
+	hr_run(4);
+	for _ in 21 { let t = gfx::time(); hr_run(1); th.push((gfx::time() - t) * 1000.0); }
+	hair::grooms[g].show = false;
+	hr_run(4);
+	for _ in 21 { let t = gfx::time(); hr_run(1); t0.push((gfx::time() - t) * 1000.0); }
+	let cost = hr_mid(th) - hr_mid(t0);
+	let h16 = cost <= 14.0;
+	print("gpu: hair H16 cost: median frame ", r3(hr_mid(th)), " ms with hair, ", r3(hr_mid(t0)), " ms without, hair ", r3(cost), " ms (bar <= 14)", hr_pass(h16));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let _, node = hr_head(HR_AT, 1.0);
+	var d byte[>..] = [];
+	hr_data(node, hr_style(), 700, 0.02, d);
+	let e0 = hr_shot();
+	var m = shapes::material(linalg::v3(0.3, 0.2, 0.1), 0.0, 0.5);
+	m.double_sided = true;
+	s3d::place(s3d::add(hair::card_mesh(d[..], m)), gfx::translate(HR_AT));
+	let e1 = hr_shot();
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_cards.png")[..], 1280, 720, 4, e1[..]);
+	let nc, _ = hr_ch(e1[..], e0[..], 8, 0, 1280);
+	let h17 = HR_VC && nc as real / hr_disc() >= 0.3;
+	print("gpu: hair H17 cards: vertex count is twice the points ", HR_VC, ", ", r3(nc as real / hr_disc()), " of the head's disc changed (bar >= 0.3)", hr_pass(h17));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let f = hr_setup(hair::fur(), 12000, 12, -1.0, HR_AT, 1.0);
+	let f1, f0 = hr_pair(f);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_fur.png")[..], 1280, 720, 4, f1[..]);
+	let nf, _ = hr_ch(f1[..], f0[..], 8, 0, 1280);
+	let h18 = nf as real / hr_disc() >= 0.7;
+	print("gpu: hair H18 fur: ", r3(nf as real / hr_disc()), " of the head's disc changed (bar >= 0.7)", hr_pass(h18));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	s3d::sky.zenith = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.horizon = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.ground = float3 { 0.0, 0.0, 0.0 };
+	s3d::sun.shadows = false;
+	let q = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	let k1, k0 = hr_pair(q);
+	s3d::sun.to_sun = linalg::unit3(float3 { 1.0, 0.3, 0.2 });
+	let ks = hr_shot();
+	hair::grooms[q].look.shade = 0.0;
+	let kn = hr_shot();
+	let l1 = hr_lum(ks[..], k1[..], k0[..], 0.0);
+	let l0 = hr_lum(kn[..], k1[..], k0[..], 0.0);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_side.png")[..], 1280, 720, 4, ks[..]);
+	let h8 = l1 <= 0.92 * l0;
+	print("gpu: hair H8 self-shadow: mean hair brightness ", r3(l1), " shadowed, ", r3(l0), " unshadowed, ratio ", r3(l1 / max(l0, 0.001)), " (bar <= 0.92)", hr_pass(h8));
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	hair::grooms[q].look.shade = 1.0;
+	s3d::add_light(HR_AT + linalg::unit3(float3 { 1.0, 0.3, 0.2 }), float3 { 3.0, 3.0, 3.0 }, 10.0);
+	let ps = hr_shot();
+	hair::grooms[q].look.shade = 0.0;
+	let pn = hr_shot();
+	hair::grooms[q].look.shade = 1.0;
+	let m1 = hr_lum(ps[..], k1[..], k0[..], 0.0);
+	let m0 = hr_lum(pn[..], k1[..], k0[..], 0.0);
+	let h20 = m1 <= 0.92 * m0;
+	print("gpu: hair H20 lamp shadow: mean hair brightness ", r3(m1), " shadowed, ", r3(m0), " unshadowed, ratio ", r3(m1 / max(m0, 0.001)), " (bar <= 0.92)", hr_pass(h20));
+	s3d::lights[0].pos = HR_AT + linalg::unit3(float3 { 0.0, 0.3, -1.0 });
+	let bb = hr_shot();
+	s3d::lights[0].pos = HR_AT + linalg::unit3(float3 { 0.0, 0.3, 1.0 });
+	let bf = hr_shot();
+	s3d::lights[0].rgb = float3 { 0.0, 0.0, 0.0 };
+	let bo = hr_shot();
+	s3d::lights.clear();
+	let ob = hr_lum(bb[..], k1[..], k0[..], hr_r() + 2.0);
+	let of = hr_lum(bf[..], k1[..], k0[..], hr_r() + 2.0);
+	let oo = hr_lum(bo[..], k1[..], k0[..], hr_r() + 2.0);
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_back.png")[..], 1280, 720, 4, bb[..]);
+	let h21 = ob >= 0.1 * of && oo < 0.1 * of;
+	print("gpu: hair H21 back lamp: outline brightness ", r3(ob), " lamp behind, ", r3(of), " in front, ratio ", r3(ob / max(of, 0.001)), " (bar >= 0.1); control lamp off ", r3(oo / max(of, 0.001)), " (bar below 0.1)", hr_pass(h21));
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	let cg = hr_setup(hr_style(), 700, 12, 0.02, HR_AT, 1.0);
+	for _ in 3 { let _ = hr_frame(0.0); }
+	let c1 = hr_shot();
+	let _ = codec_png::write(path(OUT_DIR[..], "hair_cast.png")[..], 1280, 720, 4, c1[..]);
+	hair::grooms[cg].look.cast = 0.0;
+	let c0 = hr_shot();
+	hair::grooms[cg].show = false;
+	let cn = hr_shot();
+	var dk = 0;
+	var br = 0;
+	var far = 0;
+	for i in 1280 * 720 {
+		let d = vc_l8(c1[..], i) - vc_l8(c0[..], i);
+		if d < -3.0 { dk += 1; if sk_d(c0[..], cn[..], i) > 8 { far += 1; } }
+		if d > 3.0 { br += 1; }
+	}
+	let h22 = dk as real / hr_disc() >= 0.02 && br == 0;
+	print("gpu: hair H22 shade on meshes: ", r3(dk as real / hr_disc()), " of the head's disc is darker with look.cast 1 than 0 (bar >= 0.02), ", br, " pixels brighter (bar 0), ", far, " of the darker ones under hair", hr_pass(h22));
+	h10 && h11 && h16 && h17 && h18 && h8 && h20 && h21 && h22
+}
+fn ml_world(eye float3, target float3, sky bool) {
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+	s3d::clouds.on = false; s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 }; s3d::sun.shadows = false; envmap::on = false; s3d::sky.ambient = if sky { 0.05 } else { 0.005 }; s3d::sky.draw = sky;
+	s3d::place(s3d::add(shapes::plane(45.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.7))), gfx::mat4_identity);
+	s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.7, 0.7, 0.7), 0.0, 0.4))), gfx::translate(float3 { -3.0, 1.0, 10.0 }));
+	s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.8, 0.7, 0.3), 1.0, 0.3))), gfx::translate(float3 { 0.0, 1.0, 0.0 }));
+	s3d::place(s3d::add(shapes::sphere(1.0, 32, 16, shapes::material(linalg::v3(0.7, 0.7, 0.7), 0.0, 0.8))), gfx::translate(float3 { 4.0, 1.0, -12.0 }));
+	s3d::view = s3d::Camera { eye: eye, target: target, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 200.0 };
+}
+fn ml_field(n int) {
+	for i in n {
+		let p = float3 { (i % 70) as f32 - 34.5, 0.4, (i / 70) as f32 - 34.5 };
+		let c = float3 { 2.0 * (0.25 + 0.75 * ((i * 7) % 5) as f32 / 4.0), 2.0 * (0.25 + 0.75 * ((i * 3) % 8) as f32 / 7.0), 2.0 * (0.25 + 0.75 * ((i * 5) % 3) as f32 / 2.0) };
+		if i % 4 == 3 { s3d::add_spot(p, float3 { p.x, 0.0, p.z }, c, 1.5, 0.9, false); } else { s3d::add_light(p, c, 1.5); }
+	}
+}
+fn ml_crowd(n int) {
+	for i in n {
+		let r = 0.5 * sqrt((i as real + 0.5) / n as real);
+		let a = 2.399963229728653 * i as real;
+		s3d::add_light(float3 { linalg::f(r * cos(a)), 1.0, linalg::f(r * sin(a)) }, float3 { 0.004 + 0.002 * (i % 3) as f32, 0.005, 0.007 - 0.002 * (i % 2) as f32 }, 4.0);
+	}
+}
+fn ml_frame() byte[>..] { if s3d::render_begin() { s3d::render_end(IN_OUT); } gfx::flush(); gfx::read_pixels(IN_OUT) }
+fn ml_ms(n int) real { var t real[>..] = []; for _ in n { let a = gfx::time(); let _ = ml_frame(); t.push((gfx::time() - a) * 1000.0); } hr_mid(t) }
+fn ml_top(a const byte[:], b const byte[:]) int, int { var top = 0; var n = 0; for i in 1280 * 720 { let d = sk_d(a, b, i); top = max(top, d); if d > 8 { n += 1; } } return top, n; }
+fn ml_mean(px const byte[:]) real, real { var s = 0.0; var w = 0; for i in 1280 * 720 { s += vc_l8(px, i); if px[i * 4] == 255 && px[i * 4 + 1] == 255 && px[i * 4 + 2] == 255 { w += 1; } } return s / 921600.0, w as real / 921600.0; }
+fn ml_pair() byte[>..], byte[>..], real {
+	let _ = ml_frame();
+	let a = ml_frame();
+	s3d::test_all_lights = true;
+	let t = gfx::time();
+	let b = ml_frame();
+	let ms = (gfx::time() - t) * 1000.0;
+	s3d::test_all_lights = false;
+	return a, b, ms;
+}
+fn lights_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let env = envmap::on;
+	ml_world(float3 { 0.0, 7.0, 38.0 }, float3 { 0.0, -4.0, 10.0 }, false);
+	let _ = ml_frame();
+	let none = ml_ms(21);
+	let dark, _ = ml_mean(ml_frame()[..]);
+	ml_field(4900);
+	let fa, fb, brute = ml_pair();
+	let drop = clusters::dropped;
+	let top = clusters::top;
+	let l1 = drop == 0 && top <= 1023;
+	print("gpu: lights L1 nothing dropped: ", s3d::lights.len, " lights, dropped ", drop, " (bar 0), fullest cell ", top, " (bar <= 1023)", hr_pass(l1));
+	let d2, _ = ml_top(fa[..], fb[..]);
+	let lit, white = ml_mean(fa[..]);
+	let _ = codec_png::write(path(OUT_DIR[..], "lights_field.png")[..], 1280, 720, 4, fa[..]);
+	s3d::test_cluster_range = 0.05;
+	let fc = ml_frame();
+	s3d::test_cluster_range = 1.0;
+	let _, miss = ml_top(fc[..], fb[..]);
+	let l2 = d2 <= 1 && lit >= 2.0 * dark && white < 0.25 && miss >= 1000;
+	print("gpu: lights L2 right frame: largest difference ", d2, " / 255 (bar <= 1), brightness ", r3(lit), " against ", r3(dark), " with no lights (bar >= 2 times), full white ", r3(white), " of the frame (bar < 0.25); control grid at a twentieth of the range: ", miss, " pixels differ (bar >= 1000)", hr_pass(l2));
+	let many = ml_ms(21);
+	var tu real[>..] = [];
+	for _ in 21 { let t = gfx::time(); s3d::light_upload(); tu.push((gfx::time() - t) * 1000.0); }
+	let l4 = many - none <= 17.0 && hr_mid(tu) <= 4.0 && brute >= 10.0 * many;
+	print("gpu: lights L4 cost: ", r3(many), " ms with the lights, ", r3(none), " ms without, lights ", r3(many - none), " ms (bar <= 17); pack and grid ", r3(hr_mid(tu)), " ms on the CPU (bar <= 4); every-light frame ", r3(brute), " ms = ", r3(brute / max(many, 0.001)), " times the grid frame (bar >= 10)", hr_pass(l4));
+	ml_world(float3 { 0.0, 2.0, 5.0 }, float3 { 0.0, 0.5, 0.0 }, true);
+	ml_crowd(700);
+	let ca, cb, _ = ml_pair();
+	let ctop = clusters::top;
+	let cdrop = clusters::dropped;
+	let d3, _ = ml_top(ca[..], cb[..]);
+	let cm, _ = ml_mean(ca[..]);
+	let _ = codec_png::write(path(OUT_DIR[..], "lights_crowd.png")[..], 1280, 720, 4, ca[..]);
+	let l3 = ctop >= 700 && cdrop == 0 && d3 <= 1 && cm >= 30.0 && cm <= 220.0;
+	print("gpu: lights L3 crowded cell: fullest cell ", ctop, " (bar >= 700), dropped ", cdrop, " (bar 0), largest difference ", d3, " / 255 (bar <= 1), brightness ", r3(cm), " (bar 30..220)", hr_pass(l3));
+	envmap::on = env;
+	gfx::release(IN_OUT);
+	l1 && l2 && l3 && l4
+}
+fn td_world() {
+	reset_scene();
+	s3d::sky = DEF_SKY; s3d::sun = DEF_SUN; s3d::look = DEF_LOOK; s3d::look.bloom = 0.0; s3d::look.ssao = false;
+	s3d::ssr_on = false; s3d::ssgi_on = false; s3d::gi_on = false; s3d::temporal = 0; s3d::fog_on = false; s3d::sss_on = false;
+	s3d::clouds.on = false; s3d::day_bakes = 0; envmap::intensity = 1.0;
+	s3d::place(s3d::add(shapes::plane(40.0, shapes::material(linalg::v3(0.5, 0.5, 0.5), 0.0, 0.8))), gfx::mat4_identity);
+	s3d::place(s3d::add(shapes::sphere(0.5, 32, 16, shapes::material(linalg::v3(0.7, 0.7, 0.7), 0.0, 0.5))), gfx::translate(float3 { 0.0, 0.5, 0.0 }));
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.2, 5.0 }, target: float3 { 0.0, 0.9, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 0.9, near: 0.1, far: 200.0 };
+}
+fn td_deg(y real) real {
+	var lo = -90.0;
+	var hi = 90.0;
+	for _ in 40 { let m = (lo + hi) * 0.5; if sin(m * 0.017453292519943295) < y { lo = m; } else { hi = m; } }
+	(lo + hi) * 0.5
+}
+fn td_draw() real {
+	if s3d::render_begin() { s3d::render_end(IN_OUT); }
+	gfx::flush();
+	let px = gfx::read_pixels(IN_OUT);
+	var s = 0.0;
+	for i in 1280 * 720 { s += vc_l8(px[..], i); }
+	s / 921600.0
+}
+fn td_at(hour f32, moon f32, name const byte[:]) real {
+	let _ = s3d::time_of_day(s3d::Day { hour: hour, moon: moon, .. });
+	let _ = td_draw();
+	let l = td_draw();
+	if name.len > 0 { let px = gfx::read_pixels(IN_OUT); let _ = codec_png::write(path(OUT_DIR[..], name)[..], 1280, 720, 4, px[..]); }
+	l
+}
+fn td_sweep(h0 f32, n int, minutes f32, size int, clouds f32) real, real {
+	var tf real[>..] = [];
+	var tn real[>..] = [];
+	var top = 0.0;
+	var last = -1.0;
+	for k in n {
+		let t = gfx::time();
+		let f = s3d::time_of_day(s3d::Day { hour: h0 + k as f32 * minutes / 60.0, size: size, clouds: clouds, .. });
+		let l = td_draw();
+		if f { tf.push((gfx::time() - t) * 1000.0); } else { tn.push((gfx::time() - t) * 1000.0); }
+		if last >= 0.0 { top = max(top, abs(l - last)); }
+		last = l;
+	}
+	return top, hr_mid(tf) - hr_mid(tn);
+}
+fn through_checks() bool {
+	sphere_grid();
+	s3d::sky = DEF_SKY; s3d::temporal = 0; s3d::see_through = false;
+	s3d::init(480, 360);
+	let t = gfx::render_target(480, 360, gfx::RGBA8);
+	s3d::render(t);
+	let base = gfx::read_pixels(t);
+	let n = base.len / 4;
+	var solid = 0;
+	for i in n { if base[i * 4 + 3] == 255 { solid += 1; } }
+	let x1 = n > 0 && solid == n;
+	print("gpu: through X1 default output: ", solid, " of ", n, " pixels have alpha 255 (bar all)", hr_pass(x1));
+	s3d::see_through = true;
+	s3d::render(t);
+	let got = gfx::read_pixels(t);
+	var m byte[>..] = [];
+	var clear = 0; var cover = 0; var lit = 0;
+	for i in n {
+		let a = got[i * 4 + 3];
+		if a == 255 { m.push(1 as byte); cover += 1; } else { m.push(0 as byte); }
+		if a == 0 { clear += 1; if got[i * 4] != 0 || got[i * 4 + 1] != 0 || got[i * 4 + 2] != 0 { lit += 1; } }
+	}
+	let share = cover as real / max(n, 1) as real;
+	var inner byte[>..] = [];
+	var deep = 0;
+	for i in n {
+		let x = i % 480; let y = i / 480;
+		var all = x > 0 && x < 479 && y > 0 && y < 359;
+		if all { for j in 9 { if m[i + (j % 3 - 1) + (j / 3 - 1) * 480] == 0 { all = false; } } }
+		if all { inner.push(1 as byte); deep += 1; } else { inner.push(0 as byte); }
+	}
+	let db = psnr_m(got[..], base[..], inner[..]);
+	let rim = psnr_m(got[..], base[..], m[..]);
+	let x2 = clear + cover == n && lit == 0 && share > 0.1 && share < 0.9 && db > 40.0;
+	print("gpu: through X2 see-through, no temporal: ", cover, " covered, ", clear, " clear, ", n - cover - clear, " in between (bar 0), ", lit, " clear pixels with colour (bar 0), covered share ", r3(share), " (bar 0.1 to 0.9), ", deep, " covered pixels away from an edge against the default frame ", r2(db), " dB (bar > 40; ", r2(rim), " dB with the edge pixels, which blend toward black instead of the sky)", hr_pass(x2));
+	s3d::temporal = 1; s3d::temporal_reset = true;
+	for _ in 24 { s3d::render(t); }
+	let tg = gfx::read_pixels(t);
+	var full = 0; var part = 0; var tl = 0;
+	for i in n {
+		let a = tg[i * 4 + 3];
+		if a == 255 { full += 1; } else if a > 0 { part += 1; } else if tg[i * 4] != 0 || tg[i * 4 + 1] != 0 || tg[i * 4 + 2] != 0 { tl += 1; }
+	}
+	let x3 = tg[3] == 0 && tl == 0 && part > 0 && part * 5 < cover && full <= cover && cover <= full + part;
+	print("gpu: through X3 see-through, temporal: corner alpha ", tg[3] as int, " (bar 0), ", full, " fully covered, ", part, " edge pixels (bar > 0, under a fifth of ", cover, "), ", tl, " clear pixels with colour (bar 0), no-temporal count between ", full, " and ", full + part, hr_pass(x3));
+	s3d::see_through = false; s3d::temporal_reset = true;
+	for _ in 2 { s3d::render(t); }
+	let back = gfx::read_pixels(t);
+	var again = 0;
+	for i in n { if back[i * 4 + 3] == 255 { again += 1; } }
+	let x4 = again == n;
+	print("gpu: through X4 switched off again: ", again, " of ", n, " pixels have alpha 255 (bar all)", hr_pass(x4));
+	s3d::temporal = 0; s3d::temporal_reset = true;
+	gfx::release(t);
+	x1 && x2 && x3 && x4
+}
+fn day_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	td_world();
+	let s1 = s3d::sun_at(12.0, 172, 40.0, 0.0);
+	let s2 = s3d::sun_at(12.0, 80, 40.0, 0.0);
+	let s3 = s3d::sun_at(6.0, 80, 40.0, 0.0);
+	let s4 = s3d::sun_at(6.0, 80, 40.0, 90.0);
+	let e1 = td_deg(s1.y as real);
+	let e2 = td_deg(s2.y as real);
+	let e3 = td_deg(s3.y as real);
+	let turn = max(abs(s4.x + s3.z), max(abs(s4.y - s3.y), abs(s4.z - s3.x))) as real;
+	let d1 = abs(e1 - 73.44) <= 0.2 && abs(e2 - 50.0) <= 1.0 && s3.x >= 0.99 && abs(e3) <= 1.5 && turn <= 0.001;
+	print("gpu: day D1 sun position: noon day 172 ", r3(e1), " deg (bar 73.44 within 0.2), noon day 80 ", r3(e2), " deg (bar 50 within 1), 06:00 day 80 x ", r3(s3.x as real), " (bar >= 0.99) at ", r3(e3), " deg (bar within 1.5 of 0), turned north off by ", turn, " (bar <= 0.001)", hr_pass(d1));
+	let noon = td_at(12.0, 0.02, "day_noon.png");
+	let rn = s3d::sun.rgb;
+	let l18 = td_at(18.0, 0.02, "");
+	let l19 = td_at(19.0, 0.02, "day_dusk.png");
+	let rd = s3d::sun.rgb;
+	let l20 = td_at(20.25, 0.02, "day_twilight.png");
+	let mid = td_at(0.0, 0.02, "day_night.png");
+	let rm = s3d::sun.rgb;
+	let em = td_deg(s3d::sun.to_sun.y as real);
+	let dark = td_at(0.0, 0.0, "");
+	let d2 = l18 < noon && l20 < l18 && mid >= 0.02 * noon && mid <= 0.35 * noon && dark <= 0.2 * mid;
+	print("gpu: day D2 clock: 12:00 ", r3(noon), ", 18:00 ", r3(l18), ", 19:00 ", r3(l19), ", 20:15 ", r3(l20), " (bar each lower), 00:00 ", r3(mid), " = ", r3(mid / noon), " of noon (bar 0.02..0.35), no moon ", r3(dark), " = ", r3(dark / max(mid, 0.001)), " of moonlit (bar <= 0.2)", hr_pass(d2));
+	let warm = (rd.x / max(rd.z, 1e-9)) as real / (rn.x / max(rn.z, 1e-9)) as real;
+	let d3 = warm >= 2.0;
+	print("gpu: day D3 dusk: red over blue ", r3(warm), " times noon's (bar >= 2)", hr_pass(d3));
+	let ml = ((rm.x + rm.y + rm.z) / max(rn.x + rn.y + rn.z, 1e-9)) as real;
+	let d4 = em > 10.0 && ml > 0.0 && ml <= 0.05;
+	print("gpu: day D4 moon: elevation ", r3(em), " deg (bar > 10), light ", ml, " of noon's (bar > 0, <= 0.05)", hr_pass(d4));
+	s3d::day_bakes = 0;
+	let b0 = s3d::time_of_day(s3d::Day { hour: 15.0, .. });
+	let b1 = s3d::time_of_day(s3d::Day { hour: 15.0, .. });
+	let v0 = s3d::sun.to_sun;
+	let b2 = s3d::time_of_day(s3d::Day { hour: 15.0 + 1.0 / 60.0, .. });
+	let v1 = s3d::sun.to_sun;
+	let b3 = s3d::time_of_day(s3d::Day { hour: 15.0 + 10.0 / 60.0, .. });
+	let moved = v0.x != v1.x || v0.y != v1.y || v0.z != v1.z;
+	let d5 = b0 && !b1 && !b2 && moved && b3 && s3d::day_bakes == 2;
+	print("gpu: day D5 bakes: first ", b0, ", same time ", b1, ", 1 minute later ", b2, " with the sun moved ", moved, ", 10 minutes later ", b3, ", bakes ", s3d::day_bakes, " (bar true, false, false, true, true, 2)", hr_pass(d5));
+	let top, cost = td_sweep(18.0, 301, 1.0, 0, 0.3);
+	var lo = 19.0;
+	var hi = 24.0;
+	for _ in 40 { let m = (lo + hi) * 0.5; if s3d::sun_at(linalg::f(m), 172, 40.0, 0.0).y > -0.12187 { lo = m; } else { hi = m; } }
+	let before = td_at(linalg::f(lo - 1.0 / 60.0), 0.02, "");
+	let after = td_at(linalg::f(lo + 1.0 / 60.0), 0.02, "");
+	let d6 = top <= 7.0 && abs(after - before) <= 3.0;
+	print("gpu: day D6 no jump: largest step ", r3(top), " (bar <= 7), moon takes over at ", r3(lo), " h: ", r3(before), " before, ", r3(after), " after (bar within 3)", hr_pass(d6));
+	let _, small = td_sweep(12.0, 85, 1.0, 128, 0.3);
+	let d7 = cost <= 70.0 && small <= 14.0;
+	print("gpu: day D7 cost: bake ", r3(cost), " ms at 512 (bar <= 70), ", r3(small), " ms at 128 (bar <= 14)", hr_pass(d7));
+	gfx::release(IN_OUT);
+	d1 && d2 && d3 && d4 && d5 && d6 && d7
+}
+fn hd_p(d const byte[:], i int) float3 { float3 { hair::f32_at(d, 16 + i * 48), hair::f32_at(d, 20 + i * 48), hair::f32_at(d, 24 + i * 48) } }
+fn hd_grow(name const byte[:], seed int, d byte[>..]&) int, int {
+	d.clear();
+	let st = hairdo::style(name);
+	let n = hairdo::grow(st, seed, d);
+	return n, clamp(st.points, 4, 32);
+}
+// tips in front of the brow (kind 0) or gathered behind the head (kind 1), and the guide count
+fn hd_tips(name const byte[:], kind int) int, int {
+	var d byte[>..] = [];
+	let n, k = hd_grow(name, 7, d);
+	let u = hairdo::unit;
+	var c = 0;
+	for i in n {
+		let t = hd_p(d[..], i * k + k - 1) - hairdo::ctr;
+		if kind == 0 && t.z > 0.7 * u && t.y > -0.1 * u && t.y < 0.35 * u && abs(t.x) < 0.75 * u { c += 1; }
+		if kind == 1 && t.z < -0.6 * u && abs(t.x) < 0.5 * u { c += 1; }
+	}
+	return c, n;
+}
+fn hd_rb(px const byte[:], a const byte[:], b const byte[:]) int, real, real {
+	var n = 0; var r = 0.0; var bl = 0.0;
+	for i in 1280 * 720 { if sk_d(a, b, i) > 8 { n += 1; r += px[i * 4] as real; bl += px[i * 4 + 2] as real; } }
+	return n, r / max(n, 1) as real, bl / max(n, 1) as real;
+}
+// GFX_ONLY=hairdo: the default hairstyles (gfx.hairdo) on a plain ball head
+fn hairdo_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	hr_world();
+	hr_cam(0.0, 1.6, 1.8);
+	hairdo::ball(float3 { 0.0, 0.0, 0.0 }, 0.1);
+	let u = hairdo::unit as real;
+	var d byte[>..] = [];
+	var grown = 0; var least = 1.0e9; var inside = 1.0e9; var near = 0;
+	for i in hairdo::count() {
+		let st = hairdo::style(hairdo::name_of(i));
+		let n, k = hd_grow(hairdo::name_of(i), 7, d);
+		if n > 0 && d.len == 16 + n * k * 48 + n * (k - 1) * 16 { grown += 1; }
+		least = min(least, n as real / max(st.guides, 1) as real);
+		for j in n * k {
+			let v = hd_p(d[..], j) - hairdo::ctr;
+			let l = linalg::length3(v) as real;
+			if l > 0.0 && v.y as real / l > -0.8 { inside = min(inside, l / u); if l < 1.05 * u { near += 1; } }
+		}
+	}
+	let p1 = hairdo::count() >= 30 && grown == hairdo::count() && least >= 0.7 && hairdo::tones() >= 22;
+	print("gpu: hairdo HD1 every default grows: ", grown, " of ", hairdo::count(), " styles, fewest guides ", r3(least), " of the asked count (bar >= 0.7), ", hairdo::tones(), " shades", if p1 { " PASS" } else { " FAIL" });
+	let p2 = inside >= 0.999 && near > 1000;
+	print("gpu: hairdo HD2 no point inside the head: nearest ", r3(inside), " head radii from the center (bar >= 0.999), ", near, " points within 5% of the skin (control, bar > 1000)", if p2 { " PASS" } else { " FAIL" });
+	var a byte[>..] = []; var b byte[>..] = []; var c byte[>..] = [];
+	let _, _ = hd_grow("wavy", 7, a);
+	let _, _ = hd_grow("wavy", 7, b);
+	let _, _ = hd_grow("wavy", 8, c);
+	let p3 = a.len > 16 && a[..] == b[..] && !(a[..] == c[..]);
+	print("gpu: hairdo HD3 the same seed gives the same bytes (", a[..] == b[..], "), another seed does not (", !(a[..] == c[..]), ")", if p3 { " PASS" } else { " FAIL" });
+	let cut = hairdo::style("bob").cut as real;
+	var low = 1.0e9; var at = 0; var far = 1.0e9;
+	let nb, kb = hd_grow("bob", 7, d);
+	for i in nb * kb { low = min(low, (hd_p(d[..], i) - hairdo::ctr).y as real / u); }
+	for i in nb { let t = (hd_p(d[..], i * kb + kb - 1) - hairdo::ctr).y as real / u; if t < 0.1 - cut && t > -0.15 - cut { at += 1; } }
+	let nl, kl = hd_grow("long straight", 7, d);
+	for i in nl * kl { far = min(far, (hd_p(d[..], i) - hairdo::ctr).y as real / u); }
+	let p4 = low >= -cut - 0.15 && at as real >= 0.3 * nb as real && far < -3.0;
+	print("gpu: hairdo HD4 blunt cut: bob ends ", r3(-low), " head units below the center (cut ", r3(cut), ", bar <= cut + 0.15), ", at, " of ", nb, " tips at the cut (bar >= 30%), long straight reaches ", r3(-far), " (control, bar > 3)", if p4 { " PASS" } else { " FAIL" });
+	let f1, _ = hd_tips("bob bangs", 0);
+	let f0, _ = hd_tips("bob", 0);
+	let p5 = f1 >= 40 && f0 <= 5;
+	print("gpu: hairdo HD5 fringe: ", f1, " tips in front of the brow with bangs (bar >= 40), ", f0, " without (control, bar <= 5)", if p5 { " PASS" } else { " FAIL" });
+	let t1, n1 = hd_tips("ponytail", 1);
+	let t0, n0 = hd_tips("long straight", 1);
+	let tf = t1 as real / max(n1, 1) as real;
+	let lf = t0 as real / max(n0, 1) as real;
+	let p6 = tf >= 0.8 && lf <= 0.6;
+	print("gpu: hairdo HD6 ponytail: ", r3(tf), " of the tips end in the tail behind the head (bar >= 0.8), ", r3(lf), " for loose long hair (control, bar <= 0.6)", if p6 { " PASS" } else { " FAIL" });
+	let it, _ = hr_head(HR_AT, 1.0);
+	let _, _ = hd_grow("bob", 7, d);
+	let g = hair::load(d[..], hairdo::style("bob").strands);
+	hair::follow(g, it, -1);
+	let sh = hairdo::tone("blue");
+	hair::grooms[g].look.color = float3 { sh.r, sh.g, sh.b };
+	hair::grooms[g].look.gain = sh.gain;
+	hair::grooms[g].look.dye = sh.dye;
+	let a1, b1 = hr_pair(g);
+	let _ = codec_png::write(path(OUT_DIR[..], "hairdo.png")[..], 1280, 720, 4, a1[..]);
+	hair::grooms[g].look.dye = 0.0;
+	let a2, b2 = hr_pair(g);
+	let n7, r1, bl1 = hd_rb(a1[..], a1[..], b1[..]);
+	let _, r0, bl0 = hd_rb(a2[..], a2[..], b2[..]);
+	let p7 = n7 as real > 0.8 * hr_disc();
+	print("gpu: hairdo HD7 a default draws: ", n7, " pixels of bob on the ball (bar > ", round(0.8 * hr_disc()), ")", if p7 { " PASS" } else { " FAIL" });
+	let p8 = bl1 > 1.3 * r1 && bl1 / max(r1, 1.0) > 1.03 * bl0 / max(r0, 1.0);
+	print("gpu: hairdo HD8 dye: the blue shade draws ", r2(bl1 / max(r1, 1.0)), " times more blue than red (bar > 1.3), ", r2(bl0 / max(r0, 1.0)), " times as natural pigment of the same color (control, bar: at least 3% less)", if p8 { " PASS" } else { " FAIL" });
+	for q in hair::grooms.len { hair::unload(q); }
+	p1 && p2 && p3 && p4 && p5 && p6 && p7 && p8
+}
+fn hair_checks() bool {
+	half_table();
+	s3d::init(1280, 720);
+	IN_OUT = gfx::render_target(1280, 720, gfx::RGBA8);
+	let a = hr_cpu();
+	let b = hr_look();
+	let c = hr_sim();
+	let d = hr_more();
+	for g in hair::grooms.len { hair::unload(g); }
+	print("gpu: hair verdict: data ", a, ", look ", b, ", motion ", c, ", scenes ", d);
+	a && b && c && d
 }
 fn mark(name const byte[:], ok bool) bool {
 	if SUB_LOG.len == 0 { return ok; }
-	let n, top, slow = sub_since(SUB_AT);
+	let n, top, slow, _ = sub_since(SUB_AT);
 	print("gpu: submits ", name, ": ", n - SUB_AT, ", longest ", r2(top), " ms, ", slow, " above 100 ms");
 	SUB_AT = n;
 	ok
 }
 fn submit_checks(full bool) bool {
 	if SUB_LOG.len == 0 { print("gpu: submit length not measured (run under tools/hc/gputime)"); return !full; }
-	let n, top, slow = sub_since(0);
+	let n, top, slow, _ = sub_since(0);
 	let fake = path(OUT_DIR[..], "gputime_control.log");
 	var ctl real[>..] = [];
 	if write_file(fake[..], "submit 1 2000000\nsubmit 1 900000000\nsubmit 3 4000000\n") { gputime_lines(fake[..], ctl); }
@@ -5922,16 +9044,16 @@ fn submit_checks(full bool) bool {
 	s3d::init(1280, 720);
 	let out = gfx::render_target(1280, 720, gfx::RGBA8);
 	shoot(4, out);
-	let a, ta, sa = sub_since(0);
+	let a, ta, sa, _ = sub_since(0);
 	for k in 12 { s3d::render(out); }
-	let b, one, sb = sub_since(a);
+	let b, one, sb, _ = sub_since(a);
 	shoot(12, out);
-	let c, each, sc = sub_since(b);
+	let c, top1, sc, each = sub_since(b);
 	gfx::release(out);
 	reset_scene();
 	s3d::look = DEF_LOOK; s3d::sun = DEF_SUN; s3d::sky = DEF_SKY;
 	let b2 = b - a == 1 && c - b >= 12 && one >= 4.0 * each;
-	print("gpu: submit length B2 control: 12 frames in one command buffer read as ", b - a, " submit(s), longest ", r3(one), " ms; flushed one by one ", c - b, " submits, longest ", r3(each), " ms (bar: one submit, at least 4 times the longest single frame): ", if b2 { "PASS" } else { "FAIL" });
+	print("gpu: submit length B2 control: 12 frames in one command buffer read as ", b - a, " submit(s), longest ", r3(one), " ms; flushed one by one ", c - b, " submits, median ", r3(each), " ms, longest ", r3(top1), " ms (bar: one submit, at least 4 times the median single frame): ", if b2 { "PASS" } else { "FAIL" });
 	b1 && b2
 }
 fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
@@ -5946,7 +9068,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	var only byte[>..] = [];
 	let _ = env("GFX_ONLY", only);
 	if only.len > 0 {
-		let ok = if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else { shadow_checks() };
+		let ok = if only[..] == "hairdo" { hairdo_checks() } else if only[..] == "updo" { updo_checks() } else if only[..] == "tails" { tail_checks() } else if only[..] == "drape" { drape_checks() } else if only[..] == "rise" { rise_checks() } else if only[..] == "dome" { dome_checks() } else if only[..] == "eye" { eye_checks() } else if only[..] == "cutout" { cutout_checks() } else if only[..] == "thin" { thin_checks() } else if only[..] == "foliage" { foliage_checks() } else if only[..] == "puddle" { puddle_checks() } else if only[..] == "vfx" { vfx_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "lights" { lights_checks() } else if only[..] == "day" { day_checks() } else if only[..] == "hair" { hair_checks() } else if only[..] == "gtao" { gtao_checks() } else if only[..] == "gi" { gi_checks() } else if only[..] == "mblur" { mb_checks() } else if only[..] == "dof" { dof_checks() } else if only[..] == "fx" { fx_checks() } else if only[..] == "tsr" { tsr_checks(dir) } else if only[..] == "probe" { probe_checks(dir) } else if only[..] == "ssgi" { ssgi_checks() } else if only[..] == "decal" { decal_checks() } else if only[..] == "weather" { weather_checks() } else if only[..] == "rect" { rect_checks() } else if only[..] == "small" { small_checks() } else if only[..] == "inst" { instance_checks() } else if only[..] == "caust" { caustic_checks() } else if only[..] == "tex" { texture_checks() } else if only[..] == "stream" { stream_checks() } else if only[..] == "rtr" { rtr_checks() } else if only[..] == "meshlet" { meshlet_checks() } else if only[..] == "sss" { sss_checks() } else if only[..] == "skin" { skin_checks() } else if only[..] == "cloth" { cloth_checks() } else if only[..] == "knit" { knit_only() } else if only[..] == "cloud" { cloud_checks() } else if only[..] == "vfog" { fog_checks() } else if only[..] == "sea" { sea_checks() } else if only[..] == "vsm" { vsm_checks() } else if only[..] == "through" { through_checks() } else { shadow_checks() };
 		let e = gfx::error();
 		if e.len > 0 { print("gpu: gfx error ", e[..]); return false; }
 		return mark(only[..], ok) && submit_checks(false);
@@ -6098,6 +9220,7 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("taa", taa_checks(dir)) { good = false; }
 	if !mark("tsr", tsr_checks(dir)) { good = false; }
 	if !mark("shadow", shadow_checks()) { good = false; }
+	if !mark("vsm", vsm_checks()) { good = false; }
 	if !mark("look_taa", look_taa_checks(dir)) { good = false; }
 	if !mark("ghost", ghost_checks()) { good = false; }
 	if !mark("t8_still", t8_still()) { good = false; }
@@ -6108,11 +9231,22 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("mb", mb_checks()) { good = false; }
 	if !mark("dof", dof_checks()) { good = false; }
 	if !mark("fx", fx_checks()) { good = false; }
+	if !mark("vfx", vfx_checks()) { good = false; }
 	if !mark("probe", probe_checks(dir)) { good = false; }
 	if !mark("ssgi", ssgi_checks()) { good = false; }
 	if !mark("decal", decal_checks()) { good = false; }
 	if !mark("weather", weather_checks()) { good = false; }
+	if !mark("puddle", puddle_checks()) { good = false; }
+	if !mark("foliage", foliage_checks()) { good = false; }
+	if !mark("cutout", cutout_checks()) { good = false; }
+	if !mark("thin", thin_checks()) { good = false; }
 	if !mark("rect", rect_checks()) { good = false; }
+	if !mark("eye", eye_checks()) { good = false; }
+	if !mark("dome", dome_checks()) { good = false; }
+	if !mark("updo", updo_checks()) { good = false; }
+	if !mark("tails", tail_checks()) { good = false; }
+	if !mark("drape", drape_checks()) { good = false; }
+	if !mark("rise", rise_checks()) { good = false; }
 	if !mark("small", small_checks()) { good = false; }
 	if !mark("instance", instance_checks()) { good = false; }
 	if !mark("caustic", caustic_checks()) { good = false; }
@@ -6120,6 +9254,17 @@ fn gpu_checks(dir const byte[:], golden const byte[:]) bool {
 	if !mark("stream", stream_checks()) { good = false; }
 	if !mark("rtr", rtr_checks()) { good = false; }
 	if !mark("meshlet", meshlet_checks()) { good = false; }
+	if !mark("sss", sss_checks()) { good = false; }
+	if !mark("skin", skin_checks()) { good = false; }
+	if !mark("cloth", cloth_checks()) { good = false; }
+	if !mark("hair", hair_checks()) { good = false; }
+	if !mark("hairdo", hairdo_checks()) { good = false; }
+	if !mark("cloud", cloud_checks()) { good = false; }
+	if !mark("vfog", fog_checks()) { good = false; }
+	if !mark("sea", sea_checks()) { good = false; }
+	if !mark("day", day_checks()) { good = false; }
+	if !mark("through", through_checks()) { good = false; }
+	if !mark("lights", lights_checks()) { good = false; }
 	if !submit_checks(true) { good = false; }
 	let err = gfx::error();
 	if err.len > 0 { print("gpu: gfx error ", err[..]); good = false; }

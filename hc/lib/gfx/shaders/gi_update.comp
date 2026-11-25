@@ -2,7 +2,7 @@ layout(local_size_x = 64) in;
 layout(std430, set = 0, binding = 0) readonly buffer Rays { vec4 rays[]; };
 layout(std430, set = 1, binding = 0) buffer Irr { vec4 probe_irr[]; };
 layout(std430, set = 1, binding = 1) buffer Dist { vec2 probe_dist[]; };
-layout(set = 2, binding = 0) uniform Gi { vec4 origin; vec4 step; vec4 dims; vec4 rot0; vec4 rot1; vec4 rot2; vec4 params; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; vec4 light_pos[8]; vec4 light_rgb[8]; vec4 env; vec4 env_rot; };
+layout(set = 2, binding = 0) uniform Gi { vec4 origin; vec4 step; vec4 dims; vec4 rot0; vec4 rot1; vec4 rot2; vec4 params; vec4 to_sun; vec4 sun_rgb; vec4 zenith; vec4 horizon; vec4 ground; vec4 light_pos[16]; vec4 light_rgb[16]; vec4 light_dir[16]; vec4 env; vec4 env_rot; vec4 fast; };
 const int GI_IRR = 8;
 const int GI_DIST = 16;
 vec3 gi_unoct(vec2 uv) {
@@ -43,7 +43,7 @@ void main() {
 		if (irr) { sum += ray.rgb * c; ws += c; }
 		else { float w = pow(c, 50.0); float t = min(abs(ray.w), params.z); ds += vec2(t, t * t) * w; ws += w; }
 	}
-	float h = params.y;
-	if (irr) { vec3 v = ws > 0.0 ? sum / ws : vec3(0.0); int o = pi * GI_IRR * GI_IRR + tx; probe_irr[o] = vec4(mix(v, probe_irr[o].rgb, h), 1.0); }
+	float h = params.y > 0.0 ? min(params.y, fast.x) : 0.0;
+	if (irr) { vec3 v = ws > 0.0 ? sum / ws : vec3(0.0); int o = pi * GI_IRR * GI_IRR + tx; vec3 old = probe_irr[o].rgb; float rel = length(v - old) / max(max(length(v), length(old)), 1e-4); float hh = fast.y > 0.0 && rel > fast.y && h > 0.0 ? min(h, fast.z) : h; probe_irr[o] = vec4(mix(v, old, hh), 1.0); }
 	else { vec2 v = ws > 0.0 ? ds / ws : vec2(params.z, params.z * params.z); int o = pi * GI_DIST * GI_DIST + tx; probe_dist[o] = mix(v, probe_dist[o], h); }
 }

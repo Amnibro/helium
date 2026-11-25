@@ -2,7 +2,7 @@ layout(location = 0) in vec2 in_uv;
 layout(set = 2, binding = 0) uniform sampler2D tex_src;
 layout(set = 3, binding = 0) uniform Tile { vec4 size; vec4 lens; vec4 mode; };
 layout(location = 0) out vec4 out_tile;
-float coc_px(float z) { return min(z > 0.0 ? lens.x * abs(1.0 / z - 1.0 / lens.y) : lens.x / lens.y, lens.z); }
+float coc_px(float z) { float f = lens.y + mode.y; return min(z > 0.0 ? (z < lens.y ? mode.z * lens.x * (1.0 / z - 1.0 / lens.y) : lens.x * max(1.0 / f - 1.0 / z, 0.0)) : lens.x / f, lens.z); }
 void main() {
 	ivec2 t = ivec2(gl_FragCoord.xy);
 	int k = int(size.z);

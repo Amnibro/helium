@@ -36,7 +36,8 @@ tcp_open_at(a const byte[:]) int:
 	if fd < 0: return -1
 	dw := tcp_darwin(); fl := t_fcntl(fd as i32, 3, 0); nb := if dw { 4 } else { 0x800 }; t_fcntl(fd as i32, 4, (fl | nb) as i32); one := int_bytes(1)
 	if dw: t_setsockopt(fd as i32, 0xFFFF, 0x1022, ffi::ptr(one[..]), 4 as u32)
-	t_setsockopt(fd as i32, 6, 1, ffi::ptr(one[..]), 4 as u32); t_connect(fd as i32, ffi::ptr(sa), sa.len as u32); fd
+	tcp_nodelay(fd); t_connect(fd as i32, ffi::ptr(sa), sa.len as u32); fd
+tcp_nodelay(fd int): one := int_bytes(1); t_setsockopt(fd as i32, 6, 1, ffi::ptr(one[..]), 4 as u32)
 tcp_open(host const byte[:], port int) int:
 	for a tcp_resolve(host, port): fd := tcp_open_at(a[..]); if fd >= 0 { return fd }
 	-1

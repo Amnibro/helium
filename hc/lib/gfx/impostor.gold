@@ -1,0 +1,10 @@
+use std
+into impostor.amni
+
+Namespace imp; imports gfx and gfx.linalg. Math for impostors: a far object is pre-rendered from a grid of directions over the upper half of the sphere around it, and a shader marches those pictures instead of drawing the mesh. All math is in f32.
+
+`view_dir(i int, j int, n int) float3` gives the direction of view (i, j) in an n by n grid. Take u as i over n minus one, times two, minus one, and v the same from j. Let a be half of u plus v and b half of u minus v. The direction is a, then the larger of zero and one minus the absolute values of a and b, then b, normalized with linalg's unit3.
+
+`basis(d float3) (float3, float3)` gives the right and up vectors of a camera looking back along d. Right starts as d's z, zero, and minus d's x; when its length is at most 1e-4 right is the x axis, otherwise right divided by its length. Up is linalg's cross3 of d and right. Return right, then up.
+
+`bake_proj(d float3, c float3, r f32) gfx::mat4` is the orthographic view-projection that frames the sphere of center c and radius r seen along minus d from c plus d times r, with depth zero at the eye and one at the far side. With right and up from `basis`, the four rows are: right divided by r, with a last term of minus the dot of c and right over r; up divided by r, with minus the dot of c and up over r; minus d divided by twice r, with a last term of one half plus the dot of c and d over twice r; and zero, zero, zero, one. The matrix stores columns c0 to c3, each a float4 holding element k of every row in x, y, z, w.

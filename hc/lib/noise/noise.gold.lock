@@ -1,0 +1,330 @@
+=== 72a5aebca1165218
+namespace noise;
+import math;
+import vec;
+let VALUE = 0;
+let PERLIN = 1;
+let SIMPLEX = 2;
+let CELL_F1 = 3;
+let CELL_F2 = 4;
+let CELL_EDGE = 5;
+let CELL_VALUE = 6;
+let NONE = 0;
+let FBM = 1;
+let RIDGED = 2;
+let BILLOW = 3;
+let GOLDEN64 u64 = 0x9E3779B97F4A7C15;
+=== 0d68cafb98c4388e
+fn mix64(v u64) u64 {
+	var z u64 = v;
+	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9;
+	z = (z ^ (z >> 27)) * 0x94D049BB133111EB;
+	return z ^ (z >> 31);
+}
+fn hash3(seed u64, ix int, iy int, iz int) u64 {
+	var h u64 = seed;
+	h = mix64(h + (ix as! u64) * GOLDEN64);
+	h = mix64(h + (iy as! u64) * GOLDEN64);
+	h = mix64(h + (iz as! u64) * GOLDEN64);
+	return h;
+}
+fn unit_of(h u64) real {
+	return ((h >> 11) as real) / 9007199254740992.0;
+}
+fn signed_of(h u64) real {
+	return 2.0 * unit_of(h) - 1.0;
+}
+fn fade(t real) real {
+	return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+=== 48733a1ffa61edc0
+fn grad_dot(h u64, x real, y real, z real) real {
+	let g = (h % 12) as int;
+	let first = if g < 8 { x } else { y };
+	let second = if g < 4 { y } else { z };
+	let a = if g % 2 == 0 { first } else { 0.0 - first };
+	let b = if (g / 2) % 2 == 0 { second } else { 0.0 - second };
+	return a + b;
+}
+=== 4083fa625cc815e4
+fn perlin3(seed u64, p double3) real {
+	let gx = floor(p.x);
+	let gy = floor(p.y);
+	let gz = floor(p.z);
+	let ix = gx as int;
+	let iy = gy as int;
+	let iz = gz as int;
+	let x = p.x - gx;
+	let y = p.y - gy;
+	let z = p.z - gz;
+	let u = fade(x);
+	let v = fade(y);
+	let w = fade(z);
+	let c000 = grad_dot(hash3(seed, ix, iy, iz), x, y, z);
+	let c100 = grad_dot(hash3(seed, ix + 1, iy, iz), x - 1.0, y, z);
+	let c010 = grad_dot(hash3(seed, ix, iy + 1, iz), x, y - 1.0, z);
+	let c110 = grad_dot(hash3(seed, ix + 1, iy + 1, iz), x - 1.0, y - 1.0, z);
+	let c001 = grad_dot(hash3(seed, ix, iy, iz + 1), x, y, z - 1.0);
+	let c101 = grad_dot(hash3(seed, ix + 1, iy, iz + 1), x - 1.0, y, z - 1.0);
+	let c011 = grad_dot(hash3(seed, ix, iy + 1, iz + 1), x, y - 1.0, z - 1.0);
+	let c111 = grad_dot(hash3(seed, ix + 1, iy + 1, iz + 1), x - 1.0, y - 1.0, z - 1.0);
+	let near = lerp(lerp(c000, c100, u), lerp(c010, c110, u), v);
+	let far = lerp(lerp(c001, c101, u), lerp(c011, c111, u), v);
+	return lerp(near, far, w);
+}
+=== 3d7b7924c5553b3e
+fn value3(seed u64, p double3) real {
+	let gx = floor(p.x);
+	let gy = floor(p.y);
+	let gz = floor(p.z);
+	let ix = gx as int;
+	let iy = gy as int;
+	let iz = gz as int;
+	let u = fade(p.x - gx);
+	let v = fade(p.y - gy);
+	let w = fade(p.z - gz);
+	let c000 = signed_of(hash3(seed, ix, iy, iz));
+	let c100 = signed_of(hash3(seed, ix + 1, iy, iz));
+	let c010 = signed_of(hash3(seed, ix, iy + 1, iz));
+	let c110 = signed_of(hash3(seed, ix + 1, iy + 1, iz));
+	let c001 = signed_of(hash3(seed, ix, iy, iz + 1));
+	let c101 = signed_of(hash3(seed, ix + 1, iy, iz + 1));
+	let c011 = signed_of(hash3(seed, ix, iy + 1, iz + 1));
+	let c111 = signed_of(hash3(seed, ix + 1, iy + 1, iz + 1));
+	let near = lerp(lerp(c000, c100, u), lerp(c010, c110, u), v);
+	let far = lerp(lerp(c001, c101, u), lerp(c011, c111, u), v);
+	return lerp(near, far, w);
+}
+=== -389e0abb438ae55a
+fn simplex_corner(seed u64, cx int, cy int, cz int, x real, y real, z real) real {
+	let q = 0.5 - (x * x + y * y + z * z);
+	if q > 0.0 {
+		return q * q * q * q * grad_dot(hash3(seed, cx, cy, cz), x, y, z);
+	}
+	return 0.0;
+}
+fn simplex3(seed u64, p double3) real {
+	let F3 = 1.0 / 3.0;
+	let G3 = 1.0 / 6.0;
+	let s = (p.x + p.y + p.z) * F3;
+	let fi = floor(p.x + s);
+	let fj = floor(p.y + s);
+	let fk = floor(p.z + s);
+	let t = (fi + fj + fk) * G3;
+	let x0 = p.x - (fi - t);
+	let y0 = p.y - (fj - t);
+	let z0 = p.z - (fk - t);
+	let i = fi as int;
+	let j = fj as int;
+	let k = fk as int;
+	var i1 = 0;
+	var j1 = 0;
+	var k1 = 0;
+	var i2 = 0;
+	var j2 = 0;
+	var k2 = 0;
+	if x0 >= y0 {
+		if y0 >= z0 {
+			i1 = 1;
+			i2 = 1;
+			j2 = 1;
+		} else if x0 >= z0 {
+			i1 = 1;
+			i2 = 1;
+			k2 = 1;
+		} else {
+			k1 = 1;
+			i2 = 1;
+			k2 = 1;
+		}
+	} else {
+		if y0 < z0 {
+			k1 = 1;
+			j2 = 1;
+			k2 = 1;
+		} else if x0 < z0 {
+			j1 = 1;
+			j2 = 1;
+			k2 = 1;
+		} else {
+			j1 = 1;
+			i2 = 1;
+			j2 = 1;
+		}
+	}
+	let x1 = x0 - (i1 as real) + G3;
+	let y1 = y0 - (j1 as real) + G3;
+	let z1 = z0 - (k1 as real) + G3;
+	let x2 = x0 - (i2 as real) + 2.0 * G3;
+	let y2 = y0 - (j2 as real) + 2.0 * G3;
+	let z2 = z0 - (k2 as real) + 2.0 * G3;
+	let x3 = x0 - 1.0 + 3.0 * G3;
+	let y3 = y0 - 1.0 + 3.0 * G3;
+	let z3 = z0 - 1.0 + 3.0 * G3;
+	var sum = 0.0;
+	sum += simplex_corner(seed, i, j, k, x0, y0, z0);
+	sum += simplex_corner(seed, i + i1, j + j1, k + k1, x1, y1, z1);
+	sum += simplex_corner(seed, i + i2, j + j2, k + k2, x2, y2, z2);
+	sum += simplex_corner(seed, i + 1, j + 1, k + 1, x3, y3, z3);
+	return clamp(76.88 * sum, -1.0, 1.0);
+}
+=== 7606a0ff070eb9a1
+fn cell_point(seed u64, cx int, cy int, cz int) double3, u64 {
+	let h = hash3(seed, cx, cy, cz);
+	let px = (cx as real) + unit_of(h);
+	let py = (cy as real) + unit_of(mix64(h + GOLDEN64));
+	let pz = (cz as real) + unit_of(mix64(h + 2 * GOLDEN64));
+	return double3 { px, py, pz }, h;
+}
+=== 2019332e815eaa9e
+fn cell_gap(off int, f real) real {
+	if off == 0 { return 0.0; }
+	if off == -1 { return f; }
+	if off == 1 { return 1.0 - f; }
+	if off == -2 { return 1.0 + f; }
+	return 2.0 - f;
+}
+fn cellular3(seed u64, p double3, kind int) real {
+	let gx = floor(p.x);
+	let gy = floor(p.y);
+	let gz = floor(p.z);
+	let cx = gx as int;
+	let cy = gy as int;
+	let cz = gz as int;
+	let fx = p.x - gx;
+	let fy = p.y - gy;
+	let fz = p.z - gz;
+	var d1 = 1.0e30;
+	var d2 = 1.0e30;
+	var nearest_hash u64 = 0;
+	fn visit(ox int, oy int, oz int) {
+		let q, h = cell_point(seed, cx + ox, cy + oy, cz + oz);
+		let dx = q.x - p.x;
+		let dy = q.y - p.y;
+		let dz = q.z - p.z;
+		let d = dx * dx + dy * dy + dz * dz;
+		if d < d1 {
+			d2 = d1;
+			d1 = d;
+			nearest_hash = h;
+		} else if d < d2 {
+			d2 = d;
+		}
+	}
+	for ox in -1..2 {
+		for oy in -1..2 {
+			for oz in -1..2 {
+				visit(ox, oy, oz);
+			}
+		}
+	}
+	for ox in -2..3 {
+		for oy in -2..3 {
+			for oz in -2..3 {
+				if abs(ox) <= 1 && abs(oy) <= 1 && abs(oz) <= 1 { continue; }
+				let ax = cell_gap(ox, fx);
+				let ay = cell_gap(oy, fy);
+				let az = cell_gap(oz, fz);
+				if ax * ax + ay * ay + az * az >= d2 { continue; }
+				visit(ox, oy, oz);
+			}
+		}
+	}
+	let f1 = sqrt(d1);
+	let f2 = sqrt(d2);
+	var r = 0.0;
+	if kind == CELL_F1 {
+		r = 2.0 * f1 - 1.0;
+	} else if kind == CELL_F2 {
+		r = f2 - 1.0;
+	} else if kind == CELL_EDGE {
+		r = 2.0 * (f2 - f1) - 1.0;
+	} else if kind == CELL_VALUE {
+		r = signed_of(mix64(nearest_hash + 3 * GOLDEN64));
+	}
+	return clamp(r, -1.0, 1.0);
+}
+=== -3559761adf7761bb
+fn base(kind int, seed u64, p double3) real {
+	if kind == VALUE { return value3(seed, p); }
+	if kind == PERLIN { return perlin3(seed, p); }
+	if kind == SIMPLEX { return simplex3(seed, p); }
+	if kind == CELL_F1 || kind == CELL_F2 || kind == CELL_EDGE || kind == CELL_VALUE { return cellular3(seed, p, kind); }
+	return 0.0;
+}
+=== -51321e46edff3ff1
+struct Noise {
+	kind int,
+	seed u64,
+	step u64,
+	frequency real,
+	fractal int,
+	octaves int,
+	lacunarity real,
+	gain real,
+	warp real,
+	warp_freq real
+}
+fn make(kind int, seed int) Noise {
+	return Noise { kind: kind, seed: seed as! u64, step: 1, frequency: 1.0, fractal: NONE, octaves: 3, lacunarity: 2.0, gain: 0.5, warp: 0.0, warp_freq: 1.0 };
+}
+=== 4ac6de409da17fb6
+fn layered(n Noise, p double3) real {
+	if n.fractal == NONE {
+		return base(n.kind, n.seed, double3 { p.x * n.frequency, p.y * n.frequency, p.z * n.frequency });
+	}
+	var sum = 0.0;
+	var total = 0.0;
+	var amp = 1.0;
+	var freq = n.frequency;
+	var s u64 = n.seed;
+	for octave in n.octaves {
+		let b = base(n.kind, s, double3 { p.x * freq, p.y * freq, p.z * freq });
+		if n.fractal == FBM {
+			sum += amp * b;
+		} else if n.fractal == RIDGED {
+			let r = 1.0 - abs(b);
+			sum += amp * (r * r);
+		} else if n.fractal == BILLOW {
+			sum += amp * (2.0 * abs(b) - 1.0);
+		}
+		total += amp;
+		amp *= n.gain;
+		freq *= n.lacunarity;
+		s = s + n.step;
+	}
+	if total == 0.0 { return 0.0; }
+	return sum / total;
+}
+=== -699efe6610867db4
+fn warp_point(n Noise, p double3) double3 {
+	if n.warp == 0.0 { return p; }
+	let q = double3 { p.x * n.warp_freq, p.y * n.warp_freq, p.z * n.warp_freq };
+	let wx = p.x + n.warp * perlin3(n.seed + 101, q);
+	let wy = p.y + n.warp * perlin3(n.seed + 102, q);
+	let wz = p.z + n.warp * perlin3(n.seed + 103, q);
+	return double3 { wx, wy, wz };
+}
+=== 50a23a8e8ac5cb51
+fn sample(n Noise, p double3) real {
+	var r = layered(n, warp_point(n, p));
+	if n.fractal == RIDGED { r = 2.0 * r - 1.0; }
+	return clamp(r, -1.0, 1.0);
+}
+=== -793b9453c7bd6a61
+fn fill2(n Noise, x0 real, z0 real, y real, step real, w int, h int, out f32[>..]&) {
+	for j in h {
+		for i in w {
+			out.push(sample(n, double3 { x0 + (i as real) * step, y, z0 + (j as real) * step }) as f32);
+		}
+	}
+}
+fn fill3(n Noise, origin double3, step real, w int, h int, d int, out f32[>..]&) {
+	for k in d {
+		for j in h {
+			for i in w {
+				out.push(sample(n, double3 { origin.x + (i as real) * step, origin.y + (j as real) * step, origin.z + (k as real) * step }) as f32);
+			}
+		}
+	}
+}

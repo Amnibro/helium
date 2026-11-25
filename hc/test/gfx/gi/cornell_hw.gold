@@ -1,0 +1,99 @@
+into cornell_hw.he
+lang he
+use std
+use os
+use gfx.hwrt
+use gfx.rt
+use gfx.cornell
+use gfx.pathtrace
+
+```he
+var W = 128
+var H = 128
+var MAXMS = 0.0
+var YR real[>..]
+var SE real[>..]
+argi(k int, d int) int: a byte[>..] ~= []; arg(k, a); if a.len == 0 { return d } v, ok := parse_int(a[..]); if ok { v } else { d }
+mats(t const f32[:], al const f32[:]) f32[>..]:
+	d f32[>..] ~= []
+	for k t.len / 9:
+		b := k * 9; ax := t[b + 3] - t[b]; ay := t[b + 4] - t[b + 1]; az := t[b + 5] - t[b + 2]; bx := t[b + 6] - t[b]; by := t[b + 7] - t[b + 1]; bz := t[b + 8] - t[b + 2]
+		nx := ay * bz - az * by; ny := az * bx - ax * bz; nz := ax * by - ay * bx; l := sqrt(nx * nx + ny * ny + nz * nz)
+		d.append([nx / l, ny / l, nz / l, 0.0, al[k * 3], al[k * 3 + 1], al[k * 3 + 2], 0.0])
+	d
+bvh(t const f32[:], al const f32[:]) int, int:
+	rt::clear(); for x t { rt::tri_in.push(x) } for x al { rt::alb_in.push(x) } for k t.len / 9 { rt::mat_in.append([0.0, 0.0, 0.0, 0.0]) } rt::build()
+	nb := hwrt::buf(rt::nodes.len * 4, 0x20, false); hwrt::put(nb, rt::nodes[..]); tb := hwrt::buf(rt::tris.len * 4, 0x20, false); hwrt::put(tb, rt::tris[..])
+	return nb, tb
+render(p int, bl const int[:], ab int, pb int, spp int, ls real) real[>..], real:
+	sr real[>..] ~= []; sr.resize(W * H * 6, 0.0); r f32[>..] ~= []; r.resize(W * H * 8, 0.0); base ~= 0; t0 := clock()
+	while base < spp:
+		k := min(64, spp - base)
+		hwrt::put(pb, [W as f32, H as f32, k as f32, base as f32, cornell::EYE_X as f32, cornell::EYE_Y as f32, cornell::EYE_Z as f32, tan(cornell::FOV_Y * 0.5) as f32, cornell::LIGHT_X as f32, cornell::LIGHT_Y as f32, cornell::LIGHT_Z as f32, (cornell::LIGHT_RGB * ls) as f32, cornell::LIGHT_RANGE as f32, cornell::TMIN as f32, 0.0, 0.0][..])
+		t1 := clock()
+		if !hwrt::run(p, bl, (W + 7) / 8, (H + 7) / 8, 1): return sr, -1.0
+		MAXMS = max(MAXMS, (clock() - t1) * 1000.0); hwrt::get(ab, r[..])
+		for i W * H: for c 6 { sr[i * 6 + c] += r[i * 8 + c] as real }
+		base += k
+	return sr, clock() - t0
+var LS = 1.0
+pathp3(t const f32[:], al const f32[:], spp int) real[>..], real:
+	pathtrace::clear(); mi int[>..] ~= []; z := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
+	for m 3: mi.push(pathtrace::mat(pathtrace::Mat { base: [cornell::albedo_r(m), cornell::albedo_g(m), cornell::albedo_b(m), 1.0], spec: 0.0 }))
+	p real[>..] ~= []
+	for k t.len / 9: p.clear(); for c 9 { p.push(t[k * 9 + c] as real) } pathtrace::tri(p[..], z[..], uv[..], cl[..], mi[cornell::tri_mat[k]])
+	pathtrace::EYE = [cornell::EYE_X, cornell::EYE_Y, cornell::EYE_Z]; pathtrace::TGT = [cornell::EYE_X, cornell::EYE_Y, cornell::EYE_Z + 1.0]; pathtrace::UP = [0.0, 1.0, 0.0]; pathtrace::FOV = cornell::FOV_Y; pathtrace::FURN = 0.0; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::DEPTH = 256
+	pathtrace::light(cornell::LIGHT_X, cornell::LIGHT_Y, cornell::LIGHT_Z, cornell::LIGHT_RGB * LS, cornell::LIGHT_RGB * LS, cornell::LIGHT_RGB * LS, cornell::LIGHT_RANGE)
+	t0 := clock(); a := pathtrace::render(W, H, spp); secs := clock() - t0; sr real[>..] ~= []
+	for i W * H: for c 6 { sr.push(a[i * 8 + c] as real) }
+	MAXMS = max(MAXMS, pathtrace::MAXMS); BADS += pathtrace::bad(a[..])
+	return sr, secs
+var BADS = 0
+lum(sr const real[:]) real: s ~= 0.0; for i W * H { if sr[i * 6 + 5] > 0.0 { s += sr[i * 6 + 3] / sr[i * 6 + 5] } } s
+report(name const byte[:], sr const real[:], secs real, want bool, lo real) bool:
+	zs ~= 0.0; z2 ~= 0.0; nz ~= 0; big ~= 0; ty ~= 0.0; tr ~= 0.0
+	for i W * H:
+		c := sr[i * 6 + 5]; m := sr[i * 6 + 3] / c; s := SE[i] * 256.0 / sqrt(c)
+		if YR[i] > 0.0 && s + SE[i] > 0.0: z := (m - YR[i]) / sqrt(s * s + SE[i] * SE[i]); zs += z; z2 += z * z; nz++; ty += m; tr += YR[i]; if abs(z) > 4.0 { big++ }
+	mz := zs / nz as real; mz2 := z2 / nz as real; d := ty / tr - 1.0; pass := abs(mz) < 0.05 && mz2 >= lo && mz2 <= 1.15 && big * 1000 < nz && abs(d) < 0.003
+	print(str(name, ": ", sr[5] as! int, " spp, ", (secs * 1000.0) as! int, " ms; ", nz, " lit pixels, mean z ", (mz * 1e4) as! int, "e-4, mean z^2 ", (mz2 * 1e4) as! int, "e-4, |z| > 4: ", big, ", total luminance ", (d * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+main():
+	rf byte[>..] ~= []; arg(1, rf); txt byte[>..] ~= []; spp := argi(2, 1024)
+	if !read_file(rf[..], txt): print("hwrt cornell: FAILED (no reference file)"); return
+	pos ~= 0
+	while pos < txt.len:
+		e ~= pos; while e < txt.len && txt[e] != '\n' { e++ }
+		f := split(txt[pos..e], " "); pos = e + 1; y := 0.2126 * to_real(f[1]) + 0.7152 * to_real(f[2]) + 0.0722 * to_real(f[3]); YR.push(y); SE.push(to_real(f[4]) * y)
+	cornell::build(); t f32[>..] ~= []; al f32[>..] ~= []
+	for x cornell::tris: t.push(x as f32)
+	for m cornell::tri_mat: al.append([cornell::albedo_r(m) as f32, cornell::albedo_g(m) as f32, cornell::albedo_b(m) as f32])
+	if YR.len != W * H || !hwrt::scene(t[..], [], true): print(if YR.len != W * H { "hwrt cornell: FAILED (reference is not 128 x 128)" } else { "hwrt cornell: skipped (no ray-query device)" }); return
+	cpu := hwrt::is_cpu(); print(str("hwrt device: ", hwrt::name(), if cpu { " (CPU device: R4 and R5 reported, not gated)" } else { "" }))
+	md := mats(t[..], al[..]); tb := hwrt::buf(md.len * 4, 0x20, false); hwrt::put(tb, md[..]); ab := hwrt::buf(W * H * 32, 0x20, false); pb := hwrt::buf(64, 0x20, false)
+	ph := hwrt::pipe(embed_shader("cornell_hw.comp"), 3); ps := hwrt::pipe(embed_shader("cornell_sw.comp"), 5); nb, rb := bvh(t[..], al[..])
+	if ph < 0 || ps < 0 || tb < 0 || ab < 0 || pb < 0 || nb < 0 || rb < 0: print("hwrt cornell: FAILED (setup)"); hwrt::done(); return
+	ok ~= true; hb := [tb, ab, pb]; sb := [tb, ab, pb, nb, rb]
+	sr, s := render(ph, hb[..], ab, pb, spp, 1.0); ok = report("R2 hardware", sr[..], s, true, 0.85) && ok
+	sr2, s2 := render(ph, hb[..], ab, pb, spp, 1.01); ok = report("R2 control, light x 1.01", sr2[..], s2, false, 0.85) && ok
+	red f32[>..] ~= []; red.append(al[..]); for m, k cornell::tri_mat { if m == 1 { red[k * 3] *= 1.03 } } rd := mats(t[..], red[..]); hwrt::put(tb, rd[..])
+	sr3, s3 := render(ph, hb[..], ab, pb, spp, 1.0); ok = report("R2 control, red wall albedo x 1.03", sr3[..], s3, false, 0.85) && ok; hwrt::put(tb, md[..])
+	sr4, s4 := render(ps, sb[..], ab, pb, spp, 1.0); ok = report("R3 software BVH", sr4[..], s4, true, 0.85) && ok
+	pr, ps2 := pathp3(t[..], al[..], spp); ok = report("P3 path tracer (gfx.pathtrace)", pr[..], ps2, true, 0.0) && ok; LS = 1.01
+	pc, pc2 := pathp3(t[..], al[..], spp); ok = report("P3 control, light x 1.01", pc[..], pc2, false, 0.0) && ok; LS = 1.0
+	sp := pathtrace::ico(6); ce := [1.85, 2.45, 1.7]
+	for k sp.len / 9: for c 9 { t.push((ce[c % 3] + 0.6 * sp[k * 9 + c]) as f32) } al.append([0.73, 0.73, 0.73])
+	if !hwrt::scene(t[..], [], true): print("hwrt cornell: FAILED (heavy scene build)"); hwrt::done(); return
+	hd := mats(t[..], al[..]); tb2 := hwrt::buf(hd.len * 4, 0x20, false); hwrt::put(tb2, hd[..]); nb2, rb2 := bvh(t[..], al[..])
+	h5, th := render(ph, [tb2, ab, pb][..], ab, pb, 256, 1.0); w5, ts := render(ps, [tb2, ab, pb, nb2, rb2][..], ab, pb, 256, 1.0)
+	ratio := ts / th; dl := lum(h5[..]) / lum(w5[..]) - 1.0; r4 := ratio >= 2.0 && abs(dl) < 0.003
+	print(str("R4 speed, ", t.len / 9, " triangles, 256 spp: hardware ", (th * 1000.0) as! int, " ms (", ((W * H * 256) as real / th / 1e6) as! int, " M paths/s), software ", (ts * 1000.0) as! int, " ms; hardware ", (ratio * 100.0) as! int, "/100 x, luminance hardware vs software ", (dl * 1e6) as! int, " ppm: ", if r4 { "PASS" } else { "FAIL" }, if cpu { " (reported)" } else { "" }))
+	if !cpu:
+		w6, ts2 := render(ps, [tb2, ab, pb, nb2, rb2][..], ab, pb, 256, 1.0); cr := ts2 / ts
+		print(str("R4 control, software in both slots: ", (cr * 100.0) as! int, "/100 x: ", if cr >= 2.0 { "PASS (control passed; it must fail)" } else { "FAIL, as it must" }))
+		ok = ok && r4 && cr < 2.0
+	print(str("R5 longest dispatch ", MAXMS as! int, " ms (bar 1000), path tracer bad samples ", BADS, " (bar 0): ", if MAXMS < 1000.0 && BADS == 0 { "PASS" } else { "FAIL" }, if cpu { " (reported)" } else { "" }))
+	ok = ok && BADS == 0 && (cpu || MAXMS < 1000.0)
+	print(if ok { "hwrt cornell: ok" } else { "hwrt cornell: FAILED" })
+	hwrt::done()
+```

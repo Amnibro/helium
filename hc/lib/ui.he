@@ -460,7 +460,7 @@ nk_bake(a Atl&) bool:
 	od := order(a); tot ~= 0
 	for c od: let r .= a.cfg[c].rg; for k r.len / 2 { tot += (r[2 * k + 1] - r[2 * k]) as int + 1 }
 	for c od: if !ttf::init(a.cfg[c].ti) { return false }
-	s ~= ttf::Ctx{ttf::Pk{[]}, [], 0, 0, 0, 0}; w := if tot > 3000 { 2048 } else if tot > 1000 { 1024 } else { 512 }; ttf::begin(s, w, 1024 * 32, 1); ht ~= 0
+	s ~= ttf::Ctx{ttf::Pk{[]}, [], 0, 0, 0, 0}; pk ~= 0.0 as f32; for c od { pk = max(pk, a.cfg[c].size * max(a.cfg[c].ho, a.cfg[c].vo) as f32 + 2.0) }; w ~= if tot > 3000 { 2048 } else if tot > 1000 { 1024 } else { 512 }; while w < 8192 && (w * w) as f32 < tot as f32 * pk * pk { w *= 2 }; ttf::begin(s, w, 1024 * 32, 1); ht ~= 0
 	cr ttf::Rc[>..] ~= [ttf::Rc{w: 181, h: 28}]; ttf::oversample(s, 1, 1); ttf::pack_rects(s.pk, cr, 0, 1); ht = max(ht, cr[0].y + cr[0].h); a.cx = cr[0].x; a.cy = cr[0].y
 	rg ttf::Range[>..] ~= []; rs ttf::Rc[>..] ~= []; cd ttf::PC[>..] ~= []
 	for c od:

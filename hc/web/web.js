@@ -13,8 +13,8 @@ export async function start(o = {}) {
   const S = (p, n) => td.decode(B(p, n)), cz = p => { const m = u8(); let e = p; while (m[e]) e++; return td.decode(m.subarray(p, e)); };
   const wst = (p, n) => { u8().fill(0, p, p + 144); dv().setUint32(p + 24, 0o100644, true); dv().setBigInt64(p + 48, BigInt(n), true); };
   const put = (r, v) => { const b = typeof v === 'string' ? te.encode(v) : v, p = ex.he_grow(r, b.length); u8().set(b, p); return b.length; };
-  const out = (s, err) => { let b = (err ? ebuf : obuf) + s, i; while ((i = b.indexOf('\n')) >= 0) { (err ? console.error : console.log)(b.slice(0, i)); b = b.slice(i + 1); } err ? ebuf = b : obuf = b; };
-  const fail = e => { if (closed) return; if (e && e.helium_exit !== undefined) { dead = true; frames = false; return; } dead = true; frames = false; console.error('helium trapped:', e); o.onerror?.(e); };
+  const out = (s, err) => { let b = (err ? ebuf : obuf) + s, i; while ((i = b.indexOf('\n')) >= 0) { { const l = b.slice(0, i); err ? console.error(o.err = l) : console.log(l); } b = b.slice(i + 1); } err ? ebuf = b : obuf = b; };
+  const fail = e => { if (closed) return; dead = true; frames = false; if (e && e.helium_exit !== undefined) { e.helium_exit && o.onerror?.(e); return; } console.error('helium trapped:', e); o.onerror?.(e); };
   const run = (f, a) => { if (dead || !ex[f]) return; busy++; let r; try { r = (px[f] || ex[f])(...a); } catch (e) { busy--; fail(e); return; } if (r instanceof Promise) return r.then(v => v, fail).finally(() => { busy--; drain(); }); busy--; return r; };
   const drain = () => { while (!busy && q.length && !dead) { const [f, a, c] = q.shift(); cur = c; run(f, a); cur = null; } };
   const fire = (tag, kind, c) => { q.push(['he_event', [tag, kind], c]); drain(); };
@@ -50,17 +50,17 @@ export async function start(o = {}) {
   const loc = { protocol: () => location.protocol, host: () => location.host, hostname: () => location.hostname, pathname: () => location.pathname, search: () => location.search, hash: () => location.hash, href: () => location.href, origin: () => location.origin };
   const finish = (id, tag, rec) => { fetches.set(id, rec); fire(tag, 3, { id, status: rec.status }); };
   const gunzip = async (u, b) => /\.gz(\?|#|$)/.test(u) && b[0] === 0x1f && b[1] === 0x8b && globalThis.DecompressionStream ? new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()) : b;
-  const doFetch = (u, init, tag, ms) => {
-    const id = nid++, ctl = new AbortController(), to = ms > 0 ? setTimeout(() => ctl.abort(), ms) : 0;
+  const aborts = new Map(), doFetch = (u, init, tag, ms, st) => {
+    const id = nid++, ctl = new AbortController(), to = ms > 0 ? setTimeout(() => ctl.abort(), ms) : 0; aborts.set(id, ctl);
     (async () => {
       try {
         const r = await fetch(u, { ...init, signal: ctl.signal }), total = +r.headers.get('content-length') || 0;
-        if (!r.body || !total) { const b = new Uint8Array(await r.arrayBuffer()); finish(id, tag, { status: r.status, bytes: await gunzip(u, b) }); return; }
+        if (!r.body || (!total && !st)) { const b = new Uint8Array(await r.arrayBuffer()); finish(id, tag, { status: r.status, bytes: await gunzip(u, b) }); return; }
         const rd = r.body.getReader(), parts = []; let got = 0, last = 0;
-        for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); got += value.length; const t = now(); if (t - last > 70) { last = t; fire(tag, 4, { id, loaded: got, total }); } }
+        for (;;) { const { done, value } = await rd.read(); if (done) break; if (st) { const c = nid++; fetches.set(c, { status: r.status, bytes: value }); fire(tag, 7, { id: c, status: id }); } else parts.push(value); got += value.length; const t = now(); if (t - last > 70) { last = t; fire(tag, 4, { id, loaded: got, total }); } }
         const b = new Uint8Array(got); let k = 0; for (const p of parts) { b.set(p, k); k += p.length; }
         finish(id, tag, { status: r.status, bytes: await gunzip(u, b) });
-      } catch (e) { finish(id, tag, { status: 0, bytes: te.encode(String(e && e.message || e)) }); } finally { clearTimeout(to); }
+      } catch (e) { finish(id, tag, { status: 0, bytes: te.encode(String(e && e.message || e)) }); } finally { clearTimeout(to); aborts.delete(id); }
     })();
     return id;
   };
@@ -117,6 +117,7 @@ export async function start(o = {}) {
     he_store_set: (k, kn, v, vn) => { try { localStorage.setItem(S(k, kn), S(v, vn)); } catch {} }, he_store_del: (k, kn) => { try { localStorage.removeItem(S(k, kn)); } catch {} },
     he_fetch: (u, un, tag) => doFetch(S(u, un), {}, tag, 0),
     he_request: (u, un, m, mn, hj, hn, b, bn, tag, ms) => { const hs = S(hj, hn), body = B(b, bn); return doFetch(S(u, un), { method: S(m, mn), headers: hs ? JSON.parse(hs) : {}, body: body.length ? body.slice() : undefined }, tag, ms); },
+    he_stream: (u, un, m, mn, hj, hn, b, bn, tag) => { const hs = S(hj, hn), body = B(b, bn); return doFetch(S(u, un), { method: S(m, mn), headers: hs ? JSON.parse(hs) : {}, body: body.length ? body.slice() : undefined }, tag, 0, 1); }, he_fetch_abort: id => { aborts.get(id)?.abort(); },
     he_fetch_take: (id, r) => { const f = fetches.get(id); if (!f) return 0; put(r, f.bytes); return 1; }, he_fetch_free: id => { fetches.delete(id); },
     he_js_global: (p, n) => nh(path(globalThis, S(p, n))), he_js_get: (h, p, n) => nh(path(H[h], S(p, n))),
     he_js_import: (u, un, tag) => { const id = nid++; import(S(u, un)).then(m => jsdone(id, tag, m), e => jsdone(id, tag, null, e)); return id; },

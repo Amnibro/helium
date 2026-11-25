@@ -12,6 +12,7 @@ var rotation f32 = 0.0;
 var blur f32 = 0.0;
 var size int = 512;
 var samples int = 512;
+var irr_samples int = 2048;
 var cube gfx::Texture;
 var dummy gfx::Texture;
 var smp gfx::Sampler;
@@ -65,7 +66,7 @@ fn filter(raw gfx::Texture, n int) {
 		var count f32 = samples as f32;
 		if m == lv - 1 {
 			rough = -1.0;
-			count = 2048.0;
+			count = irr_samples as f32;
 		} else if m == 0 {
 			rough = 0.0;
 		}

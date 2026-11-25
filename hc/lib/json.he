@@ -387,7 +387,7 @@ K_STR := 4
 K_ARR := 5
 K_OBJ := 6
 struct DocNode { kind int = 0, num real = 0.0, whole int = 0, at int = 0, len int = 0, nat int = 0, nlen int = 0, first int = -1, next int = -1, count int = 0 }
-struct Doc { nodes DocNode[>..] = [], pool byte[>..] = [] }
+struct Doc { raw bool = false, nodes DocNode[>..] = [], pool byte[>..] = [] }
 text_of(d Doc&, n int) const byte[:]: d.pool[d.nodes[n].at..d.nodes[n].at + d.nodes[n].len]
 key_of(d Doc&, n int) const byte[:]: d.pool[d.nodes[n].nat..d.nodes[n].nat + d.nodes[n].nlen]
 
@@ -442,10 +442,12 @@ value(r Reader&, d Doc&, depth int) int:
 		if fits:
 			r.pos = e
 			n := add_node(d, K_INT)
+			if d.raw { d.nodes[n].at = d.pool.len; d.nodes[n].len = e - start; d.pool.append(r.text[start..e]) }
 			d.nodes[n].whole = v
 			d.nodes[n].num = v as real
 			return n
 	n := add_node(d, K_NUM)
+	if d.raw { d.nodes[n].at = d.pool.len; d.nodes[n].len = e - start; d.pool.append(r.text[start..e]) }
 	if !fr:
 		u, w := digits_u64(r.text, start, e)
 		if w { d.nodes[n].whole = u as! int }

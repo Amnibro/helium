@@ -1,0 +1,6 @@
+outer assign 20000
+if value 3500
+enum 300009 true 300011 300012
+box 10500 21
+pair 25000 25500
+loop 480805008 flat true

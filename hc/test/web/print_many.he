@@ -1,0 +1,2 @@
+main():
+	for i 300: print("line ", i, " some text that fills the print buffer well past one small block")

@@ -1,0 +1,91 @@
+=== -6f7495660209bad8
+use os
+use net.sock
+use net.tls
+use crypto.ecc
+use crypto.hash
+use crypto.x509
+=== -22bf60fb3c48db6b
+
+=== 2e9cfc5c5b76bab8
+main():
+	a := args()
+	given := a.len > 1
+	dir byte[>..] ~= []
+	if given:
+		dir.append(a[1])
+	else:
+		dir.append("tls_test.tmp")
+	sh(str("mkdir -p ", dir))
+	key := crypto::ec_generate(crypto::P256)
+	cert, okc := crypto::x509_self_signed("amni-lan", key[..], (time() as int) - 60, 3700)
+	kder, okk := crypto::pkcs8_ec(key[..])
+	pin := crypto::sha256(cert[..])
+	write_file(path(dir, "cert.der"), cert[..])
+	write_file(path(dir, "key.der"), kder[..])
+	sh(str("openssl x509 -inform der -in ", dir, "/cert.der -out ", dir, "/cert.pem"))
+	sh(str("openssl pkey -inform der -in ", dir, "/key.der -out ", dir, "/key.pem"))
+	l := net::listen(net::addr("127.0.0.1", 0))
+	port := net::local_port(l)
+	suites int[3] := [0x1301, 0x1302, 0x1303]
+	groups int[3] := [0x1D, 0x17, 0x18]
+	for si 3:
+		for gi 3:
+			sn := if si == 0 { "1301" } else if si == 1 { "1302" } else { "1303" }
+			gn := if gi == 0 { "x25519" } else if gi == 1 { "p256" } else { "p384 retry" }
+			print("T3 ", sn, " ", gn, " ", matrix(l, port, cert[..], key[..], pin[..], suites[si], groups[gi]))
+	bg(client_cmd(dir, port), path(dir, "sc.out"), path(dir, "sc.done"))
+	got1 := serve(l, cert[..], key[..], "amni-v1", false, 9.0)
+	wait_file(path(dir, "sc.done"), 9.0)
+	f1 byte[>..] ~= []
+	read_file(path(dir, "sc.out"), f1)
+	print("T3 openssl s_client ", got1[..] == "ping-amni\n" && f1[..] == "ping-amni\n")
+	bg(curl_cmd(dir, port), path(dir, "curl.out"), path(dir, "curl.done"))
+	got2 := serve(l, cert[..], key[..], "http/1.1", true, 9.0)
+	wait_file(path(dir, "curl.done"), 9.0)
+	f2 byte[>..] ~= []
+	read_file(path(dir, "body.txt"), f2)
+	print("T3 curl ", has(got2[..], "GET /hello HTTP/1.1") && f2[..] == "hello from helium tls\n")
+	c1 ~= net::tls_open("127.0.0.1", port, "amni-v1")
+	c1.want.append(crypto::sha256("other")[..])
+	s1 ~= net::tls_accept(acc(l, c1), cert[..], key[..], "amni-v1")
+	shake(c1, s1)
+	print("T3 control wrong pin ", net::tls_state(c1) == net::TLS_ERR && starts_with(c1.err[..], "certificate rejected") && net::tls_state(s1) != net::TLS_OPEN)
+	key2 := crypto::ec_generate(crypto::P256)
+	c2 ~= net::tls_open("127.0.0.1", port, "amni-v1")
+	c2.want.append(pin[..])
+	s2 ~= net::tls_accept(acc(l, c2), cert[..], key2[..], "amni-v1")
+	shake(c2, s2)
+	print("T3 control wrong key ", net::tls_state(c2) == net::TLS_ERR && c2.err[..] == "CertificateVerify failed" && net::tls_state(s2) != net::TLS_OPEN)
+	c3 ~= net::tls_open("127.0.0.1", port, "other")
+	c3.want.append(pin[..])
+	s3 ~= net::tls_accept(acc(l, c3), cert[..], key[..], "amni-v1")
+	shake(c3, s3)
+	print("T3 control protocol ", s3.err[..] == "no application protocol" && s3.alert == 120 && c3.err[..] == "alert 120")
+	print("T3 control flipped record ", relay_flip(l, port, cert[..], key[..], pin[..]))
+	mc1 ~= net::tls_quic(false, "amni-lan", "amni-v1", "client-params", "", "")
+	mc1.want.append(pin[..])
+	ms1 ~= net::tls_quic(true, "", "amni-v1", "server-params", cert[..], key[..])
+	mem(mc1, ms1, false)
+	ok1 := net::tls_state(mc1) == net::TLS_OPEN && net::tls_state(ms1) == net::TLS_OPEN && !mc1.hrr && !ms1.hrr && mc1.qs.len == 4 && ms1.qs.len == 4 && mc1.qs[0][..] == ms1.qs[0][..] && mc1.qs[1][..] == ms1.qs[1][..] && mc1.qs[2][..] == ms1.qs[2][..] && mc1.qs[3][..] == ms1.qs[3][..] && mc1.ptp[..] == "server-params" && ms1.ptp[..] == "client-params" && mc1.sel[..] == "amni-v1" && ms1.sel[..] == "amni-v1"
+	print("T3 message level ", ok1)
+	mc2 ~= net::tls_quic(false, "amni-lan", "amni-v1", "client-params", "", "")
+	mc2.want.append(pin[..])
+	ms2 ~= net::tls_quic(true, "", "amni-v1", "server-params", cert[..], key[..])
+	ms2.group = 0x18
+	mem(mc2, ms2, false)
+	ok2 := net::tls_state(mc2) == net::TLS_OPEN && net::tls_state(ms2) == net::TLS_OPEN && mc2.hrr && ms2.hrr && mc2.qs.len == 4 && ms2.qs.len == 4 && mc2.qs[0][..] == ms2.qs[0][..] && mc2.qs[1][..] == ms2.qs[1][..] && mc2.qs[2][..] == ms2.qs[2][..] && mc2.qs[3][..] == ms2.qs[3][..] && mc2.ptp[..] == "server-params" && ms2.ptp[..] == "client-params" && mc2.sel[..] == "amni-v1" && ms2.sel[..] == "amni-v1"
+	print("T3 message level retry ", ok2)
+	mc3 ~= net::tls_quic(false, "amni-lan", "amni-v1", "client-params", "", "")
+	mc3.want.append(pin[..])
+	ms3 ~= net::tls_quic(true, "", "amni-v1", "server-params", cert[..], key[..])
+	mem(mc3, ms3, true)
+	print("T3 control flipped finished ", net::tls_state(mc3) == net::TLS_OPEN && net::tls_state(ms3) == net::TLS_ERR && ms3.err[..] == "client Finished failed" && ms3.alert == 51)
+	mc4 ~= net::tls_quic(false, "amni-lan", "other", "client-params", "", "")
+	mc4.want.append(pin[..])
+	ms4 ~= net::tls_quic(true, "", "amni-v1", "server-params", cert[..], key[..])
+	mem(mc4, ms4, false)
+	print("T3 control protocol message level ", net::tls_state(ms4) == net::TLS_ERR && ms4.err[..] == "no application protocol" && ms4.alert == 120)
+	print("T4 tls 1.3 ", fetch(dir[..], pin[..], "-tls1_3", false))
+	print("T4 tls 1.2 ", fetch(dir[..], pin[..], "-tls1_2", true))
+	if !given: sh(str("rm -rf ", dir));

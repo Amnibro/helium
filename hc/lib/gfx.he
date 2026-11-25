@@ -5,7 +5,7 @@ use math
 use os
 use ffi
 MAIN_THREAD := true
-WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32
+WINDOW_RESIZABLE := 1 as i32; WINDOW_HIDDEN := 2 as i32; WINDOW_FULLSCREEN := 4 as i32; NO_VSYNC := 16 as i32; DEBUG := 32 as i32; PRESENT_ON_WORK := 64 as i32
 VERTEX := 0 as i32; FRAGMENT := 1 as i32; COMPUTE := 2 as i32
 BUFFER_VERTEX := 1 as i32; BUFFER_INDEX := 2 as i32; BUFFER_INDIRECT := 4 as i32; BUFFER_STORAGE := 8 as i32; BUFFER_COMPUTE_READ := 16 as i32; BUFFER_COMPUTE_WRITE := 32 as i32
 TEXTURE_2D := 0 as i32; TEXTURE_2D_ARRAY := 1 as i32; TEXTURE_3D := 2 as i32; TEXTURE_CUBE := 3 as i32; TEXTURE_CUBE_ARRAY := 4 as i32
@@ -116,6 +116,7 @@ extern "libSDL3.so.0" {
 	s_key(sc i32, m u16, ev bool) u32 = "SDL_GetKeyFromScancode";
 	s_clip() uint = "SDL_GetClipboardText";
 	s_setclip(t uint) bool = "SDL_SetClipboardText";
+	s_pref(org uint, app uint) uint = "SDL_GetPrefPath";
 	s_free(p uint) = "SDL_free";
 	s_acq(d uint) uint = "SDL_AcquireGPUCommandBuffer";
 	s_submit(c uint) bool = "SDL_SubmitGPUCommandBuffer";
@@ -384,6 +385,11 @@ create_screen(w0 int, h0 int) bool:
 screen() Texture: need("screen"); SCR
 screen_depth() Texture: need("screen_depth"); SCRD
 screen_size() int2: int2{SW as i32, SH as i32}
+sync_screen() bool:
+	if WIN == 0: return false
+	s_wpsz(WIN, p4(0), p4(1)); w := I4[0] as int; h := I4[1] as int
+	if w > 0 && h > 0 && (w != SW || h != SH): return create_screen(w, h)
+	true
 safe_area() int4:
 	if WIN == 0 || WW <= 0 || WH <= 0 || !s_wsafe(WIN, p4(0)): return int4{0, 0, SW as i32, SH as i32}
 	x0 := (I4[0] as int * WPW) / WW; y0 := (I4[1] as int * WPH) / WH; x1 := ((I4[0] + I4[2]) as int * WPW) / WW; y1 := ((I4[1] + I4[3]) as int * WPH) / WH
@@ -476,7 +482,7 @@ focus(f bool):
 frame_raw() bool:
 	if !need("frame"): return false
 	if PASS != 0 || CPASS != 0: misuse(str("frame() inside a ", pname(), " pass: end the pass first")); return false
-	if WIN != 0 && FRAMES > 0: present()
+	if WIN != 0 && FRAMES > 0 && (FLAGS & 64 == 0 || CMD != 0): present()
 	if WIN != 0 { submit() } else { submit_paced() } for k 512 { PK[k] = false; RK[k] = false } for k 16 { PADP[k] = false } PBTN = 0; RBTN = 0; MDX = 0.0; MDY = 0.0; WHEEL = 0.0; EVS.clear(); resized ~= false; ep := ffi::ptr(EVB[..])
 	while s_poll(ep):
 		t := u32at(EVB[..], 0)
@@ -500,7 +506,7 @@ frame_raw() bool:
 			if !FOC: continue
 			WHEEL += f32at(EVB[..], 28); k := ev(5); EVS[k].x = f32at(EVB[..], 24); EVS[k].y = f32at(EVB[..], 28); continue
 		if t >= 1792 && t <= 1795:
-			fid := (u64at(EVB[..], 24) ^ (u64at(EVB[..], 16) << 20)) as int; fx := f32at(EVB[..], 32) * SW as f32; fy := f32at(EVB[..], 36) * SH as f32; fk ~= -1
+			fid := ((u64at(EVB[..], 24) ^ (u64at(EVB[..], 16) << 20)) as int) & 0x7fffffff; fx := f32at(EVB[..], 32) * SW as f32; fy := f32at(EVB[..], 36) * SH as f32; fk ~= -1
 			for f, i FINGERS { if f.id == fid { fk = i } }
 			if t == 1792 && fk < 0: FINGERS.push(Finger{fid, fx, fy}); fk = FINGERS.len - 1
 			if fk >= 0: FINGERS[fk].x = fx; FINGERS[fk].y = fy
@@ -569,6 +575,7 @@ inject_key(name const byte[:], down bool) bool:
 	if sc == 0: return false
 	evw(if down { 768 } else { 769 }); w32(EVW, 24, sc); w32(EVW, 28, s_key(sc as i32, 0, false) as int); EVW[36] = if down { 1 } else { 0 }; s_push(ffi::ptr(EVW[..]))
 set_fullscreen(on bool) bool: WIN != 0 && s_fullscr(WIN, on)
+is_fullscreen() bool: WIN != 0 && s_wflags(WIN) & 1 != 0
 pad_axis(a int) f32: if a >= 0 && a < PADX.len { PADX[a] } else { 0.0 }
 pad_down(b int) bool: b >= 0 && b < PADB.len && PADB[b]
 pad_pressed(b int) bool: b >= 0 && b < PADP.len && PADP[b]
@@ -611,6 +618,9 @@ set_clipboard(text const byte[:]) bool:
 	n ~= 0; while n < text.len && text[n] != 0: n += 1
 	if WIN == 0: CLIP.clear(); CLIP.append(text[..n]); return true
 	s_setclip(cz(text, text.len + 1)) || sdl_fail("set_clipboard")
+pref_path(org const byte[:], app const byte[:]) byte[>..]:
+	b byte[>..] ~= []; b.append(org); b.push(0); k := b.len; b.append(app); b.push(0)
+	p := s_pref(ffi::ptr(b[..]), ffi::ptr(b[k..])); r := if p != 0 { ffi::cstr(p) } else { [] }; if p != 0 { s_free(p) } r
 transfer(size int, up bool) uint:
 	ci ~= CInfo3{if up { 0 } else { 1 }, size as u32, 0}; tb := s_mktb(DEV, pp(ci))
 	if tb == 0: sdl_fail("creating a transfer buffer")
@@ -670,6 +680,7 @@ read_buffer<T>(b Buffer, out T[>..]&, count int) bool: raw byte[>..] ~= []; raw.
 buffer_size(b Buffer) int: i := bslot(b); if i < 0 { 0 } else { BUFS[i].size }
 release(b Buffer):
 	if !need("release_buffer"): return
+	if b.id == 0: return
 	i := bslot(b)
 	if i < 0: return
 	s_rmbuf(DEV, BUFS[i].buf); trem(TBUF, b.id)
@@ -815,6 +826,7 @@ format_supported(format i32) bool: need("format_supported") && texfmt(format as 
 texture_info(t Texture) TextureDesc: i := tfind(TTEX, t.id); if i < 0 { TextureDesc{width: 0, height: 0} } else { TEXS[i].d }
 release(t Texture):
 	if !need("release_texture"): return
+	if t.id == 0: return
 	if t.id == SCR.id || t.id == SCRD.id: misuse("release_texture: the screen belongs to gfx"); return
 	i := tslot(t)
 	if i < 0: return

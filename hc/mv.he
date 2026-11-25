@@ -1,0 +1,317 @@
+use lower
+var MVK int[>..<]; var MVO int[>..<]; var MVT int[>..<]; var MVA int[>..<]; var MVD int[>..<]; var MVH int[>..<]; var MVLN int[>..<]; var MVLL int[>..<]; var MVLV int[>..<]; var MVLB int[>..<]; var MVLR int[>..<]
+var MVOB int[>..<]; var MVOE int[>..<]; var MVOF int[>..<]; var MVPS int[>..<]; var MVDC int[>..<]; var MVDI int[>..<]
+var MVU int[>..<]; var MVCL int[>..<]; var MVIK int[>..<]; var MVIO int[>..<]; var MVIE int[>..<]; var MVMH int[>..<]; var MVMN int[>..<]; var MVSP int[>..<]
+var MVLG int[>..<]; var MVS0 int[>..<]; var MVSL int[>..<]; var MVSD int[>..<]; var MVSE int[>..<]; var MVSN int[>..<]; var MVPV int[>..<]; var MVSF int[>..<]; var MVPF int[>..<]; var MVEP int[>..<]; var MVEH int[>..<]; var MVEC int[>..<]; var MVDQ int[>..<]; var MVCS int[>..<]; var MVCE int[>..<]; var MVLX int[>..<]
+var MVAK int; var MVAO int; var MVAT int; var MVAA int; var MVAD int; var MVAH int; var MVCH bool; var MVNL bool; var MVSC bool; var MVLQ bool; var MVSRF bool
+var MVWY int[>..<]; var MVWK int[>..<]; var MVWI int[>..<]; var MVWO int[>..<]; var MVWS int[>..<]; var MVY int; var MVYK int; var MVYI int; var MVYO int; var MVYS int
+var MVLT int[>..<]; var MVLC int[>..<]; var MVLE int[>..<]; var MVLO int[>..<]; var MVLM int[>..<]; var MVKH int[>..<]; var MVKN int[>..<]; var MVRU int[>..<]; var MVUC int[>..<]; var MVPG int[>..<]
+var MVIV int; var MVCR int; var MVNV int; var MVNC int; var MVFN int; var MVI0 int; var MVNS int; var MVB0 int; var MVLK int; var MVRD int; var MVDL int; var MVNP int; var MVW int; var MVST int
+mvrz(a int[>..<]&, n int, v int):
+	a.clear(); a.resize(n, v)
+mvfd(x int) int:
+	r ~= x; while MVU[r] != r { MVU[r] = MVU[MVU[r]]; r = MVU[r] } r
+mvlong(t int):
+	r := mvfd(t); if MVCL[r] == 0 { MVCL[r] = 1; MVCH = true; MVNL = true; MVWY[r] = MVY; MVWK[r] = MVYK; MVWI[r] = MVYI; MVWO[r] = MVYO; MVWS[r] = MVYS }
+mvun(a int, b int) int:
+	x := mvfd(a); y := mvfd(b); if x != y { MVU[y] = x; if MVCL[y] != 0 && MVCL[x] == 0 { MVCL[x] = 1; MVWY[x] = MVWY[y]; MVWK[x] = MVWK[y]; MVWI[x] = MVWI[y]; MVWO[x] = MVWO[y]; MVWS[x] = MVWS[y] } MVCH = true } x
+mvfo(k int, o int) int:
+	if k == 1 { MVOB[o >> 3] } else if k == 2 { o } else { -1 }
+mvpi(k int, o int) int:
+	if k == 4 { o >> 32 } else if k == 5 { o } else { -1 }
+mvfl(r int, b int):
+	if (MVOF[r] & b) != b { MVOF[r] = MVOF[r] | b; MVCH = true }
+mvor(w int, m int):
+	if w == 0 && (MVLK | m) != MVLK { MVLK = MVLK | m; MVCH = true }
+	if w == 1 && (MVRD | m) != MVRD { MVRD = MVRD | m; MVCH = true }
+	if w == 2 && (MVDL | m) != MVDL { MVDL = MVDL | m; MVCH = true }
+	if w == 3 && (MVNP | m) != MVNP { MVNP = MVNP | m; MVCH = true }
+mvlose(k int, o int):
+	f := mvfo(k, o); if f >= 0 { mvfl(f, 1) } p := mvpi(k, o); if p >= 0 && p < 62 { mvor(3, 1 << p) }
+mvprv(j int) bool:
+	j < 62 && ((MVPV[MVFN] >> j) & 1) != 0 && ((MVNP >> j) & 1) == 0 && ((MVLK >> j) & 1) == 0
+mvaz():
+	MVAK = -1; MVAO = 0; MVAT = -1; MVAA = 0; MVAD = 0; MVAH = 0
+mvjn(k int, o int):
+	a := MVAK; if k == -1 || (a == k && MVAO == o) || (k == 6 && a != -1) { return } if a == -1 || a == 6 { MVAK = k; MVAO = o; return }
+	fa := mvfo(a, MVAO); fb := mvfo(k, o); if fa >= 0 && fa == fb { MVAK = 2; MVAO = fa; return }
+	pa := mvpi(a, MVAO); pb := mvpi(k, o); if pa >= 0 && pa == pb { MVAK = 5; MVAO = pa; return }
+	mvlose(a, MVAO); mvlose(k, o); MVAK = 0; MVAO = 0
+mvjt(t int):
+	if t >= 0 { MVAT = if MVAT < 0 { t } else { mvun(MVAT, t) } }
+mvld(i int):
+	mvjn(MVK[i], MVO[i]); mvjt(MVT[i]); MVAA = MVAA | MVA[i]; MVAD = MVAD | MVD[i]; MVAH = MVAH | MVH[i]
+mvst(i int):
+	sk := MVAK; so := MVAO; mvjn(MVK[i], MVO[i]); if MVAK != MVK[i] || MVAO != MVO[i] { MVK[i] = MVAK; MVO[i] = MVAO; MVCH = true } MVAK = sk; MVAO = so
+	t := MVT[i]; if MVAT >= 0 { if t < 0 { MVT[i] = MVAT; MVCH = true } else { mvun(t, MVAT) } }
+	if (MVA[i] | MVAA) != MVA[i] { MVA[i] = MVA[i] | MVAA; MVCH = true }
+	if (MVD[i] | MVAD) != MVD[i] { MVD[i] = MVD[i] | MVAD; MVCH = true }
+	if MVAH != 0 && MVH[i] == 0 { MVH[i] = 1; MVCH = true }
+mvcl(o int, x int) int:
+	r := MVOB[o >> 3]; MVCR = r; if x < 0 || (x & 7) != 0 || (x >> 3) < r || (x >> 3) >= MVOE[r] || (MVOF[r] & 4) != 0 { -1 } else { x >> 3 }
+mvrdc(c int, r int):
+	mvld(MVNV + c); mvld(MVNV + MVNC + r); if (MVOF[r] & 3) != 0 { mvjn(0, 0) }
+mvrdo(r int):
+	mvld(MVNV + MVNC + r); if (MVOF[r] & 4) == 0 { for c r..MVOE[r] { mvld(MVNV + c) } } if (MVOF[r] & 3) != 0 { mvjn(0, 0) }
+mvesc(i int, sr bool):
+	t := MVT[i]; if t >= 0 { mvlong(t) } mvor(if sr { 1 } else { 0 }, MVA[i]); mvor(2, MVD[i]); f := mvfo(MVK[i], MVO[i]); if f >= 0 { mvfl(f, 1) }
+mvesco(r int, sr bool):
+	mvesc(MVNV + MVNC + r, sr); if (MVOF[r] & 4) == 0 { for c r..MVOE[r] { mvesc(MVNV + c, sr) } }
+mvim(v int) bool:
+	if v < 0 || MVDC[v] != 1 { return false } x := IR[MVDI[v]]; if x.op as int != I_IMM { return false } MVIV = x.c as int; true
+mves(v int) int:
+	if mvim(v) { return MVIV } if v < 0 || MVDC[v] != 1 { return -1 } x := IR[MVDI[v]]; o := x.op as int
+	if o == I_PARAM { return -((x.c as int) + 2) }
+	if o == I_LD && (x.c as int) == 0 && MVDC[x.a] == 1 && IR[MVDI[x.a]].op as int == I_SLOT { p := MVPS[(IR[MVDI[x.a]].c as int) >> 3]; if p > 0 { return -(p + 1) } }
+	-1
+mvbin(d int, a int, b int, o int):
+	mvaz(); ka := MVK[a]; kb := MVK[b]; na := ka == -1 || ka == 6; nb := kb == -1 || kb == 6
+	if o == B_ADD || o == B_SUB:
+		ia := o == B_ADD && mvim(a); va := MVIV; ib := mvim(b); vb := MVIV
+		if ia || ib:
+			p := if ib { a } else { b }; dv := if ib { if o == B_SUB { -vb } else { vb } } else { va }; mvld(p); k := MVAK; q := MVAO + dv
+			if k == 1 { r := MVOB[MVAO >> 3]; if q >= r * 8 && q < MVOE[r] * 8 { MVAO = q } else { MVAK = 2; MVAO = r } }
+			if k == 3 { MVAO = q }
+			if k == 4 { t := (MVAO & 0xFFFFFFFF) + dv; if t >= 0 && t < (1 << 31) { MVAO = q } else { MVAK = 5; MVAO = MVAO >> 32 } }
+			mvst(d); return
+		if o == B_SUB && ((kb >= 1 && kb <= 3) || MVT[b] >= 0) { MVAK = 6; mvst(d); return }
+		mvjt(MVT[a]); mvjt(MVT[b]); MVAA = MVA[a] | MVA[b]; MVAD = MVD[a] | MVD[b]; sa := ka >= 1 && ka <= 3; sb := kb >= 1 && kb <= 3
+		if na && nb { MVAK = if ka == -1 && kb == -1 { -1 } else { 6 } } else if sa && sb { mvlose(ka, MVO[a]); mvlose(kb, MVO[b]); MVAK = 0 } else if sa || sb { p := if sa { a } else { b }; k := MVK[p]; if k == 3 { MVAK = 0 } else { MVAK = 2; MVAO = mvfo(k, MVO[p]) } } else if (ka == 4 || ka == 5) && nb { MVAK = 5; MVAO = mvpi(ka, MVO[a]) } else if (kb == 4 || kb == 5) && na { MVAK = 5; MVAO = mvpi(kb, MVO[b]) } else { mvlose(ka, MVO[a]); mvlose(kb, MVO[b]); MVAK = 0 }
+		mvst(d); return
+	if o == B_AND || o == B_OR || o == B_XOR || o == B_ANDN:
+		sm := o == B_AND && ((mvim(a) && MVIV >= 0 && MVIV < 65536) || (mvim(b) && MVIV >= 0 && MVIV < 65536))
+		if (na && nb) || sm { MVAK = 6; mvst(d); return }
+		mvjt(MVT[a]); mvjt(MVT[b]); MVAA = MVA[a] | MVA[b]; MVAD = MVD[a] | MVD[b]; mvlose(ka, MVO[a]); mvlose(kb, MVO[b]); MVAK = 0; mvst(d); return
+	MVAK = 6; mvst(d)
+mvtr(k int):
+	x := IR[k]; op := x.op as int; d := x.d as int; a := x.a as int; b := x.b as int; c := x.c as int; w := x.w as int; MVYK = k; MVY = op; MVYI = -9; MVYO = 0; MVYS = 0
+	if op == I_LBL || op == I_JMP || op == I_BZ || op == I_BNZ || op == I_ZERO || op == I_DSS || op == I_DSR { return }
+	if op == I_IMM || op == I_FADDR || op == I_CMP || op == I_FCMP || op == I_FBIN || op == I_CVT || op == I_UN { mvaz(); MVAK = 6; mvst(d); return }
+	if op == I_MOV || op == I_EXT { mvaz(); mvld(a); mvst(d); return }
+	if op == I_SLOT { mvaz(); if c >= 0 && c < (MVNC - 1) * 8 { MVAK = 1; MVAO = c } else { MVAK = 0 } mvst(d); return }
+	if op == I_GADDR { mvaz(); MVAK = 3; MVAO = c; mvst(d); return }
+	if op == I_RADDR { mvaz(); MVAK = 0; mvst(d); return }
+	if op == I_PARAM { mvaz(); if w == 3 { MVAK = 4; MVAO = c << 32; if c < 62 { MVAA = 1 << c } } else { MVAK = 6 } mvst(d); return }
+	if op == I_BIN { mvbin(d, a, b, c); return }
+	p77 := k > MVI0 && IR[k - 1].op as int == I_NOP && ((IR[k - 1].c as int) & 255) == 77
+	if op == I_LD:
+		if w != 3 || ((x.l as int) == -3 && c != 0) { mvaz(); MVAK = 6; mvst(d); return }
+		ka := MVK[a]; if ka == -1 && !p77 { return }
+		mvaz(); f := mvfo(ka, MVO[a])
+		if f >= 0 { ce := if ka == 1 { mvcl(MVO[a], MVO[a] + c) } else { -1 }; if ce >= 0 { mvrdc(ce, f) } else { mvrdo(f) } } else if ka != -1 { MVAK = 0; MVAD = MVA[a] | MVD[a] }
+		if p77 { s := (IR[k - 1].l as int) - MVB0; mvjn(0, 0); mvjt(s); MVIK[s] = ka; MVIO[s] = MVO[a]; MVIE[s] = ((IR[k - 1].c as int) >> 8) - 1 }
+		mvst(d); return
+	if op == I_ST:
+		if w != 3 || b < 0 { return } ka := MVK[a]; if ka == -1 { return } f := mvfo(ka, MVO[a])
+		if f >= 0 { ce := if ka == 1 { mvcl(MVO[a], MVO[a] + c) } else { -1 }; mvaz(); mvld(b); mvst(MVNV + (if ce >= 0 { ce } else { MVNC + f })) } else { mvesc(b, MVSRF && mvpi(ka, MVO[a]) == 0) }
+		return
+	if op == I_COPY:
+		kd := MVK[d]; ks := MVK[a]; if kd == -1 || ks == -1 { return }
+		n := if mvim(b) { MVIV } else { -1 }; du := k > MVI0 && IR[k - 1].op as int == I_NOP && ((IR[k - 1].c as int) & 255) == 81
+		fd := mvfo(kd, MVO[d]); fs := mvfo(ks, MVO[a]); nk := (n + 7) >> 3
+		dx := fd >= 0 && kd == 1 && n >= 0 && mvcl(MVO[d], MVO[d]) >= 0 && (MVO[d] >> 3) + nk <= MVOE[fd]
+		sx := fs >= 0 && ks == 1 && n >= 0 && mvcl(MVO[a], MVO[a]) >= 0 && (MVO[a] >> 3) + nk <= MVOE[fs]
+		if dx:
+			for j nk { mvaz(); if sx { sc := (MVO[a] >> 3) + j; if !(du && MVH[MVNV + sc] != 0) { mvrdc(sc, fs) } } else if fs >= 0 { mvrdo(fs) } else { MVAK = 0; MVAD = MVA[a] | MVD[a] } mvst(MVNV + (MVO[d] >> 3) + j) }
+			return
+		if fd >= 0 { mvaz(); if fs >= 0 { mvrdo(fs) } else { MVAK = 0; MVAD = MVA[a] | MVD[a] } mvst(MVNV + MVNC + fd); return }
+		sr := MVSRF && mvpi(kd, MVO[d]) == 0
+		if sx { for j nk { mvesc(MVNV + (MVO[a] >> 3) + j, sr) } mvesc(MVNV + MVNC + fs, sr) } else if fs >= 0 { mvesco(fs, sr) } else { mvor(2, MVA[a] | MVD[a]) }
+		return
+	if op == I_NOP:
+		if (c & 255) != 79 || MVLT[x.l as int] == 0 { return } s := (x.l as int) - MVB0; ka := MVK[a]; kb := MVK[b]; if ka == -1 || kb == -1 { return }
+		MVIK[s] = ka; MVIO[s] = MVO[a]; MVIE[s] = (c >> 8) - 1; ce := if kb == 1 { mvcl(MVO[b], MVO[b]) } else { -1 }
+		if ce >= 0 { mvaz(); MVAT = s; MVAH = 1; mvst(MVNV + ce) } else { mvlong(s) }
+		return
+	if op == I_CALL || op == I_CALLR:
+		pf := if op == I_CALL && c >= 0 { MVPF[c] } else { 0 }
+		if pf != 0:
+			v0 := ARGL[a] as int; k0 := MVK[v0]; f0 := mvfo(k0, MVO[v0])
+			if f0 >= 0 { ce := if k0 == 1 { mvcl(MVO[v0], MVO[v0]) } else { -1 }; mvaz(); MVAK = 0; mvst(MVNV + (if ce >= 0 { ce } else { MVNC + f0 })) }
+			if d >= 0 { mvaz(); MVAK = 0; if p77 { s := (IR[k - 1].l as int) - MVB0; mvjt(s); MVIK[s] = k0; MVIO[s] = MVO[v0]; MVIE[s] = if pf == 1 && b >= 3 && mvim(ARGL[a + 2] as int) { MVIV } else { -1 } } mvst(d) }
+			return
+		if op == I_CALLR || c < 0 { for j b { mvesc(ARGL[a + j] as int, false) } if d >= 0 { mvaz(); MVAK = 0; mvst(d) } if op == I_CALL && x.l >= 0 { mvaz(); MVAK = 0; mvst(x.l as int) } return }
+		lk := MVSL[c]; rd := MVSD[c]; dl := MVSE[c]; np := MVSN[c]; rt ~= -1; ra ~= 0; rq ~= 0
+		for j b:
+			v := ARGL[a + j] as int; kv := MVK[v]; if kv == -1 { continue }
+			if j >= 62 || ((lk >> j) & 1) != 0 { mvesc(v, false); continue }
+			f := mvfo(kv, MVO[v])
+			if f >= 0 { mvfl(f, 2); if ((dl >> j) & 1) != 0 { mvesco(f, false) } if (((np | rd) >> j) & 1) != 0 { mvfl(f, 1) } } else { if ((dl >> j) & 1) != 0 { mvor(2, MVA[v] | MVD[v]) } if ((np >> j) & 1) != 0 { mvor(3, MVA[v]) } }
+			if ((rd >> j) & 1) != 0 { if MVT[v] >= 0 { rt = if rt < 0 { MVT[v] } else { mvun(rt, MVT[v]) } } ra = ra | MVA[v]; rq = rq | MVD[v] }
+		if MVSF[c] != 0 && b > 0:
+			v0 := ARGL[a] as int; k0 := MVK[v0]; f0 := mvfo(k0, MVO[v0])
+			if rt >= 0 || ra != 0 || rq != 0 { if f0 >= 0 { mvaz(); MVAK = 0; MVAT = rt; MVAA = ra; MVAD = rq; mvst(MVNV + MVNC + f0) } else if k0 != -1 { if rt >= 0 { mvlong(rt) } mvor(if MVSRF && mvpi(k0, MVO[v0]) == 0 { 1 } else { 0 }, ra); mvor(2, rq) } }
+			if d >= 0 { mvaz(); mvld(v0); mvst(d) }
+		else:
+			if d >= 0 { mvaz(); MVAK = 0; MVAT = rt; MVAA = ra; MVAD = rq; mvst(d) }
+		if x.l >= 0 { mvaz(); MVAK = 0; MVAT = rt; MVAA = ra; MVAD = rq; mvst(x.l as int) }
+		return
+	if op == I_SYS { for j b { v := ARGL[a + j] as int; f := mvfo(MVK[v], MVO[v]); if f >= 0 { mvfl(f, 2) } } if d >= 0 { mvaz(); MVAK = 0; mvst(d) } return }
+	if op == I_RET { if MVRU[MVFN] != 0 { if a >= 0 { mvesc(a, true) } if b >= 0 { mvesc(b, true) } } return }
+	opnds(k); if OD.len > 0 { mvaz(); for u OU { mvld(u as int) } mvjn(0, 0); for e OD { mvst(e as int) } }
+mvpo(i int, fl int):
+	mvlose(MVK[i], MVO[i]); if (fl & 1) != 0 && MVT[i] >= 0 { mvlong(MVT[i]) }
+mvpost():
+	MVY = 50; MVYK = -1; for r MVNC { if MVOB[r] == r && (MVOF[r] & 3) != 0 { mvpo(MVNV + MVNC + r, MVOF[r]); if (MVOF[r] & 4) == 0 { for c r..MVOE[r] { mvpo(MVNV + c, MVOF[r]) } } } }
+mvg(i int):
+	n := MVLN[i]; if n >= 0 { MVLV[n >> 6] = MVLV[n >> 6] | (1 << (n & 63)) }
+mvkl(i int):
+	n := MVLN[i]; if n >= 0 { MVLV[n >> 6] = MVLV[n >> 6] & (-1 ^ (1 << (n & 63))) }
+mvgo(r int):
+	mvg(MVNV + MVNC + r); if (MVOF[r] & 4) == 0 { for c r..MVOE[r] { mvg(MVNV + c) } }
+mvch(i int):
+	if MVH[i] != 0 && MVT[i] >= 0 { mvlong(MVT[i]) }
+mval(ek int, eo int, sk0 int, so int) bool:
+	sk := if sk0 == 6 || sk0 == -1 { 0 } else { sk0 }; ep := mvpi(ek, eo); sp := mvpi(sk, so)
+	if (ep >= 0 && mvprv(ep)) || (sp >= 0 && mvprv(sp)) { return ep == sp && (ek == 5 || sk == 5 || eo == so) }
+	ef := mvfo(ek, eo); sf := mvfo(sk, so)
+	if ef >= 0 && sf >= 0 { return ef == sf && (ek == 2 || sk == 2 || eo == so) }
+	if ef >= 0 { return sk == 0 && (MVOF[ef] & 1) != 0 }
+	if sf >= 0 { return ek == 0 && (MVOF[sf] & 1) != 0 }
+	if ek == 0 || sk == 0 { return true }
+	if ek == 3 && sk == 3 { return eo == so }
+	if ek == 3 || sk == 3 { g := if ek == 3 { eo } else { so }; pk := if ek == 3 { sk } else { ek }; po := if ek == 3 { so } else { eo }; p := mvpi(pk, po); s := if p >= 0 && p < 62 { MVPG[MVFN * 62 + p] } else { -2 }; return s == -2 || (s >= 0 && (pk == 5 || s + (po & 0xFFFFFFFF) == g)) }
+	ep != sp || ek == 5 || sk == 5 || eo == so
+mvea(f int, kd int, ik0 int, io0 int, es0 int):
+	ik ~= ik0; io ~= io0; es ~= es0
+	if MVEC[f] >= 48 { es = -1; if ik == 3 { ik = 0; io = 0 } if ik == 4 { ik = 5; io = io >> 32 } }
+	e ~= MVEH[f]; while e >= 0 { if MVEP[e] == kd && MVEP[e + 1] == ik && MVEP[e + 2] == io && (MVEP[e + 3] == es || MVEP[e + 3] == -1) { return } e = MVEP[e + 4] }
+	n := MVEP.len; MVEP.push(kd); MVEP.push(ik); MVEP.push(io); MVEP.push(es); MVEP.push(MVEH[f]); MVEH[f] = n; MVEC[f] += 1; MVSC = true
+mvev(kd int, ik0 int, io0 int, es int):
+	ik := if ik0 == 6 || ik0 == -1 { 0 } else { ik0 }; io := if ik == 0 { 0 } else { io0 }
+	if ik != 1 && ik != 2 { mvea(MVFN, kd, ik, io, es) }
+	if MVNS == 0 { return }
+	MVYI = ik; MVYO = io; MVYS = es
+	if kd == 0 && (ik == 1 || ik == 2):
+		r := mvfo(ik, io); ce := if ik == 1 { mvcl(io, io) } else { -1 }
+		sy := MVY; MVY = 66; if ce >= 0 { mvch(MVNV + ce) } else { mvch(MVNV + MVNC + r); if (MVOF[r] & 4) == 0 { for q r..MVOE[r] { mvch(MVNV + q) } } } MVY = sy
+	if !MVLQ { MVLQ = true; MVLR.clear(); MVST += 1; for q MVW { y := MVLV[q]; if y != 0 { for t 64 { if ((y >> t) & 1) != 0 { ti := MVT[MVLL[q * 64 + t]]; if ti >= 0 { r := mvfd(ti); if MVSP[r] != MVST { MVSP[r] = MVST; MVLR.push(r) } } } } } } }
+	el := if es < -1 { -1 } else { es }
+	for r MVLR { if MVCL[r] == 0 { s ~= MVMH[r]; while s >= 0 { if (el < 0 || MVIE[s] < 0 || el == MVIE[s]) && mval(ik, io, MVIK[s], MVIO[s]) { mvlong(r); s = -1 } else { s = MVMN[s] } } } }
+mvmap(a int, nb int, g int):
+	e ~= MVEH[g]
+	while e >= 0:
+		kd := MVEP[e]; ik := MVEP[e + 1]; io := MVEP[e + 2]; es := MVEP[e + 3]; e = MVEP[e + 4]; mk ~= 0; mo ~= 0
+		if ik == 3 { mk = 3; mo = io }
+		if ik == 4 || ik == 5:
+			j := if ik == 4 { io >> 32 } else { io }; off := if ik == 4 { io & 0xFFFFFFFF } else { 0 }
+			if j < nb:
+				v := ARGL[a + j] as int; kv := MVK[v]; ov := MVO[v]
+				if kv == 1 { q := ov + off; r := MVOB[ov >> 3]; if ik == 4 && q < MVOE[r] * 8 { mk = 1; mo = q } else { mk = 2; mo = r } }
+				if kv == 2 { mk = 2; mo = ov }
+				if kv == 3 && ik == 4 { mk = 3; mo = ov + off }
+				if kv == 4 { if ik == 4 && (ov & 0xFFFFFFFF) + off < (1 << 31) { mk = 4; mo = ov + off } else { mk = 5; mo = ov >> 32 } }
+				if kv == 5 { mk = 5; mo = ov }
+		me ~= es; if es < -1 { i := -(es + 2); me = if i < nb { mves(ARGL[a + i] as int) } else { -1 } }
+		mvev(kd, mk, mo, me)
+mvbk(k int, ev bool):
+	x := IR[k]; op := x.op as int; d := x.d as int; a := x.a as int; b := x.b as int; c := x.c as int; w := MVW; MVYK = k
+	if op == I_JMP { l := MVLX[c] * w; for q w { MVLV[q] = MVLB[l + q] } return }
+	if op == I_LBL { l := MVLX[c] * w; for q w { if (MVLB[l + q] | MVLV[q]) != MVLB[l + q] { MVLB[l + q] = MVLB[l + q] | MVLV[q]; MVCH = true } } return }
+	if op == I_BZ || op == I_BNZ { l := MVLX[c] * w; for q w { MVLV[q] = MVLV[q] | MVLB[l + q] } if a >= 0 { mvg(a) } if b >= 0 { mvg(b) } return }
+	if op == I_RET { for q w { MVLV[q] = 0 } if a >= 0 { mvg(a) } if b >= 0 { mvg(b) } return }
+	if op == I_NOP:
+		kd := c & 255; MVLQ = false
+		if ev && (kd == 77 || kd == 79) { s := (x.l as int) - MVB0; if MVCL[mvfd(s)] != 0 { MVY = 61; mvev(0, MVIK[s], MVIO[s], MVIE[s]) } }
+		if ev && kd == 78 && MVK[a] != -1 { MVY = 62; mvev(1, MVK[a], MVO[a], (c >> 8) - 1) }
+		if ev && kd == 79 && MVLT[x.l as int] == 0 && MVK[a] != -1 { MVY = 62; mvev(1, MVK[a], MVO[a], (c >> 8) - 1) }
+		if (kd == 78 || kd == 79) && a >= 0 { mvg(a) }
+		return
+	if op == I_COPY { s ~= MVKH[k - MVI0]; while s >= 0 { ce := MVLE[s]; MVLO[s] = if ce >= 0 { (MVLV[MVLN[MVNV + ce] >> 6] >> (MVLN[MVNV + ce] & 63)) & 1 } else { 1 }; s = MVKN[s] } }
+	opnds(k); for e OD { mvkl(e as int) }
+	if op == I_ST && (x.w as int) == 3 && MVK[a] == 1 { ce := mvcl(MVO[a], MVO[a] + c); if ce >= 0 { mvkl(MVNV + ce) } }
+	if (op == I_COPY || op == I_ZERO) && MVK[d] == 1 && mvim(b) && mvcl(MVO[d], MVO[d]) >= 0 { c0 := MVO[d] >> 3; nk := MVIV >> 3; for j nk { if c0 + j < MVOE[MVCR] { mvkl(MVNV + c0 + j) } } }
+	pf := if op == I_CALL && c >= 0 { MVPF[c] } else { 0 }
+	if ev && pf != 0 { v0 := ARGL[a] as int; MVLQ = false; MVY = 63; mvev(0, MVK[v0], MVO[v0], if pf == 1 && b >= 3 { mves(ARGL[a + 2] as int) } else { -1 }) }
+	for u OU { mvg(u as int) }
+	if op == I_LD && (x.w as int) == 3 { ka := MVK[a]; f := mvfo(ka, MVO[a]); if f >= 0 { ce := if ka == 1 { mvcl(MVO[a], MVO[a] + c) } else { -1 }; if ce >= 0 { mvg(MVNV + ce); mvg(MVNV + MVNC + f) } else { mvgo(f) } } }
+	if op == I_COPY { ka := MVK[a]; f := mvfo(ka, MVO[a]); if f >= 0 { if ka == 1 && mvim(b) && mvcl(MVO[a], MVO[a]) >= 0 { c0 := MVO[a] >> 3; nk := (MVIV + 7) >> 3; for j nk { if c0 + j < MVOE[f] { mvg(MVNV + c0 + j) } } mvg(MVNV + MVNC + f) } else { mvgo(f) } } }
+	if op == I_CALL || op == I_CALLR || op == I_SYS { for j b { v := ARGL[a + j] as int; f := mvfo(MVK[v], MVO[v]); if f >= 0 { mvgo(f) } } }
+	if ev && op == I_CALL && c >= 0 && pf == 0 { MVLQ = false; MVY = 64; mvmap(a, b, c) }
+	if ev && (op == I_CALLR || (op == I_CALL && c < 0)) { MVLQ = false; MVY = 65; mvev(0, 0, 0, -1) }
+mvpd(k int):
+	x := IR[k]; a := x.a as int; nb := x.b as int; g := x.c as int; m ~= MVPV[g]; if m == 0 { return }
+	for j min(nb, 62):
+		if ((m >> j) & 1) == 0 { continue }
+		v := ARGL[a + j] as int; f := mvfo(MVK[v], MVO[v]); p := mvpi(MVK[v], MVO[v]); ok ~= (f >= 0 && (MVOF[f] & 1) == 0) || (f < 0 && p >= 0 && mvprv(p))
+		if ok { for i nb { if i != j { u := ARGL[a + i] as int; if (f >= 0 && mvfo(MVK[u], MVO[u]) == f) || (f < 0 && mvpi(MVK[u], MVO[u]) == p) { ok = false } } } }
+		if !ok { m = m & (-1 ^ (1 << j)) }
+	if nb < 62 { m = m & ((1 << nb) - 1) }
+	if m != MVPV[g] { MVPV[g] = m; MVDQ[g] = 1 }
+mvpg(k int):
+	x := IR[k]; a := x.a as int; nb := x.b as int; g := x.c as int
+	for j min(nb, 62):
+		v := ARGL[a + j] as int; kv := MVK[v]; ov := MVO[v]; c ~= -1
+		if kv == 3 { c = if ov >= 0 { ov } else { -2 } }
+		if kv == 0 { c = -2 }
+		if kv == 4 || kv == 5 { p := mvpi(kv, ov); s := if p < 62 { MVPG[MVFN * 62 + p] } else { -2 }; c = if s < 0 { s } else if kv == 4 { s + (ov & 0xFFFFFFFF) } else { -2 } }
+		q := g * 62 + j; o := MVPG[q]; if c != -1 && o != -2 && o != c { MVPG[q] = if o == -1 { c } else { -2 }; MVDQ[g] = 1 }
+mvnm(f int) const byte[:]:
+	if f >= 0 && f < NFS.len && NFS[f].inst >= 0 { nm(FI_[NFS[f].inst].name) } else { "?" }
+mvwhy(f int, s int, r int):
+	i0 := NFS[f].i0 as int; i1 := NFS[f].i1 as int; pk ~= -1; for k i0..i1 { kd := (IR[k].c as int) & 255; if IR[k].op as int == I_NOP && (kd == 77 || kd == 79) && (IR[k].l as int) == MVB0 + s { pk = k } }
+	lo ~= 0; ll ~= 0; if pk > i0 && IR[pk - 1].op as int == I_NOP && ((IR[pk - 1].c as int) & 255) == 76 { lo = IR[MVDI[IR[pk - 1].a]].c as int; ll = IR[MVDI[IR[pk - 1].b]].c as int }
+	wk := MVWK[r]; cn ~= -1; if wk >= 0 && IR[wk].op as int == I_CALL { cn = IR[wk].c as int }
+	print("mvwhy ", RO[lo..lo + ll], " fn ", mvnm(f), " src ", s, " kind ", (IR[max(pk, 0)].c as int) & 255, " id ", MVIK[s], ":", MVIO[s], " es ", MVIE[s], " why ", MVWY[r], " at ", wk - i0, " callee ", mvnm(cn), " ev ", MVWI[r], ":", MVWO[r], ":", MVWS[r], " pk ", pk - i0)
+recursive mvfn(f int, rr bool):
+	i0 := NFS[f].i0 as int; i1 := NFS[f].i1 as int; if i1 <= i0 || MVPF[f] != 0 { return }
+	nv := NFS[f].nv as int; nc := ((NFS[f].sb as int) >> 3) + 2; n := nv + 2 * nc; s0 := MVS0[f]; ns := MVS0[f + 1] - s0
+	MVNV = nv; MVNC = nc; MVFN = f; MVI0 = i0; MVB0 = s0; MVNS = ns; MVSRF = MVSF[f] != 0; MVLK = MVSL[f]; MVRD = MVSD[f]; MVDL = MVSE[f]; MVNP = MVSN[f]; if !rr { MVSC = false }
+	mvrz(MVK, n, -1); mvrz(MVO, n, 0); mvrz(MVT, n, -1); mvrz(MVA, n, 0); mvrz(MVD, n, 0); mvrz(MVH, n, 0); mvrz(MVOB, nc, 0); mvrz(MVOE, nc, 0); mvrz(MVOF, nc, 0); mvrz(MVPS, nc, 0); mvrz(MVDC, nv, 0); mvrz(MVDI, nv, -1)
+	mvrz(MVU, ns, 0); mvrz(MVCL, ns, 0); mvrz(MVIK, ns, -1); mvrz(MVIO, ns, 0); mvrz(MVIE, ns, -1); for s ns { MVU[s] = s; MVCL[s] = MVLG[s0 + s] } mvrz(MVLC, ns, -1); mvrz(MVLE, ns, -1); mvrz(MVLO, ns, 1); mvrz(MVLM, ns, -1); mvrz(MVKN, ns, -1); mvrz(MVKH, i1 - i0, -1); mvrz(MVUC, nv, 0); mvrz(MVWY, ns, 99); mvrz(MVWK, ns, -1); mvrz(MVWI, ns, -9); mvrz(MVWO, ns, 0); mvrz(MVWS, ns, 0)
+	wf ~= false; nl ~= 0; pl int[>..<] ~= []
+	for k i0..i1:
+		x := IR[k]; op := x.op as int
+		if op == I_SLOT { c := x.c as int; l := x.l as int; if l < 0 || c < 0 || c + l > (nc - 1) * 8 { wf = true } else { MVOE[c >> 3] = max(MVOE[c >> 3], (c + l + 7) >> 3) } }
+		if op == I_LBL { MVLX[x.c as int] = nl; nl += 1 }
+		if op == I_NOP && ((x.c as int) & 255) == 79 { s := (x.l as int) - s0; MVLM[s] = k; pl.push(s) }
+		if op == I_COPY { for s pl { MVLC[s] = k; MVKN[s] = MVKH[k - i0]; MVKH[k - i0] = s } pl.clear() }
+		opnds(k); for e OD { MVDC[e as int] += 1; MVDI[e as int] = k } if op != I_MOV { uv := if op == I_RET { 1 } else { 2 }; for u OU { if MVUC[u as int] < uv { MVUC[u as int] = uv } } }
+	uq ~= true; while uq { uq = false; kq ~= i1 - 1; while kq >= i0 { y := IR[kq]; if y.op as int == I_MOV && y.a >= 0 && y.d >= 0 && MVUC[y.a] < MVUC[y.d] { MVUC[y.a] = MVUC[y.d]; uq = true } kq -= 1 } }
+	r ~= 0; e ~= 0; for c nc { if wf { MVOB[c] = 0 } else { if c >= e { r = c; e = c + 1 } e = max(e, MVOE[c]); MVOB[c] = r; MVOE[c] = 0 } }
+	if wf { MVOE[0] = nc } else { for c nc { MVOE[MVOB[c]] = c + 1 } }
+	for c nc { if MVOB[c] == c && MVOE[c] - c > 64 { MVOF[c] = 4 } }
+	for k i0..i1 { x := IR[k]; if x.op as int == I_ST && (x.w as int) == 3 && x.a >= 0 && x.b >= 0 && (x.c as int) == 0 && MVDC[x.a] == 1 && MVDC[x.b] == 1 && IR[MVDI[x.a]].op as int == I_SLOT && IR[MVDI[x.b]].op as int == I_PARAM { q := (IR[MVDI[x.a]].c as int) >> 3; if q >= 0 && q < nc { MVPS[q] = (IR[MVDI[x.b]].c as int) + 1 } } }
+	ch ~= true; while ch { MVCH = false; for k i0..i1 { mvtr(k) } mvpost(); ch = MVCH }
+	mvrz(MVMH, ns, -1); mvrz(MVMN, ns, -1); mvrz(MVSP, ns, 0); for s ns { q := mvfd(s); MVMN[s] = MVMH[q]; MVMH[q] = s }
+	MVLL.clear(); mvrz(MVLN, n, -1); if ns > 0 { for i n { if MVT[i] >= 0 { MVLN[i] = MVLL.len; MVLL.push(i) } } }
+	for s ns { if MVLM[s] >= 0 && MVLT[s0 + s] == 0 && MVLC[s] >= 0 { a := IR[MVLM[s]].a as int; if MVK[a] == 1 { ce := mvcl(MVO[a], MVO[a]); if ce >= 0 && (MVOF[MVCR] & 1) == 0 { MVLE[s] = ce; if MVLN[MVNV + ce] < 0 { MVLN[MVNV + ce] = MVLL.len; MVLL.push(MVNV + ce) } } } } }
+	w := (MVLL.len + 63) >> 6; MVW = w; mvrz(MVLV, w, 0); mvrz(MVLB, nl * w, 0)
+	ch = w > 0; while ch { MVCH = false; for q w { MVLV[q] = 0 } k ~= i1 - 1; while k >= i0 { mvbk(k, false); k -= 1 } ch = MVCH }
+	fp ~= false; for s ns { if MVLM[s] >= 0 && MVLT[s0 + s] == 0 && (MVLE[s] < 0 || MVLO[s] != 0) { MVLT[s0 + s] = 1; fp = true } } if fp { mvfn(f, true); return }
+	MVNL = true; while MVNL { MVNL = false; for q w { MVLV[q] = 0 } k ~= i1 - 1; while k >= i0 { mvbk(k, true); k -= 1 } }
+	if MVG { for s ns { r := mvfd(s); if MVCL[r] != 0 && MVLG[s0 + s] == 0 { mvwhy(f, s, r) } } }
+	for s ns { if MVCL[mvfd(s)] != 0 { MVLG[s0 + s] = 1 } }
+	rd := if MVSRF { MVRD & -2 } else { MVRD }
+	if MVSC || MVLK != MVSL[f] || rd != MVSD[f] || MVDL != MVSE[f] || MVNP != MVSN[f] { MVSL[f] = MVLK; MVSD[f] = rd; MVSE[f] = MVDL; MVSN[f] = MVNP; for q MVCS[f]..MVCS[f + 1] { MVDQ[MVCE[q]] = 1 } }
+	for k i0..i1 { x := IR[k]; if x.op as int == I_CALL && (x.c as int) >= 0 && MVPF[x.c as int] == 0 { mvpd(k); mvpg(k); g := x.c as int; ru := max(if x.d >= 0 { MVUC[x.d] } else { 0 }, if x.l >= 0 { MVUC[x.l] } else { 0 }); if MVRU[g] == 0 && (ru == 2 || (ru == 1 && MVRU[f] != 0)) { MVRU[g] = 1; MVDQ[g] = 1 } } }
+mvall():
+	nf := NFS.len; MVEP.clear(); MVST = 0; hc int[>..<] ~= []; mvrz(hc, nf, 0)
+	mvrz(MVSL, nf, 0); mvrz(MVSD, nf, 0); mvrz(MVSE, nf, 0); mvrz(MVSN, nf, 0); mvrz(MVPV, nf, 0); mvrz(MVSF, nf, 0); mvrz(MVPF, nf, 0); mvrz(MVEH, nf, -1); mvrz(MVEC, nf, 0); mvrz(MVDQ, nf, 1); mvrz(MVCS, nf + 2, 0); mvrz(MVS0, nf + 1, 0); mvrz(MVLX, LBL.len, 0)
+	for q, i MVPR { if q >= 0 { MVPF[q] = if i < 4 { 1 } else { 2 } } }
+	for q MVSR { MVSF[q] = 1 }
+	ns ~= 0
+	for f nf:
+		MVS0[f] = ns
+		for k (NFS[f].i0 as int)..(NFS[f].i1 as int):
+			x := IR[k]; op := x.op as int; c := x.c as int; kd := c & 255
+			if op == I_NOP && (kd == 77 || kd == 79) { IR[k].l = ns as i32; ns += 1 }
+			if op == I_CALL && c >= 0 && MVPF[c] == 0 { MVCS[c + 2] += 1; hc[c] = hc[c] | 1 }
+			if op == I_FADDR && c >= 0 && c < nf { hc[c] = hc[c] | 2 }
+	MVS0[nf] = ns; mvrz(MVLG, ns, 0); mvrz(MVLT, ns, 0); mvrz(MVRU, nf, 0); for q MVXP { if q >= 0 && q < nf { hc[q] = hc[q] | 2 } }
+	for f nf { MVCS[f + 2] += MVCS[f + 1]; MVPV[f] = if hc[f] == 1 { (1 << 62) - 1 } else { 0 }; MVRU[f] = if hc[f] == 1 { 0 } else { 1 } }
+	mvrz(MVPG, nf * 62, -1); for f nf { if hc[f] != 1 { for j 62 { MVPG[f * 62 + j] = -2 } } }
+	mvrz(MVCE, MVCS[nf + 1], 0)
+	for f nf { for k (NFS[f].i0 as int)..(NFS[f].i1 as int) { x := IR[k]; c := x.c as int; if x.op as int == I_CALL && c >= 0 && MVPF[c] == 0 { MVCE[MVCS[c + 1]] = f; MVCS[c + 1] += 1 } } }
+	ch ~= true; while ch { ch = false; f ~= nf - 1; while f >= 0 { if MVDQ[f] != 0 { MVDQ[f] = 0; mvfn(f, false); ch = true } f -= 1 } }
+	np ~= 0
+	for k IR.len:
+		x := IR[k]; kd := (x.c as int) & 255; if x.op as int != I_NOP || kd < 77 || kd > 81 { continue }
+		cr := k > 0 && IR[k - 1].op as int == I_NOP && ((IR[k - 1].c as int) & 255) == 76; y := IR[max(k - 1, 0)]
+		if (kd == 77 || kd == 79) && MVLG[x.l] != 0:
+			z := IR[k + 1]; va := if kd == 79 { x.a } else if z.op as int == I_LD { z.a } else { ARGL[z.a] }; a0 := ARGL.len; ARGL.push(va); np += 1
+			if cr { ARGL.push(y.a); ARGL.push(y.b) } IR[k] = Ir{I_CALL as u8, 3, -1, a0 as i32, (if cr { 3 } else { 1 }) as i32, (if cr { MVFD } else { MVF }) as i64, -1}
+		else:
+			IR[k] = Ir{I_NOP as u8, 3, -1, -1, -1, 0, -1}
+		if cr { IR[k - 1] = Ir{I_NOP as u8, 3, -1, -1, -1, 0, -1} }
+	if MVG { print("mv: ", ns, " sources, ", np, " pinned") }

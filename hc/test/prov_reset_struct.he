@@ -1,0 +1,17 @@
+struct H { n int = 0, s int[:] = [] }
+var P int[>..]
+var G H
+fill():
+	P.push(1)
+	P.push(2)
+	G = H{n: 2, s: P[0..P.len]}
+reset():
+	G = H{..}
+	P.clear()
+main():
+	fill()
+	print(G.s.len)
+	reset()
+	print(P.len, " ", G.s.len)
+	fill()
+	print(G.s[1])

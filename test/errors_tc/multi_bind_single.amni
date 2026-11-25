@@ -1,0 +1,8 @@
+// error: this call returns 2 values but one name binds it, which would keep only the first
+fn pos(b const byte[:], at int) u64, int { return b[at] as u64, at + 1; }
+fn main() {
+	let b byte[>..] = [1, 2, 3];
+	var at = 0;
+	let v = pos(b[..], at);
+	print(v, "\n");
+}

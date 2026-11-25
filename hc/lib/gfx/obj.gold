@@ -1,0 +1,10 @@
+use std
+into obj.amni
+
+Imports: os. Namespace obj. Reads Wavefront OBJ meshes with named groups, with no dependency on the renderer. Module vars: `V` (f32, three per vertex), `names` (a list of group names in order of appearance, each a growable byte array) and `tris` (int, four per triangle: the group's index in `names`, then three vertex numbers counting from 0).
+
+`load(path) bool` clears the module vars and reads the file. A line starting with "v " adds its first three numbers to `V`. A line starting with "g " makes its name (the text after "g " up to the end of the line, without trailing spaces or a carriage return) the current group, adding it to `names` when new. A line starting with "f " lists three or more corners, each a vertex number counting from 1, optionally followed by a slash and more; it adds triangles fanned from the first corner (corners 1, k, k plus 1) to `tris` with the current group (a group named "default" is made when none was named yet). Other lines are skipped. Returns false when the file cannot be read.
+
+`group(name) int` is the index of the name in `names`, or -1. `tris_of(name, out)` clears out (a growable int array) and fills it with the three vertex numbers of every triangle of that group. `centroid(name) real, real, real` is the mean position of the distinct vertices used by that group's triangles, or 0, 0, 0 when the group has none.
+
+`normals(idx, out)` (idx: read-only int slice of triangles) clears out (growable f32) and fills it with three numbers per vertex of `V`: each vertex's sum of the cross products of the edges (b minus a) and (c minus a) of the triangles that use it, scaled to length one (0, 1, 0 when shorter than 1e-20).

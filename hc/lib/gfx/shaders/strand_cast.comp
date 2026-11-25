@@ -1,0 +1,18 @@
+layout(local_size_x = 64) in;
+#include "strand_common.glsl"
+layout(std430, set = 0, binding = 0) readonly buffer LFront { uint lfront[]; };
+layout(std430, set = 0, binding = 1) readonly buffer LAcc { uint lacc[]; };
+layout(std430, set = 1, binding = 0) buffer Cast { vec4 cast[]; };
+void main() {
+	uint i = gl_GlobalInvocationID.x, lw = uint(light.x), cw = lw / 4u;
+	if (i >= cw * cw) return;
+	uint o = uint(shape.w) * lw * uint(light.y) + (i / cw) * 4u * lw + (i % cw) * 4u;
+	float f = 3.0e38;
+	vec3 d = vec3(0.0);
+	for (uint y = 0u; y < 4u; y++) for (uint x = 0u; x < 4u; x++) {
+		uint s = o + y * lw + x;
+		f = min(f, uintBitsToFloat(lfront[s]));
+		d += vec3(float(lacc[s * 4u]), float(lacc[s * 4u + 1u]), float(lacc[s * 4u + 2u] + lacc[s * 4u + 3u]));
+	}
+	cast[uint(shape.x) + i] = vec4(f, d / 65536.0);
+}

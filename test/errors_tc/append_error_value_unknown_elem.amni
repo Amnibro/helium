@@ -1,0 +1,2 @@
+// error: unknown identifier: q
+fn main() { var src Tool[>..] = []; src.append(q); let x = src[0]; print(x); }

@@ -1,0 +1,12 @@
+use math
+use binary
+main():
+	bad ~= 0; n ~= 0
+	b ~= 0
+	while b <= 0x3F800000:
+		for sg 2:
+			x := binary::f32_from_bits((b | (if sg == 1 { 0x80000000 } else { 0 })) as u32)
+			if binary::f32_bits(acos(x)) != binary::f32_bits(acos(x as real) as f32) || binary::f32_bits(asin(x)) != binary::f32_bits(asin(x as real) as f32): bad += 1
+			n += 1
+		b += 4099
+	print(n, " ", bad, " ", acos(-1.0 as f32), " ", asin(1.0 as f32), " ", acos(1.0 as f32))

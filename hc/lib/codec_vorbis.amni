@@ -1,0 +1,1145 @@
+import math;
+namespace codec_vorbis;
+let INVDB f32[256] = [1.0649863e-07, 1.1341951e-07, 1.2079015e-07, 1.2863978e-07, 1.3699951e-07, 1.4590251e-07, 1.5538408e-07, 1.6548181e-07, 1.7623575e-07, 1.8768855e-07, 1.9988561e-07, 2.1287530e-07, 2.2670913e-07, 2.4144197e-07, 2.5713223e-07, 2.7384213e-07, 2.9163793e-07, 3.1059021e-07, 3.3077411e-07, 3.5226968e-07, 3.7516214e-07, 3.9954229e-07, 4.2550680e-07, 4.5315863e-07, 4.8260743e-07, 5.1396998e-07, 5.4737065e-07, 5.8294187e-07, 6.2082472e-07, 6.6116941e-07, 7.0413592e-07, 7.4989464e-07, 7.9862701e-07, 8.5052630e-07, 9.0579828e-07, 9.6466216e-07, 1.0273513e-06, 1.0941144e-06, 1.1652161e-06, 1.2409384e-06, 1.3215816e-06, 1.4074654e-06, 1.4989305e-06, 1.5963394e-06, 1.7000785e-06, 1.8105592e-06, 1.9282195e-06, 2.0535261e-06, 2.1869758e-06, 2.3290978e-06, 2.4804557e-06, 2.6416497e-06, 2.8133190e-06, 2.9961443e-06, 3.1908506e-06, 3.3982101e-06, 3.6190449e-06, 3.8542308e-06, 4.1047004e-06, 4.3714470e-06, 4.6555282e-06, 4.9580707e-06, 5.2802740e-06, 5.6234160e-06, 5.9888572e-06, 6.3780469e-06, 6.7925283e-06, 7.2339451e-06, 7.7040476e-06, 8.2047000e-06, 8.7378876e-06, 9.3057248e-06, 9.9104632e-06, 1.0554501e-05, 1.1240392e-05, 1.1970856e-05, 1.2748789e-05, 1.3577278e-05, 1.4459606e-05, 1.5399272e-05, 1.6400004e-05, 1.7465768e-05, 1.8600792e-05, 1.9809576e-05, 2.1096914e-05, 2.2467911e-05, 2.3928002e-05, 2.5482978e-05, 2.7139006e-05, 2.8902651e-05, 3.0780908e-05, 3.2781225e-05, 3.4911534e-05, 3.7180282e-05, 3.9596466e-05, 4.2169667e-05, 4.4910090e-05, 4.7828601e-05, 5.0936773e-05, 5.4246931e-05, 5.7772202e-05, 6.1526565e-05, 6.5524908e-05, 6.9783085e-05, 7.4317983e-05, 7.9147585e-05, 8.4291040e-05, 8.9768747e-05, 9.5602426e-05, 0.00010181521, 0.00010843174, 0.00011547824, 0.00012298267, 0.00013097477, 0.00013948625, 0.00014855085, 0.00015820453, 0.00016848555, 0.00017943469, 0.00019109536, 0.00020351382, 0.00021673929, 0.00023082423, 0.00024582449, 0.00026179955, 0.00027881276, 0.00029693158, 0.00031622787, 0.00033677814, 0.00035866388, 0.00038197188, 0.00040679456, 0.00043323036, 0.00046138411, 0.00049136745, 0.00052329927, 0.00055730621, 0.00059352311, 0.00063209358, 0.00067317058, 0.00071691700, 0.00076350630, 0.00081312324, 0.00086596457, 0.00092223983, 0.00098217216, 0.0010459992, 0.0011139742, 0.0011863665, 0.0012634633, 0.0013455702, 0.0014330129, 0.0015261382, 0.0016253153, 0.0017309374, 0.0018434235, 0.0019632195, 0.0020908006, 0.0022266726, 0.0023713743, 0.0025254795, 0.0026895994, 0.0028643847, 0.0030505286, 0.0032487691, 0.0034598925, 0.0036847358, 0.0039241906, 0.0041792066, 0.0044507950, 0.0047400328, 0.0050480668, 0.0053761186, 0.0057254891, 0.0060975636, 0.0064938176, 0.0069158225, 0.0073652516, 0.0078438871, 0.0083536271, 0.0088964928, 0.009474637, 0.010090352, 0.010746080, 0.011444421, 0.012188144, 0.012980198, 0.013823725, 0.014722068, 0.015678791, 0.016697687, 0.017782797, 0.018938423, 0.020169149, 0.021479854, 0.022875735, 0.024362330, 0.025945531, 0.027631618, 0.029427276, 0.031339626, 0.033376252, 0.035545228, 0.037855157, 0.040315199, 0.042935108, 0.045725273, 0.048696758, 0.051861348, 0.055231591, 0.058820850, 0.062643361, 0.066714279, 0.071049749, 0.075666962, 0.080584227, 0.085821044, 0.091398179, 0.097337747, 0.10366330, 0.11039993, 0.11757434, 0.12521498, 0.13335215, 0.14201813, 0.15124727, 0.16107617, 0.17154380, 0.18269168, 0.19456402, 0.20720788, 0.22067342, 0.23501402, 0.25028656, 0.26655159, 0.28387361, 0.30232132, 0.32196786, 0.34289114, 0.36517414, 0.38890521, 0.41417847, 0.44109412, 0.46975890, 0.50028648, 0.53279791, 0.56742212, 0.60429640, 0.64356699, 0.68538959, 0.72993007, 0.77736504, 0.82788260, 0.88168307, 0.9389798, 1.0];
+
+var why byte[>..];
+var src byte[>..];
+fn fail(reason const byte[:]) bool {
+	why.clear();
+	why.append(reason);
+	false
+}
+fn error() const byte[:] { why }
+fn sb(at int) int { src[at] as int }
+var pkt byte[>..];
+var pk_at int[>..];
+var pk_len int[>..];
+var pk_gran int[>..];
+var pk_last bool[>..];
+var cur byte[>..];
+fn pages() bool {
+	pkt.clear();
+	pk_at.clear();
+	pk_len.clear();
+	pk_gran.clear();
+	pk_last.clear();
+	cur.clear();
+	let n = src.len;
+	var at = 0;
+	var serial = -1;
+	var pstart = 0;
+	while at + 27 <= n {
+		if sb(at) != 79 || sb(at + 1) != 103 || sb(at + 2) != 103 || sb(at + 3) != 83 { break; }
+		if sb(at + 4) != 0 { break; }
+		let flags = sb(at + 5);
+		var g = 0;
+		for i in 8 { g |= sb(at + 6 + i) << (8 * i); }
+		let ser = sb(at + 14) | (sb(at + 15) << 8) | (sb(at + 16) << 16) | (sb(at + 17) << 24);
+		let nseg = sb(at + 26);
+		if at + 27 + nseg > n { break; }
+		var body = 0;
+		for i in nseg { body += sb(at + 27 + i); }
+		let bstart = at + 27 + nseg;
+		if bstart + body > n { break; }
+		if serial < 0 { serial = ser; }
+		var used = false;
+		if ser == serial {
+			used = true;
+			pstart = pk_at.len;
+			var bo = bstart;
+			var lastfin = -1;
+			for i in nseg {
+				let l = sb(at + 27 + i);
+				cur.append(src[bo..bo + l]);
+				bo += l;
+				if l < 255 {
+					pk_at.push(pkt.len);
+					pk_len.push(cur.len);
+					pkt.append(cur);
+					pk_gran.push(-1);
+					pk_last.push(false);
+					cur.clear();
+					lastfin = pk_at.len - 1;
+				}
+			}
+			if lastfin >= 0 && g != -1 { pk_gran[lastfin] = g; }
+		}
+		at = bstart + body;
+		if used && (flags & 4) != 0 { break; }
+	}
+	for i in pstart..pk_at.len { pk_last[i] = true; }
+	if pk_at.len == 0 { return fail("no Ogg pages"); }
+	if pk_at.len < 3 { return fail("too few Vorbis headers"); }
+	true
+}
+var bp int = 0;
+var bend int = 0;
+var pbase int = 0;
+var eop bool = false;
+fn bstart(k int, skip int) {
+	pbase = pk_at[k];
+	bend = pk_len[k] * 8;
+	bp = skip * 8;
+	eop = false;
+}
+fn peek32() int {
+	var v = 0;
+	let nbytes = bend >> 3;
+	for i in 5 {
+		let p = (bp >> 3) + i;
+		if p < nbytes { v |= (pkt[pbase + p] as int) << (8 * i); }
+	}
+	(v >> (bp & 7)) & 0xFFFFFFFF
+}
+fn bits(n int) int {
+	if bp + n > bend {
+		eop = true;
+		bp = bend;
+		return 0;
+	}
+	let v = peek32() & ((1 << n) - 1);
+	bp += n;
+	v
+}
+fn ilog(x int) int {
+	var r = 0;
+	var v = x;
+	while v > 0 { r++; v = v >> 1; }
+	r
+}
+fn unpack(x int) real {
+	var m = x & 0x1FFFFF;
+	if (x & 0x80000000) != 0 { m = -m; }
+	let e = (x >> 21) & 1023;
+	(m as real) * pow(2.0, (e - 788) as real)
+}
+var cb_dim int[>..];
+var cb_n int[>..];
+var cb_len int[>..];
+var cb_code int[>..];
+var cb_fast int[>..];
+var cb_long int[>..];
+var cb_nlong int[>..];
+var cb_vq int[>..];
+var clen int[>..];
+var ccode int[>..];
+var cfast int[>..];
+var clong int[>..];
+var cvq f32[>..];
+fn pow_fits(r int, d int, n int) bool {
+	var p = 1;
+	for i in d {
+		p *= r;
+		if p > n { return false; }
+	}
+	true
+}
+fn book(b int) bool {
+	if bits(24) != 0x564342 { return fail("bad codebook sync"); }
+	let dim = bits(16);
+	let n = bits(24);
+	if dim < 1 || n < 1 { return fail("bad codebook size"); }
+	let lo = clen.len;
+	if bits(1) == 0 {
+		let sparse = bits(1);
+		for i in n {
+			if eop { return fail("setup header ends early"); }
+			if sparse != 0 && bits(1) == 0 { clen.push(0); } else { clen.push(bits(5) + 1); }
+		}
+	} else {
+		var cl = bits(5) + 1;
+		var filled = 0;
+		while filled < n {
+			if eop { return fail("setup header ends early"); }
+			let cnt = bits(ilog(n - filled));
+			if filled + cnt > n { return fail("bad codebook lengths"); }
+			for i in cnt { clen.push(cl); }
+			filled += cnt;
+			cl++;
+		}
+	}
+	for i in n {
+		if clen[lo + i] > 32 { return fail("bad codebook lengths"); }
+	}
+	let co = ccode.len;
+	let fo = cfast.len;
+	for i in 1024 { cfast.push(0); }
+	let lg = clong.len;
+	var nl = 0;
+	var avail int[33] = [0; 33];
+	var first = true;
+	for e in n {
+		let l = clen[lo + e];
+		if l == 0 {
+			ccode.push(0);
+			continue;
+		}
+		var res = 0;
+		if first {
+			first = false;
+			for i in 1..(l + 1) { avail[i] = 1 << (32 - i); }
+		} else {
+			var z = l;
+			while z > 0 && avail[z] == 0 { z--; }
+			if z == 0 { return fail("bad codebook lengths"); }
+			res = avail[z];
+			avail[z] = 0;
+			var y = l;
+			while y > z {
+				avail[y] = res + (1 << (32 - y));
+				y--;
+			}
+		}
+		var rv = 0;
+		for k in 32 {
+			if ((res >> k) & 1) != 0 { rv |= 1 << (31 - k); }
+		}
+		let c = rv & ((1 << l) - 1);
+		ccode.push(c);
+		if l <= 10 {
+			let st = 1 << l;
+			var s = c;
+			while s < 1024 {
+				cfast[fo + s] = e + 1;
+				s += st;
+			}
+		} else {
+			clong.push(e);
+			nl++;
+		}
+	}
+	var vo = -1;
+	let typ = bits(4);
+	if typ == 1 || typ == 2 {
+		let mn = unpack(bits(32)) as f32;
+		let dl = unpack(bits(32)) as f32;
+		let vb = bits(4) + 1;
+		let seq = bits(1);
+		var r = 1;
+		var lv = 0;
+		if typ == 1 {
+			r = pow(n as real, 1.0 / (dim as real)) as int;
+			if r < 1 { r = 1; }
+			while pow_fits(r + 1, dim, n) { r++; }
+			while r > 1 && !pow_fits(r, dim, n) { r--; }
+			lv = r;
+		} else {
+			lv = n * dim;
+		}
+		var mult int[>..] = [];
+		for i in lv {
+			if eop { return fail("setup header ends early"); }
+			mult.push(bits(vb));
+		}
+		vo = cvq.len;
+		for e in n {
+			var last f32 = 0.0;
+			var pw = 1;
+			for k in dim {
+				var idx = 0;
+				if typ == 1 {
+					idx = (e / pw) % r;
+					pw *= r;
+				} else {
+					idx = e * dim + k;
+				}
+				let v = (mult[idx] as f32) * dl + mn + last;
+				if seq != 0 { last = v; }
+				cvq.push(v);
+			}
+		}
+	} else if typ != 0 {
+		return fail("bad lookup type");
+	}
+	if eop { return fail("setup header ends early"); }
+	cb_dim.push(dim);
+	cb_n.push(n);
+	cb_len.push(lo);
+	cb_code.push(co);
+	cb_fast.push(fo);
+	cb_long.push(lg);
+	cb_nlong.push(nl);
+	cb_vq.push(vo);
+	true
+}
+fn decode_entry(b int) int {
+	let v = peek32();
+	let f = cfast[cb_fast[b] + (v & 1023)];
+	if f > 0 {
+		let l = clen[cb_len[b] + f - 1];
+		if bp + l > bend {
+			eop = true;
+			return -1;
+		}
+		bp += l;
+		return f - 1;
+	}
+	let lg = cb_long[b];
+	for i in cb_nlong[b] {
+		let e = clong[lg + i];
+		let l = clen[cb_len[b] + e];
+		if (v & ((1 << l) - 1)) == ccode[cb_code[b] + e] {
+			if bp + l > bend {
+				eop = true;
+				return -1;
+			}
+			bp += l;
+			return e;
+		}
+	}
+	eop = true;
+	return -1;
+}
+var fl_np int[>..];
+var fl_pc int[>..];
+var fl_mult int[>..];
+var fl_x int[>..];
+var fl_nx int[>..];
+var fpc int[>..];
+var fx int[>..];
+var fsort int[>..];
+var flo int[>..];
+var fhi int[>..];
+var fcdim int[>..];
+var fcsub int[>..];
+var fcmaster int[>..];
+var fcbook int[>..];
+fn floor(f int) bool {
+	let typ = bits(16);
+	if typ == 0 { return fail("floor type 0 is not supported"); }
+	if typ != 1 { return fail("bad floor type"); }
+	let np = bits(5);
+	let pco = fpc.len;
+	var maxc = -1;
+	for i in np {
+		let c = bits(4);
+		fpc.push(c);
+		if c > maxc { maxc = c; }
+	}
+	while fcdim.len < (f + 1) * 16 {
+		fcdim.push(0);
+		fcsub.push(0);
+		fcmaster.push(0);
+	}
+	while fcbook.len < (f + 1) * 128 { fcbook.push(-1); }
+	for c in 0..(maxc + 1) {
+		let k = f * 16 + c;
+		fcdim[k] = bits(3) + 1;
+		let sbits = bits(2);
+		fcsub[k] = sbits;
+		if sbits > 0 {
+			let mb = bits(8);
+			if mb >= cb_n.len { return fail("bad book number"); }
+			fcmaster[k] = mb;
+		}
+		for j in (1 << sbits) {
+			let bk = bits(8) - 1;
+			if bk >= cb_n.len { return fail("bad book number"); }
+			fcbook[k * 8 + j] = bk;
+		}
+	}
+	let mult = bits(2) + 1;
+	let rb = bits(4);
+	let xo = fx.len;
+	fx.push(0);
+	fx.push(1 << rb);
+	for p in np {
+		let c = fpc[pco + p];
+		for j in fcdim[f * 16 + c] { fx.push(bits(rb)); }
+	}
+	let nx = fx.len - xo;
+	if nx > 65 { return fail("floor has too many points"); }
+	for i in nx {
+		for j in i {
+			if fx[xo + i] == fx[xo + j] { return fail("bad floor points"); }
+		}
+	}
+	for i in nx { fsort.push(i); }
+	for i in 1..nx {
+		let v = fsort[xo + i];
+		var j = i - 1;
+		while j >= 0 && fx[xo + fsort[xo + j]] > fx[xo + v] {
+			fsort[xo + j + 1] = fsort[xo + j];
+			j--;
+		}
+		fsort[xo + j + 1] = v;
+	}
+	for i in nx {
+		var lw = 0;
+		var hg = 1;
+		if i >= 2 {
+			var bl = -1;
+			var bh = -1;
+			let xi = fx[xo + i];
+			for j in i {
+				let xj = fx[xo + j];
+				if xj < xi && (bl < 0 || xj > fx[xo + bl]) { bl = j; }
+				if xj > xi && (bh < 0 || xj < fx[xo + bh]) { bh = j; }
+			}
+			lw = bl;
+			hg = bh;
+		}
+		flo.push(lw);
+		fhi.push(hg);
+	}
+	fl_np.push(np);
+	fl_pc.push(pco);
+	fl_mult.push(mult);
+	fl_x.push(xo);
+	fl_nx.push(nx);
+	true
+}
+var fy int[>..];
+var fused bool[>..];
+fn floor_read(f int, ch int) {
+	while fy.len < (ch + 1) * 72 { fy.push(0); }
+	while fused.len <= ch { fused.push(false); }
+	if bits(1) == 0 {
+		fused[ch] = false;
+		return;
+	}
+	let mult = fl_mult[f];
+	let rng = if mult == 1 { 256 } else if mult == 2 { 128 } else if mult == 3 { 86 } else { 64 };
+	let base = ch * 72;
+	fy[base] = bits(ilog(rng - 1));
+	fy[base + 1] = bits(ilog(rng - 1));
+	var i = 2;
+	for p in fl_np[f] {
+		let c = fpc[fl_pc[f] + p];
+		let k = f * 16 + c;
+		let cbits = fcsub[k];
+		let csub = (1 << cbits) - 1;
+		var cval = 0;
+		if cbits > 0 { cval = decode_entry(fcmaster[k]); }
+		for j in fcdim[k] {
+			let bk = fcbook[k * 8 + (cval & csub)];
+			cval = cval >> cbits;
+			if bk != -1 { fy[base + i] = decode_entry(bk); } else { fy[base + i] = 0; }
+			i++;
+		}
+	}
+	fused[ch] = !eop;
+}
+fn render_point(x0 int, y0 int, x1 int, y1 int, x int) int {
+	let dy = y1 - y0;
+	let off = abs(dy) * (x - x0) / (x1 - x0);
+	if dy < 0 { y0 - off } else { y0 + off }
+}
+fn render_line(x0 int, y0 int, x1 int, y1 int, out f32[>..]&, at int, n int) {
+	let dy = y1 - y0;
+	let adx = x1 - x0;
+	let base = dy / adx;
+	let sy = if dy < 0 { base - 1 } else { base + 1 };
+	let ady = abs(dy) - abs(base) * adx;
+	var y = y0;
+	var err = 0;
+	var x = x0;
+	if x0 < x1 && x0 < n { out[at + x0] = INVDB[clamp(y, 0, 255)]; }
+	x++;
+	while x < x1 && x < n {
+		err += ady;
+		if err >= adx {
+			err -= adx;
+			y += sy;
+		} else {
+			y += base;
+		}
+		out[at + x] = INVDB[clamp(y, 0, 255)];
+		x++;
+	}
+}
+fn floor_curve(f int, ch int, n2 int, out f32[>..]&, at int) {
+	let mult = fl_mult[f];
+	let rng = if mult == 1 { 256 } else if mult == 2 { 128 } else if mult == 3 { 86 } else { 64 };
+	let xo = fl_x[f];
+	let nx = fl_nx[f];
+	let base = ch * 72;
+	var fin int[72] = [0; 72];
+	var stp bool[72] = [false; 72];
+	stp[0] = true;
+	stp[1] = true;
+	fin[0] = fy[base];
+	fin[1] = fy[base + 1];
+	for i in 2..nx {
+		let lw = flo[xo + i];
+		let hg = fhi[xo + i];
+		let pred = render_point(fx[xo + lw], fin[lw], fx[xo + hg], fin[hg], fx[xo + i]);
+		let val = fy[base + i];
+		let highroom = rng - pred;
+		let lowroom = pred;
+		let room = 2 * (if highroom < lowroom { highroom } else { lowroom });
+		if val != 0 {
+			stp[lw] = true;
+			stp[hg] = true;
+			stp[i] = true;
+			if val >= room {
+				fin[i] = if highroom > lowroom { val - lowroom + pred } else { pred - val + highroom - 1 };
+			} else {
+				fin[i] = if val % 2 == 1 { pred - (val + 1) / 2 } else { pred + val / 2 };
+			}
+		} else {
+			fin[i] = pred;
+		}
+	}
+	var lx = 0;
+	var ly = fin[fsort[xo]] * mult;
+	var hx = 0;
+	var hy = 0;
+	for s in 1..nx {
+		let idx = fsort[xo + s];
+		if stp[idx] {
+			hy = fin[idx] * mult;
+			hx = fx[xo + idx];
+			render_line(lx, ly, hx, hy, out, at, n2);
+			lx = hx;
+			ly = hy;
+		}
+	}
+	if hx < n2 { render_line(hx, hy, n2, hy, out, at, n2); }
+}
+var rs_type int[>..];
+var rs_begin int[>..];
+var rs_end int[>..];
+var rs_psize int[>..];
+var rs_ncls int[>..];
+var rs_book int[>..];
+var rs_books int[>..];
+fn residue(r int) bool {
+	let typ = bits(16);
+	if typ > 2 { return fail("bad residue type"); }
+	let bg = bits(24);
+	let en = bits(24);
+	let ps = bits(24) + 1;
+	let nc = bits(6) + 1;
+	let cb = bits(8);
+	if cb >= cb_n.len { return fail("bad book number"); }
+	var casc int[64] = [0; 64];
+	for c in nc {
+		var cs = bits(3);
+		if bits(1) != 0 { cs += bits(5) * 8; }
+		casc[c] = cs;
+	}
+	while rs_books.len < (r + 1) * 512 { rs_books.push(-1); }
+	for c in nc {
+		for j in 8 {
+			if ((casc[c] >> j) & 1) != 0 {
+				let bk = bits(8);
+				if bk >= cb_n.len { return fail("bad book number"); }
+				rs_books[(r * 64 + c) * 8 + j] = bk;
+			}
+		}
+	}
+	rs_type.push(typ);
+	rs_begin.push(bg);
+	rs_end.push(en);
+	rs_psize.push(ps);
+	rs_ncls.push(nc);
+	rs_book.push(cb);
+	true
+}
+var chans int = 0;
+var mp_sub int[>..];
+var mp_ncp int[>..];
+var mp_cp int[>..];
+var cmag int[>..];
+var cang int[>..];
+var mux int[>..];
+var smfloor int[>..];
+var smres int[>..];
+fn mapping(m int) bool {
+	if bits(16) != 0 { return fail("bad mapping type"); }
+	var sub = 1;
+	if bits(1) != 0 { sub = bits(4) + 1; }
+	var ncp = 0;
+	let cpo = cmag.len;
+	if bits(1) != 0 {
+		ncp = bits(8) + 1;
+		let cbn = ilog(chans - 1);
+		for i in ncp {
+			let mg = bits(cbn);
+			let an = bits(cbn);
+			if mg == an || mg >= chans || an >= chans { return fail("bad channel coupling"); }
+			cmag.push(mg);
+			cang.push(an);
+		}
+	}
+	if bits(2) != 0 { return fail("bad mapping type"); }
+	while mux.len < (m + 1) * 255 { mux.push(0); }
+	if sub > 1 {
+		for ch in chans {
+			let mx = bits(4);
+			if mx >= sub { return fail("bad mapping submap"); }
+			mux[m * 255 + ch] = mx;
+		}
+	}
+	while smfloor.len < (m + 1) * 16 {
+		smfloor.push(0);
+		smres.push(0);
+	}
+	for s in sub {
+		bits(8);
+		let fl = bits(8);
+		let rs = bits(8);
+		if fl >= fl_np.len || rs >= rs_type.len { return fail("bad mapping floor or residue"); }
+		smfloor[m * 16 + s] = fl;
+		smres[m * 16 + s] = rs;
+	}
+	mp_sub.push(sub);
+	mp_ncp.push(ncp);
+	mp_cp.push(cpo);
+	true
+}
+var md_block int[>..];
+var md_map int[>..];
+fn mode(i int) bool {
+	let bf = bits(1);
+	let wt = bits(16);
+	let tt = bits(16);
+	if wt != 0 || tt != 0 { return fail("bad mode"); }
+	let mp = bits(8);
+	if mp >= mp_sub.len { return fail("bad mode"); }
+	md_block.push(bf);
+	md_map.push(mp);
+	true
+}
+var rate int = 0;
+var bs0 int = 0;
+var bs1 int = 0;
+var nmodes int = 0;
+fn pb(k int, i int) int { pkt[pk_at[k] + i] as int }
+fn vtag(k int) bool {
+	pk_len[k] >= 7 && pb(k, 1) == 118 && pb(k, 2) == 111 && pb(k, 3) == 114 && pb(k, 4) == 98 && pb(k, 5) == 105 && pb(k, 6) == 115
+}
+fn headers() bool {
+	cb_dim.clear();
+	cb_n.clear();
+	cb_len.clear();
+	cb_code.clear();
+	cb_fast.clear();
+	cb_long.clear();
+	cb_nlong.clear();
+	cb_vq.clear();
+	clen.clear();
+	ccode.clear();
+	cfast.clear();
+	clong.clear();
+	cvq.clear();
+	fl_np.clear();
+	fl_pc.clear();
+	fl_mult.clear();
+	fl_x.clear();
+	fl_nx.clear();
+	fpc.clear();
+	fx.clear();
+	fsort.clear();
+	flo.clear();
+	fhi.clear();
+	fcdim.clear();
+	fcsub.clear();
+	fcmaster.clear();
+	fcbook.clear();
+	rs_type.clear();
+	rs_begin.clear();
+	rs_end.clear();
+	rs_psize.clear();
+	rs_ncls.clear();
+	rs_book.clear();
+	rs_books.clear();
+	mp_sub.clear();
+	mp_ncp.clear();
+	mp_cp.clear();
+	cmag.clear();
+	cang.clear();
+	mux.clear();
+	smfloor.clear();
+	smres.clear();
+	md_block.clear();
+	md_map.clear();
+	if pk_len[0] < 30 || !vtag(0) || pb(0, 0) != 1 { return fail("not a Vorbis stream"); }
+	let ver = pb(0, 7) | (pb(0, 8) << 8) | (pb(0, 9) << 16) | (pb(0, 10) << 24);
+	if ver != 0 { return fail("not a Vorbis stream"); }
+	chans = pb(0, 11);
+	if chans == 0 { return fail("bad identification header"); }
+	rate = pb(0, 12) | (pb(0, 13) << 8) | (pb(0, 14) << 16) | (pb(0, 15) << 24);
+	if rate == 0 { return fail("bad identification header"); }
+	let bb = pb(0, 28);
+	bs0 = 1 << (bb & 15);
+	bs1 = 1 << (bb >> 4);
+	if bs0 < 64 || bs0 > 8192 || bs1 < 64 || bs1 > 8192 || bs0 > bs1 { return fail("bad block sizes"); }
+	if (pb(0, 29) & 1) != 1 { return fail("bad identification header"); }
+	if !vtag(1) || pb(1, 0) != 3 { return fail("bad comment header"); }
+	if !vtag(2) || pb(2, 0) != 5 { return fail("bad setup header"); }
+	bstart(2, 7);
+	let nb = bits(8) + 1;
+	for i in nb {
+		if !book(i) { return false; }
+	}
+	let nt = bits(6) + 1;
+	for i in nt {
+		if bits(16) != 0 { return fail("bad setup header"); }
+	}
+	let nf = bits(6) + 1;
+	for i in nf {
+		if !floor(i) { return false; }
+	}
+	let nr = bits(6) + 1;
+	for i in nr {
+		if !residue(i) { return false; }
+	}
+	let nm = bits(6) + 1;
+	for i in nm {
+		if !mapping(i) { return false; }
+	}
+	nmodes = bits(6) + 1;
+	for i in nmodes {
+		if !mode(i) { return false; }
+	}
+	if bits(1) != 1 || eop { return fail("bad setup header"); }
+	true
+}
+var win0 f32[>..];
+var win1 f32[>..];
+fn slope(n int) f32[>..] {
+	var r f32[>..] = [];
+	let h = n / 2;
+	for i in h {
+		let s = sin(PI * 0.5 * (((i as real) + 0.5) / (h as real)));
+		r.push(sin(PI * 0.5 * s * s) as f32);
+	}
+	r
+}
+var tab_n0 int = 0;
+var tab_n1 int = 0;
+var fc0 f32[>..];
+var fs0 f32[>..];
+var fc1 f32[>..];
+var fs1 f32[>..];
+var wc0 f32[>..];
+var ws0 f32[>..];
+var wc1 f32[>..];
+var ws1 f32[>..];
+var fre f32[>..];
+var fim f32[>..];
+fn ftab(n int, sine bool) f32[>..] {
+	var r f32[>..] = [];
+	let h = n / 4;
+	let cnt = h / 2;
+	for k in cnt {
+		let a = 2.0 * PI * (k as real) / (h as real);
+		if sine { r.push((0.0 - sin(a)) as f32); } else { r.push(cos(a) as f32); }
+	}
+	r
+}
+fn wtab(n int, sine bool) f32[>..] {
+	var r f32[>..] = [];
+	let h = n / 4;
+	for k in h {
+		let a = PI / ((n / 2) as real) * ((k as real) + 0.125);
+		if sine { r.push(sin(a) as f32); } else { r.push(cos(a) as f32); }
+	}
+	r
+}
+fn tables(n int) {
+	if tab_n0 == n || tab_n1 == n { return; }
+	if tab_n0 == 0 {
+		fc0 = ftab(n, false);
+		fs0 = ftab(n, true);
+		wc0 = wtab(n, false);
+		ws0 = wtab(n, true);
+		tab_n0 = n;
+	} else {
+		fc1 = ftab(n, false);
+		fs1 = ftab(n, true);
+		wc1 = wtab(n, false);
+		ws1 = wtab(n, true);
+		tab_n1 = n;
+	}
+}
+fn fft(re f32[:], im f32[:], n int, c const f32[:], s const f32[:]) {
+	var j = 0;
+	for i in 1..n {
+		var bit = n >> 1;
+		while (j & bit) != 0 {
+			j = j ^ bit;
+			bit = bit >> 1;
+		}
+		j = j ^ bit;
+		if i < j {
+			let tr = re[i];
+			let ti = im[i];
+			re[i] = re[j];
+			im[i] = im[j];
+			re[j] = tr;
+			im[j] = ti;
+		}
+	}
+	var sp = 2;
+	while sp <= n {
+		let hs = sp / 2;
+		let step = n / sp;
+		var i = 0;
+		while i < n {
+			for k in hs {
+				let wr = c[k * step];
+				let wi = s[k * step];
+				let a = i + k;
+				let b = a + hs;
+				let xr = re[b] * wr - im[b] * wi;
+				let xi = re[b] * wi + im[b] * wr;
+				let ar = re[a];
+				let ai = im[a];
+				re[b] = ar - xr;
+				im[b] = ai - xi;
+				re[a] = ar + xr;
+				im[a] = ai + xi;
+			}
+			i += sp;
+		}
+		sp = sp * 2;
+	}
+}
+fn imdct_core(x const f32[:], xat int, n int, out f32[>..]&, c const f32[:], s const f32[:], wcs const f32[:], wss const f32[:]) {
+	let mm = n / 2;
+	let h = mm / 2;
+	let q = mm / 4;
+	while fre.len < h {
+		fre.push(0.0);
+		fim.push(0.0);
+	}
+	for k in h {
+		let ev = x[xat + 2 * k];
+		let od = 0.0 - x[xat + mm - 1 - 2 * k];
+		let cw = wcs[k];
+		let sw = wss[k];
+		fre[k] = od * sw - ev * cw;
+		fim[k] = od * cw + ev * sw;
+	}
+	fft(fre, fim, h, c, s);
+	for k in h {
+		let cw = wcs[k];
+		let sw = wss[k];
+		let vr = cw * fre[k] + sw * fim[k];
+		let vi = sw * fre[k] - cw * fim[k];
+		if k < q {
+			let fi = 2 * k;
+			let ri = h - 1 - fi;
+			out[ri] = 0.0 - vi;
+			out[h + fi] = vi;
+			out[2 * h + ri] = vr;
+			out[3 * h + fi] = vr;
+		} else {
+			let fi = 2 * (k - q);
+			let ri = h - 1 - fi;
+			out[fi] = 0.0 - vr;
+			out[h + ri] = vr;
+			out[2 * h + fi] = vi;
+			out[3 * h + ri] = vi;
+		}
+	}
+}
+fn imdct(x const f32[:], xat int, n int, out f32[>..]&) {
+	while out.len < n { out.push(0.0); }
+	tables(n);
+	if tab_n0 == n {
+		imdct_core(x, xat, n, out, fc0, fs0, wc0, ws0);
+	} else {
+		imdct_core(x, xat, n, out, fc1, fs1, wc1, ws1);
+	}
+}
+fn imdct_into(x const f32[:], out f32[>..]&) {
+	imdct(x, 0, x.len * 2, out);
+}
+var dnd bool[>..];
+var rv f32[>..];
+var rtmp f32[>..];
+var rcls int[>..];
+var rvec int[>..];
+var to_tmp bool = false;
+fn tadd(i int, v f32) {
+	if to_tmp {
+		if i < rtmp.len { rtmp[i] = rtmp[i] + v; }
+	} else {
+		if i < rv.len { rv[i] = rv[i] + v; }
+	}
+}
+fn decode_part(bk int, fmt int, v int, off int, psize int) bool {
+	let d = cb_dim[bk];
+	let vo = cb_vq[bk];
+	if vo < 0 { return false; }
+	let base = rvec[v];
+	if fmt == 0 {
+		let n = psize / d;
+		for j in n {
+			let e = decode_entry(bk);
+			if e == -1 { return false; }
+			for k in d { tadd(base + off + j + k * n, cvq[vo + e * d + k]); }
+		}
+	} else {
+		var i = 0;
+		while i < psize {
+			let e = decode_entry(bk);
+			if e == -1 { return false; }
+			for k in d { tadd(base + off + i + k, cvq[vo + e * d + k]); }
+			i += d;
+		}
+	}
+	true
+}
+fn res_decode(r int, fmt int, nvec int, size int) {
+	let bgn = if rs_begin[r] < size { rs_begin[r] } else { size };
+	let fin = if rs_end[r] < size { rs_end[r] } else { size };
+	let psize = rs_psize[r];
+	let cbk = rs_book[r];
+	let cw = cb_dim[cbk];
+	let ncls = rs_ncls[r];
+	let parts = (fin - bgn) / psize;
+	if parts <= 0 { return; }
+	while rcls.len < nvec * (parts + cw) { rcls.push(0); }
+	for ps in 8 {
+		var p = 0;
+		while p < parts {
+			if ps == 0 {
+				for v in nvec {
+					var temp = decode_entry(cbk);
+					if temp == -1 { return; }
+					for i in cw {
+						let ii = cw - 1 - i;
+						rcls[v * (parts + cw) + ii + p] = temp % ncls;
+						temp = temp / ncls;
+					}
+				}
+			}
+			var i = 0;
+			while i < cw && p < parts {
+				for v in nvec {
+					let cl = rcls[v * (parts + cw) + p];
+					let bk = rs_books[(r * 64 + cl) * 8 + ps];
+					if bk != -1 {
+						if !decode_part(bk, fmt, v, bgn + p * psize, psize) { return; }
+					}
+				}
+				p++;
+				i++;
+			}
+		}
+	}
+}
+fn residue_read(r int, chs const int[:], n2 int) {
+	let nch = chs.len;
+	let typ = rs_type[r];
+	let half1 = bs1 / 2;
+	let fmt = if typ == 0 { 0 } else { 1 };
+	rvec.clear();
+	if typ == 2 {
+		var all = true;
+		for c in chs {
+			if !dnd[c] { all = false; }
+		}
+		if all { return; }
+		let size = nch * n2;
+		rtmp.clear();
+		for i in size { rtmp.push(0.0); }
+		rvec.push(0);
+		to_tmp = true;
+		res_decode(r, fmt, 1, size);
+		to_tmp = false;
+		for i in size { rv[chs[i % nch] * half1 + i / nch] = rtmp[i]; }
+	} else {
+		for c in chs {
+			if !dnd[c] { rvec.push(c * half1); }
+		}
+		if rvec.len == 0 { return; }
+		to_tmp = false;
+		res_decode(r, fmt, rvec.len, n2);
+	}
+}
+var flr f32[>..];
+var ibuf f32[>..];
+var ovl f32[>..];
+var prev int = 0;
+fn clampf(v f32) f32 {
+	if v > 1.0 { 1.0 } else if v < -1.0 { -1.0 } else { v }
+}
+fn put(out f32[>..]&, at int, v f32) {
+	out[at] = clampf(v);
+}
+fn packet(k int, out f32[>..]&) int {
+	if pk_len[k] == 0 { return 0; }
+	bstart(k, 0);
+	if bits(1) == 1 { return 0; }
+	let md = bits(ilog(nmodes - 1));
+	if md >= nmodes { return 0; }
+	let blk = md_block[md];
+	let n = if blk == 1 { bs1 } else { bs0 };
+	if blk == 1 { bits(2); }
+	let n2 = n / 2;
+	let mp = md_map[md];
+	let half1 = bs1 / 2;
+	while flr.len < chans * half1 { flr.push(0.0); }
+	while rv.len < chans * half1 { rv.push(0.0); }
+	while ovl.len < chans * half1 { ovl.push(0.0); }
+	while dnd.len < chans { dnd.push(false); }
+	for ch in chans {
+		let sm = mux[mp * 255 + ch];
+		let f = smfloor[mp * 16 + sm];
+		floor_read(f, ch);
+		dnd[ch] = !fused[ch];
+		if fused[ch] {
+			floor_curve(f, ch, n2, flr, ch * half1);
+		} else {
+			for t in n2 { flr[ch * half1 + t] = 0.0; }
+		}
+	}
+	let ncp = mp_ncp[mp];
+	let cpo = mp_cp[mp];
+	for i in ncp {
+		let m = cmag[cpo + i];
+		let a = cang[cpo + i];
+		if dnd[m] != dnd[a] {
+			dnd[m] = false;
+			dnd[a] = false;
+		}
+	}
+	for ch in chans {
+		for t in n2 { rv[ch * half1 + t] = 0.0; }
+	}
+	for s in mp_sub[mp] {
+		var chl int[>..] = [];
+		for ch in chans {
+			if mux[mp * 255 + ch] == s { chl.push(ch); }
+		}
+		residue_read(smres[mp * 16 + s], chl, n2);
+	}
+	for jj in ncp {
+		let i = ncp - 1 - jj;
+		let mb = cmag[cpo + i] * half1;
+		let ab = cang[cpo + i] * half1;
+		for t in n2 {
+			let m = rv[mb + t];
+			let a = rv[ab + t];
+			var nm f32 = m;
+			var na f32 = m;
+			if m > 0.0 {
+				if a > 0.0 {
+					nm = m;
+					na = m - a;
+				} else {
+					nm = m + a;
+					na = m;
+				}
+			} else {
+				if a > 0.0 {
+					nm = m;
+					na = m + a;
+				} else {
+					nm = m - a;
+					na = m;
+				}
+			}
+			rv[mb + t] = nm;
+			rv[ab + t] = na;
+		}
+	}
+	for ch in chans {
+		if !dnd[ch] {
+			for t in n2 { flr[ch * half1 + t] = flr[ch * half1 + t] * rv[ch * half1 + t]; }
+		}
+	}
+	var frames = 0;
+	if prev != 0 { frames = prev / 4 + n / 4; }
+	let ol = out.len;
+	out.resize(ol + frames * chans, 0.0);
+	let start = (bs1 - bs0) / 4;
+	let h0 = bs0 / 2;
+	for ch in chans {
+		imdct(flr, ch * half1, n, ibuf);
+		let ob = ch * half1;
+		if prev != 0 {
+			if prev == n {
+				for i in n2 {
+					let a = ovl[ob + i];
+					let b = ibuf[i];
+					var v f32 = 0.0;
+					if n == bs1 {
+						v = a * win1[n2 - 1 - i] + b * win1[i];
+					} else {
+						v = a * win0[n2 - 1 - i] + b * win0[i];
+					}
+					put(out, ol + i * chans + ch, v);
+				}
+			} else if prev > n {
+				for i in start { put(out, ol + i * chans + ch, ovl[ob + i]); }
+				for i in h0 {
+					let v = ovl[ob + start + i] * win0[h0 - 1 - i] + ibuf[i] * win0[i];
+					put(out, ol + (start + i) * chans + ch, v);
+				}
+			} else {
+				for i in h0 {
+					let v = ovl[ob + i] * win0[h0 - 1 - i] + ibuf[start + i] * win0[i];
+					put(out, ol + i * chans + ch, v);
+				}
+				for j in h0..frames { put(out, ol + j * chans + ch, ibuf[start + j]); }
+			}
+		}
+		for i in n2 { ovl[ob + i] = ibuf[n2 + i]; }
+	}
+	prev = n;
+	frames
+}
+fn decode(data const byte[:], pcm f32[>..]&) int, int, bool {
+	pcm.clear();
+	src.clear();
+	src.append(data);
+	if !pages() { return 0, 0, false; }
+	if !headers() { return 0, 0, false; }
+	prev = 0;
+	tab_n0 = 0;
+	tab_n1 = 0;
+	win0 = slope(bs0);
+	win1 = slope(bs1);
+	ovl.clear();
+	flr.clear();
+	rv.clear();
+	fy.clear();
+	fused.clear();
+	dnd.clear();
+	var total = 0;
+	var skip = 0;
+	var firstg = 0;
+	var seen = false;
+	var lastg = -1;
+	for k in 3..pk_at.len {
+		let fr = packet(k, pcm);
+		total += fr;
+		let g = pk_gran[k];
+		if g != -1 {
+			if !seen {
+				seen = true;
+				if !pk_last[k] && total > g {
+					skip = total - g;
+					firstg = 0;
+				} else {
+					firstg = if g - total > 0 { g - total } else { 0 };
+				}
+			}
+			lastg = g;
+		}
+	}
+	var avail = total - skip;
+	if avail < 0 { avail = 0; }
+	var keep = avail;
+	if lastg >= 0 {
+		let lim = lastg - firstg;
+		if lim >= 0 && lim < avail { keep = lim; }
+	}
+	if skip > 0 || keep < avail {
+		var tmp f32[>..] = [];
+		tmp.append(pcm[skip * chans..(skip + keep) * chans]);
+		pcm.clear();
+		pcm.append(tmp);
+	}
+	return chans, rate, true;
+}
+fn is_vorbis(b const byte[:]) bool {
+	b.len >= 35 && b[0] == 79 && b[1] == 103 && b[2] == 103 && b[3] == 83 && b[28] == 1 && b[29] == 118 && b[30] == 111 && b[31] == 114 && b[32] == 98 && b[33] == 105 && b[34] == 115
+}

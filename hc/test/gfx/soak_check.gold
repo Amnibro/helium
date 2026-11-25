@@ -1,0 +1,29 @@
+use std
+into soak_check.amni
+
+Imports: os, math, gfx.obj, gfx.cloth, gfx.garment and gfx.soak. A standalone program that checks wet fabric on the CPU and prints one line per check, then "soak: ok" when all pass or "soak: FAILED" when any fails. The module functions and arrays already exist; never define them here: `obj::load(path) bool`, `obj::V` (f32, three per vertex), `obj::tris_of(name, out)` (out a growable int array), `obj::centroid(name) real, real, real`; `garment::spec() garment::Spec` (fields include `unit` and `fine`), `garment::make(P, I, joints, s) bool`, `garment::drape(steps int) int`, the results `garment::pos` and `garment::nrm` (f32, three per vertex), `garment::body` and `garment::rib` (u32, three per triangle); `soak::setup(P, I, fall real)`, `soak::rain_map(dir_x, dir_y, dir_z, lo_x, lo_y, lo_z, hi_x, hi_y, hi_z, size)` (all real), `soak::occlude(P, I)`, `soak::expose(P, N, tol real)`, `soak::step(dt, rate, dry, wick)` (all real), `soak::mean() real`, and the arrays `soak::wet` and `soak::open` (f32 per vertex), `soak::rep` (int per vertex) and `soak::nb_w` (real), with P and N read-only f32 slices and I a read-only u32 slice. `os::clock()` gives seconds as a real. Module vars: `GP` (f32, the garment positions), `GN` (f32, its normals), `GI` (u32, body then rib triangles), `SP` (f32, the shell positions), `SI` (u32, the shell triangles), `U` (real: the garment unit, meters per position unit) and `reach` (bool per vertex: the brute-force ray result, filled by `rays`).
+
+`hit(ox real, oy real, oz real, P, I) bool` (P read-only f32 slice, I read-only u32 slice) is true when a ray from (ox, oy, oz) straight up (direction (0, 1, 0)) hits any triangle of the mesh at a distance above 1e-9 (Moller-Trumbore, skipping triangles whose determinant's absolute value is below 1e-20).
+
+`rays(stride int)` resizes `reach` to the garment vertex count, all false, and for every vertex number that is a multiple of `stride`, with n its normal: when n's y is above 0, the origin is its position plus n times 0.001 over `U`, and `reach` is true when neither `hit` against the garment nor against the shell finds anything.
+
+`agree(stride int) real, real` returns the share of the vertices that are multiples of `stride` whose (`soak::open` above 0) equals `reach`, and the share of those with a normal y above 0 whose `reach` is false.
+
+`prep(tol_cells real)` runs `soak::setup(GP, GI, 1.0)`, then `soak::rain_map(0, -1, 0, ...)` over the box of the garment positions grown by 0.05 over `U` on every side, with size 0.004 over `U`, then `soak::occlude` with the garment and then the shell, then `soak::expose(GP, GN, tol_cells times 0.001 over U)` (tol_cells counts millimeters).
+
+`soak_all()` sets every entry of `soak::wet` to 1.
+
+`run(seconds real, rate real, dry real, wick real)` calls `soak::step(1/30, rate, dry, wick)` as many times as the rounded value of seconds times 30.
+
+`water() real, real, real` returns the sum of `soak::wet` over welded vertices (count each welded vertex once, using its first vertex in `soak::rep` order), the number of welded vertices above 0.05, and the wet-weighted mean y of the welded vertices (times `U`; 0 when the sum is 0).
+
+`patch()` sets `soak::wet` to 1 for every vertex within 0.03 over `U` of the point (front panel middle): x 0, y the mean of the garment's lowest and highest y, z the largest z among garment vertices whose x is within 0.02 over `U` of 0 and y within 0.02 over `U` of that middle y; every other vertex 0.
+
+`main()`: load the fixture (the first argument after the program name, `args()` lists the program first, or "hc/test/gfx/fixtures/mh_tights.obj"; print "soak: no fixture" and stop when it fails); joints as 30 f32 numbers from the centroids of "joint-pelvis", "joint-spine-2", "joint-spine-1", "joint-neck", "joint-l-shoulder", "joint-l-elbow", "joint-l-hand", "joint-r-shoulder", "joint-r-elbow", "joint-r-hand"; the shell is `obj::tris_of("helper-tights")`, copied into `SP` (all of `obj::V`) and `SI` (as u32). With s = `garment::spec()` and `s.fine` 2, `garment::make(obj::V, shell, joints, s)` then `garment::drape(240)`; copy `garment::pos` into `GP`, `garment::nrm` into `GN`, `garment::body` then `garment::rib` into `GI`; `U` is `s.unit`.
+S5 first: time `prep(1.0)` with `os::clock()` as tp. Then `rays(37)`.
+S1: a, blocked = `agree(37)`; pass when a is at least 0.97 and blocked at least 0.1. Control: `prep(1e12)` (no shelter), ac = `agree(37)`, pass when ac is at most 0.9; then `prep(1.0)` again. Print "S1 rain map: agree A blocked B control C" with ok or FAIL.
+S2: `soak_all()`, `run(ln 2 over 0.01, 0, 0.01, 0)`, m = `soak::mean()`; control: `soak_all()`, `run(ln 2 over 0.01, 0, 0.02, 0)`, mc; pass when the absolute difference of m and 0.5 is at most 0.01 and of mc and 0.5 above 0.1. Print "S2 drying: mean M control C".
+S3: `patch()`, w0, n0, y0 = `water()`; `run(10, 0, 0, 2)`; w1, n1, y1 = `water()`. Then `soak::setup(GP, GI, 0.0)` (fall 0), `patch()`, `run(10, 0, 0, 2)`, w2, n2, y2 = `water()`; then `prep(1.0)` to restore fall 1. Pass when the absolute value of w1 over w0 minus 1 is at most 0.01, n1 is at least 2 times n0, and y0 minus y1 is at least 3 times the larger of y0 minus y2 and 1e-6. Print "S3 wicking: water W1 over W0, area N0 to N1, drop with fall Y1 without Y2".
+S4: all wet 0, `run(60, 0.2, 0.002, 0.05)`; among vertices that are multiples of 37 with `reach` true, the share above 0.5 (r); among all vertices whose normal y is below -0.5, the share above 0.5 (d). Control: all wet 0, `run(60, 0.2, 0.002, 5.0)`, dc the same share for the down-facing vertices. Pass when r is at least 0.9, d at most 0.2 and dc above 0.2. Print "S4 shelter: reached R down D control DC".
+S5: time one `run(1/30, 0.2, 0.002, 0.05)` with `os::clock()` as ts. Pass when tp is at most 0.5 and ts at most 0.007. Print "S5 cost: prep P s step S s".
+Each line ends with " ok" or " FAIL". Last print "soak: ok" or "soak: FAILED".

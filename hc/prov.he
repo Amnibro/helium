@@ -55,6 +55,22 @@ recursive hold(t int) bool:
 	if k == TY_ARR: return hold(x.a as int)
 	false
 isrs(t int) bool: t >= 0 && (TY[t].k == TY_SLICE || TY[t].k == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0)
+recursive teqc(x int, y int) bool: x == y || x >= 0 && y >= 0 && TY[x].k == TY[y].k && (TY[x].k as int == TY_SLICE || TY[x].k as int == TY_REF || TY[x].k as int == TY_ARR && TY[x].s == TY[y].s && TY[x].b == TY[y].b) && teqc(TY[x].a as int, TY[y].a as int)
+recursive inl(t int, e int, d int) bool:
+	if t < 0: return false
+	if d > 32 || teqc(t, e): return true
+	x := TY[t]; k := x.k as int
+	if k == TY_STRUCT: si := x.a as int; for j STI[si].fnum { if inl(SFI[STI[si].f0 as int + j].ty as int, e, d + 1) { return true } } return false
+	k == TY_ARR && inl(x.a as int, e, d + 1)
+recursive rin(t int, p int, d int) bool:
+	if t < 0: return false
+	x := TY[t]; k := x.k as int
+	if d > 32: return true
+	if k == TY_SLICE || k == TY_REF: return inl(p, x.a as int, 0) || rin(x.a as int, p, d + 1)
+	if k == TY_STRUCT: si := x.a as int; for j STI[si].fnum { if rin(SFI[STI[si].f0 as int + j].ty as int, p, d + 1) { return true } } return false
+	if k == TY_ARR: return rin(x.a as int, p, d + 1)
+	k == TY_VARIANT || k == TY_ENUM && x.fl != 0 || k == TY_TP || k == TY_FNV
+gin(g int, a int) bool: dg := -3 - g; da := -3 - a; dg < 0 || dg >= DC.len || da < 0 || da >= DC.len || rin(global_type(dg), global_type(da), 0)
 pgrow(v int): while PDEP.len <= v { PDEP.push(-1); PBD.push(-9); PBV.push(-1); PBM.push(0); PVRS.push([]); PBN.push(-1); PXM.push(0) }
 pbset(v int, p Pv, mg bool, nd int):
 	pgrow(v); q := if mg { pmerge(Pv{PBD[v], PBV[v], PBM[v]}, p) } else { p }; PBD[v] = q.d; PBV[v] = q.v; PBM[v] = q.m
@@ -225,10 +241,11 @@ prel1(ft int, val int, dst Pv, rt bool):
 	if pd >= 0: { if q.v != (-3 - pd) as i32 { m.append("a relative reference in "); m.append(nm(DC[pd].name)); m.append(" must point into "); m.append(nm(DC[pd].name)); m.append(" (§3.9)") } }
 	else if rt && q.d >= 1 || !rt && dst.v != -1 && q.v != dst.v: m.append("a relative reference must point within the same root as its location (§3.9)")
 	if m.len > 0: cerr(val, m[..])
+slit_si(t int) int: if t <= 0 { -1 } else if TY[t].k as int == TY_STRUCT { TY[t].a as int } else if TY[t].k as int == TY_VARIANT { ENV[ENI[TY[t].a].v0 as int + TY[t].c as int].si as int } else { -1 }
 recursive prels(e int, dst Pv, rt bool):
 	if e < 0: return
 	k := ND[e].k as int; t := at(e)
-	if k == N_SLIT && t > 0 && TY[t].k as int == TY_STRUCT: si := TY[t].a as int; for j ND[e].n { c := kid(e, j); fi := if ND[c].k as int == N_FI { sfield(si, ND[c].s as int) } else { j }; ft := if fi >= 0 && fi < STI[si].fnum as int { SFI[STI[si].f0 as int + fi].ty as int } else { -1 }; vv := if ND[c].k as int == N_FI { ND[c].a as int } else { c }; prel1(ft, vv, dst, rt); pcopy(vv, decode_rel(ft)); prc(vv, ft, -1); prels(vv, dst, rt) }
+	if k == N_SLIT && slit_si(t) >= 0: si := slit_si(t); for j ND[e].n { c := kid(e, j); fi := if ND[c].k as int == N_FI { sfield(si, ND[c].s as int) } else { j }; ft := if fi >= 0 && fi < STI[si].fnum as int { SFI[STI[si].f0 as int + fi].ty as int } else { -1 }; vv := if ND[c].k as int == N_FI { ND[c].a as int } else { c }; prel1(ft, vv, dst, rt); pcopy(vv, decode_rel(ft)); prc(vv, ft, -1); prels(vv, dst, rt) }
 	if k == N_ARR: for j ND[e].n { if t > 0 && TY[t].k as int == TY_ARR { prc(kid(e, j), TY[t].a as int, -1) } prels(kid(e, j), dst, rt) }
 pcyc(a int, b int) bool: a < CYR.len && b < CYR.len && CYR[a].len > 0 && CYR[b].len > 0 && (CYR[a][b >> 6] >> (b & 63)) & 1 != 0 && (CYR[b][a >> 6] >> (a & 63)) & 1 != 0
 pcycles():
@@ -342,7 +359,7 @@ recursive pvstmt(n int):
 		return
 	if k == N_ASSIGN:
 		pvexpr(ND[n].a as int); pvexpr(ND[n].b as int)
-		a := ND[n].a as int; b := ND[n].b as int; o := ND[n].op as int; if a >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID { pshrink(n, a, -1) } if a >= 0 && b >= 0 && o == T_ASSIGN { pcopy(b, at(a)); prc(b, at(a), -1) } if PCH && a >= 0 && b >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID && rk(a) == R_GLOBAL && hold(at(a)) && !isrs(at(a)) && pl(b).v <= -3 && pl(b).v as int != -3 - rv(a) { GCP.push(pl(b).v); GCP.push((-3 - rv(a)) as i32); GCP.push(n as i32) }
+		a := ND[n].a as int; b := ND[n].b as int; o := ND[n].op as int; if a >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID { pshrink(n, a, -1) } if PCH && a >= 0 && b >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID && rk(a) == R_GLOBAL && plit(b) { PIN.push(n as i32); PIN.push((-3 - rv(a)) as i32) } if a >= 0 && b >= 0 && o == T_ASSIGN { pcopy(b, at(a)); prc(b, at(a), -1) } if PCH && a >= 0 && b >= 0 && o == T_ASSIGN && ND[a].k as int == N_ID && rk(a) == R_GLOBAL && hold(at(a)) && !isrs(at(a)) && pl(b).v <= -3 && pl(b).v as int != -3 - rv(a) { GCP.push(pl(b).v); GCP.push((-3 - rv(a)) as i32); GCP.push(n as i32) }
 		if a >= 0 && b >= 0 && prel(a) && ND[a].k as int == N_DOT: prel1(fraw(a), b, pdst(ND[a].a as int), false)
 		if a >= 0 && b >= 0: prels(b, pdst(a), false)
 		if a < 0 || b < 0 || o != T_ASSIGN && o != T_DOTASSIGN || prel(a) { return } t := at(a); if t < 0 { return }
@@ -453,6 +470,7 @@ recursive pvexpr(n int):
 		if c >= 0 && rk(n) == R_BUILTIN && b == B_INDEXOF && ND[c].k as int == N_DOT && ND[c].a >= 0 && ND[n].n > 0: pindexof(n, ND[c].a as int, kid(n, 0))
 		if rk(n) == R_BUILTIN && (b == B_PRINT || b == B_STR || b == B_FORMAT): phook(n, b, c)
 		if rk(n) == R_BUILTIN && c >= 0 && ND[c].k as int == N_DOT && (b == B_CLEAR || b == B_POP || b == B_POPN || b == B_RESIZE): pshrink(n, ND[c].a as int, b)
+		if PCH && rk(n) == R_BUILTIN && b == B_RESERVE && c >= 0 && ND[c].k as int == N_DOT: { ok ~= true; for j ND[n].n { if !pnoc(kid(n, j)) { ok = false } } if ok { PIN.push(n as i32); PIN.push(-1) } }
 		if rk(n) == R_BUILTIN && c >= 0 && ND[c].k as int == N_DOT && (b == B_PUSH || b == B_APPEND): a := pid(ND[c].a as int); if a != -1 && pcnt(a) >= 0 { pcset(a, pcnt(a) + 1) }
 		if rk(n) == R_FN: { ci0 := rv(n); for j in 0..pnarg(n) { a0 := parg(n, j); k0 := ND[a0].k as int; if (k0 == N_SLIT || k0 == N_ARR) && j < FI_[ci0].pn as int { pt0 := ptype_of(ci0, j); pnst(a0, pvin(pt0, a0), pt0) } } }
 		if rk(n) == R_FN && !PCH: { ci1 := rv(n); CGE.push(PI as i32); CGE.push(ci1 as i32); na1 := min(ND[n].n as int, FI_[ci1].pn as int); CGE.push(na1 as i32); for j in 0..na1 { a1 ~= kid(n, j); while ND[a1].k as int == N_SLICE || ND[a1].k as int == N_UN && ND[a1].op as int == T_AND { a1 = ND[a1].a as int } CGE.push(if ND[a1].k as int == N_ID && rk(a1) == R_LOCAL && ppar(rv(a1)) { pidx(rv(a1)) as i32 } else { -1 }) } }
@@ -906,9 +924,9 @@ recursive nwe(e int):
 		for j ND[e].n { nwe(kid(e, j)) }
 		r := rk(e); ci := rv(e)
 		if NSUM && r == R_FN && ci >= 0 && ci < NPW.len: for j ND[e].n { if j < 62 && (NPW[ci] >> j) & 1 != 0 { npwset(kid(e, j), false) } if j < 62 && (NPC[ci] >> j) & 1 != 0 { npwset(kid(e, j), true) } }
-		if !NSUM && NSIL == 0 && r == R_BUILTIN && (ci == B_PUSH || ci == B_APPEND || ci == B_POP || ci == B_POPN || ci == B_RESIZE || ci == B_CLEAR) && c >= 0 && ND[c].k as int == N_DOT && ND[ND[c].a].k as int != N_CALL && ro(ND[c].a as int): m1 byte[>..] ~= []; m1.append("cannot ."); m1.append(nm(ND[c].s)); m1.append(" through a non-writable value (let, const, or a read-only instantiation, §9.5)"); cerr(e, m1[..])
-		if NSUM && r == R_BUILTIN && (ci == B_PUSH || ci == B_APPEND || ci == B_POP || ci == B_POPN || ci == B_RESIZE || ci == B_CLEAR) && c >= 0 && ND[c].k as int == N_DOT: npwset(ND[c].a as int, true)
-		if r == R_FN && ci >= 0 && !NSUM && NSIL == 0: { fnd := FI_[ci].node as int; for j in 0..pnarg(e) { if j < FI_[ci].pn as int && j < ND[fnd].n as int { pt := ptype_of(ci, j); pn := kid(fnd, j); if pt > 0 && TY[pt].k as int == TY_REF && TY[pt].c < 0 && TY[pt].fl & RF_OPT == 0 && !tpc(ND[pn].a as int) && ci < NPW.len && j < 62 { a1 := parg(e, j); sw := (NPW[ci] >> j) & 1 != 0; cw := (NPC[ci] >> j) & 1 != 0; rv1 := at(a1) > 0 && TY[at(a1)].k as int == TY_REF && TY[at(a1)].c < 0 && pdr(at(a1)) == TY[pt].a as int; if nrof(a1) && (sw || cw) { nrw(a1, a1, false) } else if sw && !rv1 && cnw(a1, false) { cerr(a1, "cannot write through this reference: non-writable provenance (§9.5)") } else if rv1 { if (sw || cw) && (tpc(dtn(a1)) || pcq(a1)) { cerr(a1, "cannot assign through this path (const, or a read-only instantiation, §9.5)") } } else if sw && ND[a1].k as int != N_ID { nrw(a1, a1, false) } else if sw && ro(a1) && !trs(at(a1)) || cw && ro(a1) { cerr(a1, "cannot assign through this path (const, or a read-only instantiation, §9.5)") } } } } }
+		if !NSUM && NSIL == 0 && r == R_BUILTIN && (ci == B_PUSH || ci == B_APPEND || ci == B_POP || ci == B_POPN || ci == B_RESIZE || ci == B_CLEAR || ci == B_RESERVE) && c >= 0 && ND[c].k as int == N_DOT && ND[ND[c].a].k as int != N_CALL && ro(ND[c].a as int): m1 byte[>..] ~= []; m1.append("cannot ."); m1.append(nm(ND[c].s)); m1.append(" through a non-writable value (let, const, or a read-only instantiation, §9.5)"); cerr(e, m1[..])
+		if NSUM && r == R_BUILTIN && (ci == B_PUSH || ci == B_APPEND || ci == B_POP || ci == B_POPN || ci == B_RESIZE || ci == B_CLEAR || ci == B_RESERVE) && c >= 0 && ND[c].k as int == N_DOT: npwset(ND[c].a as int, true)
+		if r == R_FN && ci >= 0 && !NSUM && NSIL == 0: { fnd := FI_[ci].node as int; for j in 0..pnarg(e) { if j < FI_[ci].pn as int && j < ND[fnd].n as int { pt := ptype_of(ci, j); pn := kid(fnd, j); if pt > 0 && TY[pt].k as int == TY_REF && TY[pt].c < 0 && TY[pt].fl & RF_OPT == 0 && !tpc(ND[pn].a as int) && ci < NPW.len && j < 62 { a1 := parg(e, j); sw := (NPW[ci] >> j) & 1 != 0; cw := (NPC[ci] >> j) & 1 != 0; rv1 := at(a1) > 0 && TY[at(a1)].k as int == TY_REF && TY[at(a1)].c < 0 && pdr(at(a1)) == TY[pt].a as int; if nrof(a1) && (sw || cw) { nrw(a1, a1, false) } else if sw && !rv1 && (if trs(at(a1)) && ND[a1].k as int == N_ID && rk(a1) == R_LOCAL { cbf(rv(a1)) || cbm(rv(a1)) || LVS[rv(a1)].fl & LV_CONST != 0 || tcn(dtn(a1)) } else { cnw(a1, false) }) { cerr(a1, "cannot write through this reference: non-writable provenance (§9.5)") } else if rv1 { if (sw || cw) && (tpc(dtn(a1)) || pcq(a1)) { cerr(a1, "cannot assign through this path (const, or a read-only instantiation, §9.5)") } } else if sw && ND[a1].k as int != N_ID { nrw(a1, a1, false) } else if sw && ro(a1) && !trs(at(a1)) || cw && ro(a1) { cerr(a1, "cannot assign through this path (const, or a read-only instantiation, §9.5)") } } } } }
 		if r == R_FN && ci >= 0 && ci < NPW.len && !NSUM && NSIL == 0: { fnd := FI_[ci].node as int; for j in 0..pnarg(e) { if j < 62 && j < FI_[ci].pn as int && j < ND[fnd].n as int { pt := ptype_of(ci, j); a1 := parg(e, j); if pt > 0 && TY[pt].k as int == TY_SLICE && TY[pt].fl & 1 == 0 && ((NPW[ci] | NPC[ci]) >> j) & 1 != 0 && (pcq(a1) || at(a1) > 0 && TY[at(a1)].k as int == TY_STRLIT) { cerr(a1, "cannot pass a read-only slice (const or a string literal) to a parameter the function writes through (§9.5); pass copy(...) for a writable copy") } } } }
 		if !NSUM && NSIL == 0 && r == R_BUILTIN && (ci == B_PRINT || ci == B_STR || ci == B_FORMAT): for j ND[e].n { a6 := kid(e, j); t6 := fin_t(a6); if t6 > 0 && t6 < TY.len && cnw(a6, true) { if hkw(t6, 0, false) { cerr(a6, "cannot write through this reference: non-writable provenance (§9.5)") } else if hkw(t6, 0, true) { cerr(a6, "cannot assign through this path (const, or a read-only instantiation, §9.5)") } } }
 		if r == R_BUILTIN && (ci == B_PUSH || ci == B_APPEND) && ND[e].n > 0: nsl(kid(e, 0))
@@ -1042,6 +1060,7 @@ pdaf(i int):
 var GRD (i32[>..])[>..]
 var GST i32[>..]
 var PSH i32[>..]
+var PIN i32[>..]
 var GCP i32[>..]
 var PSO (byte[>..])[>..]
 var GRC (i32[>..])[>..]
@@ -1121,11 +1140,37 @@ pnconst():
 		cn := nm(DC[CONSTD[ci]].name); m byte[>..] ~= []
 		if ND[b].t > ND[u].t: w := TK[ND[u].t]; m.append(cn); m.append(" is bound to a writable reference here, through which it may change, while the "); m.append(kn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " relies on it keeping its initializer's value (§4.4)"); cerr(b, m[..])
 		else: w := TK[ND[b].t]; m.append("the "); m.append(kn); m.append(" relies on "); m.append(cn); m.append(" keeping its initializer's value, but a writable reference bound to "); m.append(cn); m.append(" at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " may change it (§4.4)"); cerr(u, m[..])
+recursive plit(e int) bool:
+	k := if e >= 0 { ND[e].k as int } else { -1 }
+	if k == N_SLIT: { for i ND[e].n { fi := kid(e, i); if ND[fi].k as int == N_CFOR || !plit(ND[fi].a as int) { return false } } return true }
+	k == N_INT || k == N_FLT || k == N_STR || k == N_TRUE || k == N_FALSE || k == N_NULL || k == N_ARR && ND[e].n == 0
+recursive pnoc(e int) bool:
+	if e < 0 || plit(e): return true
+	k := ND[e].k as int
+	if k == N_ID: return true
+	(k == N_BIN || k == N_UN) && pnoc(ND[e].a as int) && pnoc(ND[e].b as int)
+pgsl(s int, g int) int:
+	for q in 0..(PSH.len / 2) { if PSH[2 * q + 1] as int == s && PSO[q][..] == "clear" { return if PSH[2 * q] as int == g { 2 } else { 1 } } }
+	for q in 0..(PIN.len / 2) { if PIN[2 * q] as int == s { return if PIN[2 * q + 1] as int == g { 2 } else { 1 } } }
+	0
+prst(n int, g int) bool:
+	for p ND.len:
+		if ND[p].k as int != N_BLOCK: continue
+		for i ND[p].n + 1:
+			if (if i < ND[p].n { kid(p, i) } else { ND[p].a as int }) != n: continue
+			j ~= i - 1
+			while j >= 0:
+				r := pgsl(kid(p, j), g)
+				if r != 1: return r == 2
+				j -= 1
+			return false
+	false
+ghold(g int) bool: di := -3 - g; di < 0 || di >= DC.len || hold(global_type(di))
 prov_program() bool:
 	if NERR > 0: return false
 	nlc byte[>..] ~= []; if env("HC_NOPROV", nlc): return true
 	PLVF = 0
-	GST.clear(); GCP.clear(); PSH.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); PGN.clear(); PRG.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]); PGN.push([]); PRG.push([]) } PCH = false
+	GST.clear(); GCP.clear(); PSH.clear(); PIN.clear(); PSO.clear(); PRM.clear(); PRM.resize(FI_.len, 0); SHR.clear(); SHR.resize(FI_.len, 0); PSG.clear(); PSG.resize(FI_.len, 0); PPW.clear(); PCW.clear(); SHG.clear(); PPR.clear(); PPN.clear(); PGN.clear(); PRG.clear(); for _ FI_.len { SHG.push([]); PPR.push([]); PPN.push([]); PGN.push([]); PRG.push([]) } PCH = false
 	p0 i64[>..] ~= []; GRR.clear(); GRU.clear(); PSGG.clear(); sg := AOWN; AOWN = GLOBI
 	for d, di DC: if d.k as int == D_GLOBAL && !pskip(d.file as int) && ND[d.node].k as int == N_VDECL && ND[d.node].b >= 0 && ND[ND[d.node].b].n > 0 { t := global_type(di); if t > 0 && (TY[t].k as int == TY_REF && TY[t].c < 0 || TY[t].k as int == TY_SLICE) { e := kid(ND[d.node].b as int, 0); q := pl(e); if TY[t].k as int == TY_SLICE && q.v <= -3 && pgsid(q.v as int) && ND[e].k as int != N_NULL { m byte[>..] ~= []; m.append("storing a reference into "); pidn(q.v as int, m); m.append(", which holds a grow-shrink array: such a reference lives in a variable, is passed down or returned, and is never stored (§5.2)"); cerr(e, m[..]) } if ND[e].k as int != N_NULL { grrw(di, if q.d == -2 && q.v <= -3 { q.v as int } else { -9 }) } } }
 	pnconst()
@@ -1137,9 +1182,10 @@ prov_program() bool:
 	if NERR == 0: nwall()
 	for i FI_.len { pdaf(i) }
 	pglob()
+	gk i32[>..] ~= []; for x in 0..(GST.len / 3) { if ghold(GST[3 * x + 1] as int) && gin(GST[3 * x + 1] as int, GST[3 * x] as int) { gk.push(GST[3 * x]); gk.push(GST[3 * x + 1]); gk.push(GST[3 * x + 2]) } } GST.clear(); GST.append(gk)
 	gch ~= true; while gch { gch = false; for c in 0..(GCP.len / 3) { for x in 0..(GST.len / 3) { if GST[3 * x + 1] == GCP[3 * c] { ok ~= true; for y in 0..(GST.len / 3) { if GST[3 * y] == GST[3 * x] && GST[3 * y + 1] == GCP[3 * c + 1] { ok = false } } if ok { GST.push(GST[3 * x]); GST.push(GCP[3 * c + 1]); GST.push(GCP[3 * c + 2]); gch = true } } } } }
 	for q in 0..(PSH.len / 2):
-		a := PSH[2 * q]; bx ~= -1; for x in 0..(GST.len / 3) { if GST[3 * x] == a && (bx < 0 || GST[3 * x + 1] > GST[3 * bx + 1]) { bx = x } }
+		a := PSH[2 * q]; bx ~= -1; for x in 0..(GST.len / 3) { if GST[3 * x] == a && gin(GST[3 * x + 1] as int, a as int) && (bx < 0 || GST[3 * x + 1] > GST[3 * bx + 1]) && !prst(PSH[2 * q + 1] as int, GST[3 * x + 1] as int) { bx = x } }
 		for x in 0..(GST.len / 3):
 			if x != bx: continue
 			g := GST[3 * x + 1] as int; w := TK[ND[GST[3 * x + 2]].t]; m byte[>..] ~= []; m.append("cannot "); m.append(PSO[q][..]); m.append(" "); pidn(a as int, m); m.append(": global "); pidn(g, m); m.append(" may hold a reference into it, stored at "); m.append(nm(FILES[w.f].name)); format(m, ":", w.line, " (§5.1)"); cerr(PSH[2 * q + 1] as int, m[..]); break

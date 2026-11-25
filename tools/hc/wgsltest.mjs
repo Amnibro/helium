@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 const [hc] = process.argv.slice(2), R = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..'), T = fs.mkdtempSync(path.join(os.tmpdir(), 'wgsltest-'));
 if (!hc) { console.log('usage: node tools/hc/wgsltest.mjs hc'); process.exit(2); }
-const files = ['hc/lib/gfx/shaders', 'hc/test/wgsl'].flatMap(d => fs.readdirSync(path.join(R, d)).filter(f => /\.(vert|frag|comp)$/.test(f)).map(f => [f.replace(/\.(\w+)$/, '_$1'), path.join(R, d, f), true]));
+const files = ['hc/lib/gfx/shaders', 'hc/test/wgsl'].flatMap(d => fs.readdirSync(path.join(R, d)).filter(f => /\.(vert|frag|comp)$/.test(f) && !fs.readFileSync(path.join(R, d, f), 'utf8').includes('GL_EXT_ray_query')).map(f => [f.replace(/\.(\w+)$/, '_$1'), path.join(R, d, f), true]));
 for (const [, st, src] of fs.readFileSync(path.join(R, 'hc/lib/ui.he'), 'utf8').matchAll(/embed_shader\("(vert|frag)", """([\s\S]*?)"""/g)) { const p = path.join(T, `ui.${st}`); fs.writeFileSync(p, src); files.push([`ui_${st}`, p, true]); }
 files.push(['anim_skin_comp', path.join(R, 'hc/lib/anim/skin.comp'), false]);
 const S = [], bad = [];
@@ -20,7 +20,7 @@ for (const [name, p, blob] of files) {
 	for (let k = 0; k < nwb; k++, q += 4) binds.push({ group: b[q], binding: b[q + 1], kind: b[q + 2], info: b[q + 3] });
 	S.push({ name, stage: b[6], wgsl: b.toString('utf8', wo, wo + ws), binds, inputs });
 }
-const has = n => S.some(s => s.name === n), P = S.filter(s => s.stage === 1).map(s => { const f = s.name.replace(/_frag$/, ''); return [has(f + '_vert') ? f + '_vert' : ['depth_only', 'normals', 'shelter'].includes(f) ? 'surface_vert' : 'screen_vert', s.name]; });
+const has = n => S.some(s => s.name === n), P = S.filter(s => s.stage === 1).map(s => { const f = s.name.replace(/_frag$/, ''); return [has(f + '_vert') ? f + '_vert' : /^impostor_(depth|normals)$/.test(f) ? 'impostor_vert' : ['depth_only', 'normals', 'shelter', 'surface_lite', 'impostor_bake', 'surface_fade', 'surface_lite_fade'].includes(f) ? 'surface_vert' : 'screen_vert', s.name]; });
 const page = async (S, P) => {
 	const ad = await navigator.gpu.requestAdapter(), dev = await ad.requestDevice(), M = {}, out = { mods: {}, pipes: {} }, by = Object.fromEntries(S.map(s => [s.name, s]));
 	const FMT = { 1: 'rgba32float', 2: 'rgba16float', 3: 'r32float', 4: 'rgba8unorm', 32: 'rgba8uint', 33: 'r32uint', 6: 'rg32float', 7: 'rg16float', 9: 'r16float' }, DIM = ['2d', 'cube', '3d', '2d-array', 'cube-array'];
@@ -31,7 +31,7 @@ const page = async (S, P) => {
 	const vb = s => { let off = 0; const attributes = [...s.inputs].sort((a, b) => a[0] - b[0]).map(([loc, ty]) => { const [format, n] = VF[ty]; const a = { shaderLocation: loc, offset: off, format }; off += n; return a; }); return attributes.length ? [{ arrayStride: off, attributes }] : []; };
 	const tg = s => { const m = /struct cf_ps_out\n\{\n([\s\S]*?)\}/.exec(s.wgsl), t = []; for (const [, l, ty] of (m ? m[1] : '').matchAll(/@location\((\d+)\) \w+: (\w+(?:<\w+>)?)/g)) { const n = /^vec(\d)/.exec(ty), c = n ? +n[1] : 1, k = /i32/.test(ty) ? 'sint' : /u32/.test(ty) ? 'uint' : 'float'; t[+l] = { format: k === 'float' ? ['r16float', 'rg16float', 'rg16float', 'rgba16float'][c - 1] : `${['r', 'rg', 'rg', 'rgba'][c - 1]}32${k}` }; } return t; };
 	const run = async (key, f) => { dev.pushErrorScope('validation'); try { f(); } catch (e) { out.pipes[key] = String(e); await dev.popErrorScope(); return; } const e = await dev.popErrorScope(); out.pipes[key] = e ? e.message : 'ok'; };
-	for (const [v, f] of P) if (by[v] && by[f]) await run(`${v} + ${f}`, () => dev.createRenderPipeline({ layout: lay([by[v], by[f]]), vertex: { module: M[v], entryPoint: 'main', buffers: vb(by[v]) }, fragment: { module: M[f], entryPoint: 'main', targets: tg(by[f]) }, primitive: { topology: 'triangle-list' }, ...(tg(by[f]).length ? {} : { depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' } }) }));
+	for (const [v, f] of P) if (by[v] && by[f]) await run(`${v} + ${f}`, () => dev.createRenderPipeline({ layout: lay([by[v], by[f]]), vertex: { module: M[v], entryPoint: 'main', buffers: vb(by[v]) }, fragment: { module: M[f], entryPoint: 'main', targets: tg(by[f]) }, primitive: { topology: 'triangle-list' }, ...(tg(by[f]).length && !S.find(s => s.name === f).wgsl.includes('frag_depth') ? {} : { depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' } }) }));
 	for (const s of S.filter(s => s.stage === 2)) await run(s.name, () => dev.createComputePipeline({ layout: lay([s]), compute: { module: M[s.name], entryPoint: 'main' } }));
 	const i = ad.info || {}; out.gpu = `${i.vendor} ${i.architecture} ${i.description}`.trim(); return JSON.stringify(out);
 };

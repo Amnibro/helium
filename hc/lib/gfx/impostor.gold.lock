@@ -1,0 +1,40 @@
+=== -1948c9fa2c293ec3
+namespace imp;
+import gfx;
+import gfx.linalg;
+import math;
+=== -5cdf082c3e51d6ea
+fn view_dir(i int, j int, n int) float3 {
+	let u f32 = (i as f32) / ((n - 1) as f32) * 2.0 - 1.0;
+	let v f32 = (j as f32) / ((n - 1) as f32) * 2.0 - 1.0;
+	let a f32 = 0.5 * (u + v);
+	let b f32 = 0.5 * (u - v);
+	let y f32 = max(0.0, 1.0 - abs(a) - abs(b));
+	linalg::unit3(float3 { a, y, b })
+}
+=== 71c0a5e0c22e81bc
+fn basis(d float3) float3, float3 {
+	var right = float3 { d.z, 0.0, -d.x };
+	let len f32 = sqrt(right.x * right.x + right.y * right.y + right.z * right.z) as f32;
+	if len <= 1e-4 {
+		right = float3 { 1.0, 0.0, 0.0 };
+	} else {
+		right = float3 { right.x / len, right.y / len, right.z / len };
+	}
+	let up = linalg::cross3(d, right);
+	return right, up;
+}
+=== 48dbccd2d56ab494
+fn bake_proj(d float3, c float3, r f32) gfx::mat4 {
+	let right, up = basis(d);
+	let cr f32 = c.x * right.x + c.y * right.y + c.z * right.z;
+	let cu f32 = c.x * up.x + c.y * up.y + c.z * up.z;
+	let cd f32 = c.x * d.x + c.y * d.y + c.z * d.z;
+	let r2 f32 = 2.0 * r;
+	gfx::mat4 {
+		c0: float4 { right.x / r, up.x / r, -d.x / r2, 0.0 },
+		c1: float4 { right.y / r, up.y / r, -d.y / r2, 0.0 },
+		c2: float4 { right.z / r, up.z / r, -d.z / r2, 0.0 },
+		c3: float4 { -cr / r, -cu / r, 0.5 + cd / r2, 1.0 },
+	}
+}

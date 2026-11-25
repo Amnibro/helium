@@ -1,0 +1,321 @@
+import math;
+import dictionary;
+namespace soak;
+var wet f32[>..];
+var open f32[>..];
+var rep int[>..];
+var nb_at int[>..];
+var nb int[>..];
+var nb_w real[>..];
+var ry real[>..];
+var mw real[>..];
+var mo real[>..];
+var tri real[>..];
+var bin_at int[>..];
+var bins int[>..];
+var fw real[3];
+var fa real[3];
+var fb real[3];
+var lo_a real = 0.0;
+var lo_b real = 0.0;
+var cell real = 1.0;
+var gn int = 1;
+fn bits32(v f32) uint {
+	var x f32[1];
+	x[0] = v;
+	let b = bytes_of(x);
+	(b[0] as uint) | ((b[1] as uint) << 8) | ((b[2] as uint) << 16) | ((b[3] as uint) << 24)
+}
+fn setup(P const f32[:], I const u32[:], fall real) {
+	let n = P.len / 3;
+	wet.clear();
+	wet.resize(n, 0.0);
+	open.clear();
+	open.resize(n, 0.0);
+	rep.clear();
+	rep.resize(n, 0);
+	ry.clear();
+	var wp f32[>..] = [];
+	var nxt int[>..] = [];
+	var d = dictionary<uint, int> {};
+	var cnt = 0;
+	for i in n {
+		let x = P[3 * i];
+		let y = P[3 * i + 1];
+		let z = P[3 * i + 2];
+		let key = bits32(x) * 1000003 * 1000003 + bits32(y) * 1000003 + bits32(z);
+		var head = -1;
+		let h = d.get(key);
+		if h { head = h; }
+		var w = head;
+		var found = -1;
+		while w >= 0 && found < 0 {
+			if wp[3 * w] == x && wp[3 * w + 1] == y && wp[3 * w + 2] == z { found = w; } else { w = nxt[w]; }
+		}
+		if found < 0 {
+			found = cnt;
+			cnt += 1;
+			wp.push(x);
+			wp.push(y);
+			wp.push(z);
+			ry.push(y as real);
+			nxt.push(head);
+			d.insert(key, found);
+		}
+		rep[i] = found;
+	}
+	let m = cnt;
+	var seen = dictionary<int, int> {};
+	var eu int[>..] = [];
+	var ev int[>..] = [];
+	fn add(u int, v int) {
+		if u != v {
+			let k = u * m + v;
+			if !seen.contains(k) {
+				seen.insert(k, 1);
+				eu.push(u);
+				ev.push(v);
+			}
+		}
+	}
+	for t in I.len / 3 {
+		let a = rep[I[3 * t] as int];
+		let b = rep[I[3 * t + 1] as int];
+		let c = rep[I[3 * t + 2] as int];
+		add(a, b);
+		add(b, a);
+		add(b, c);
+		add(c, b);
+		add(c, a);
+		add(a, c);
+	}
+	nb_at.clear();
+	nb_at.resize(m + 1, 0);
+	for e in eu.len { nb_at[eu[e] + 1] += 1; }
+	for i in m { nb_at[i + 1] += nb_at[i]; }
+	var pos int[>..] = [];
+	for i in m { pos.push(nb_at[i]); }
+	nb.clear();
+	nb.resize(eu.len, 0);
+	for e in eu.len {
+		let u = eu[e];
+		nb[pos[u]] = ev[e];
+		pos[u] += 1;
+	}
+	nb_w.clear();
+	nb_w.resize(eu.len, 0.0);
+	for i in m {
+		for e in nb_at[i]..nb_at[i + 1] {
+			let j = nb[e];
+			let dx = (wp[3 * i] as real) - (wp[3 * j] as real);
+			let dy = (wp[3 * i + 1] as real) - (wp[3 * j + 1] as real);
+			let dz = (wp[3 * i + 2] as real) - (wp[3 * j + 2] as real);
+			let dist = sqrt(dx * dx + dy * dy + dz * dz);
+			var slope = 0.0;
+			if dist >= 1e-12 { slope = clamp((ry[i] - ry[j]) / dist, -1.0, 1.0); }
+			nb_w[e] = max(1.0 + fall * slope, 0.0);
+		}
+	}
+	mw.clear();
+	mw.resize(m, 0.0);
+	mo.clear();
+	mo.resize(m, 0.0);
+}
+fn rain_map(dir_x real, dir_y real, dir_z real, lo_x real, lo_y real, lo_z real, hi_x real, hi_y real, hi_z real, size real) {
+	let dl = sqrt(dir_x * dir_x + dir_y * dir_y + dir_z * dir_z);
+	fw[0] = -dir_x / dl;
+	fw[1] = -dir_y / dl;
+	fw[2] = -dir_z / dl;
+	var ax real = 0.0;
+	var ay real = 0.0;
+	var az real = 0.0;
+	if abs(fw[0]) > 0.9 {
+		ax = fw[1];
+		ay = -fw[0];
+		az = 0.0;
+	} else {
+		ax = 0.0;
+		ay = fw[2];
+		az = -fw[1];
+	}
+	let al = sqrt(ax * ax + ay * ay + az * az);
+	fa[0] = ax / al;
+	fa[1] = ay / al;
+	fa[2] = az / al;
+	fb[0] = fw[1] * fa[2] - fw[2] * fa[1];
+	fb[1] = fw[2] * fa[0] - fw[0] * fa[2];
+	fb[2] = fw[0] * fa[1] - fw[1] * fa[0];
+	var mina = 1e300;
+	var maxa = -1e300;
+	var minb = 1e300;
+	var maxb = -1e300;
+	for c in 8 {
+		var x = lo_x;
+		var y = lo_y;
+		var z = lo_z;
+		if (c & 1) != 0 { x = hi_x; }
+		if (c & 2) != 0 { y = hi_y; }
+		if (c & 4) != 0 { z = hi_z; }
+		let a = x * fa[0] + y * fa[1] + z * fa[2];
+		let b = x * fb[0] + y * fb[1] + z * fb[2];
+		mina = min(mina, a);
+		maxa = max(maxa, a);
+		minb = min(minb, b);
+		maxb = max(maxb, b);
+	}
+	lo_a = mina - 2.0 * size;
+	lo_b = minb - 2.0 * size;
+	cell = size;
+	let span = max(maxa - mina, maxb - minb);
+	gn = min(1 + ((span + 4.0 * size) / size) as int, 4096);
+	tri.clear();
+}
+fn cell_of(a real, b real) int {
+	let col = clamp(((a - lo_a) / cell) as int, 0, gn - 1);
+	let row = clamp(((b - lo_b) / cell) as int, 0, gn - 1);
+	row * gn + col
+}
+fn occlude(P const f32[:], I const u32[:]) {
+	for t in I.len / 3 {
+		for k in 3 {
+			let v = I[3 * t + k] as int;
+			let x = P[3 * v] as real;
+			let y = P[3 * v + 1] as real;
+			let z = P[3 * v + 2] as real;
+			tri.push(x * fa[0] + y * fa[1] + z * fa[2]);
+			tri.push(x * fb[0] + y * fb[1] + z * fb[2]);
+			tri.push(x * fw[0] + y * fw[1] + z * fw[2]);
+		}
+	}
+}
+fn expose(P const f32[:], N const f32[:], tol real) {
+	let nt = tri.len / 9;
+	let cells = gn * gn;
+	bin_at.clear();
+	bin_at.resize(cells + 1, 0);
+	for pass in 2 {
+		if pass == 1 {
+			for i in cells { bin_at[i + 1] += bin_at[i]; }
+			bins.clear();
+			bins.resize(bin_at[cells], 0);
+		}
+		var fillpos int[>..] = [];
+		if pass == 1 {
+			for i in cells { fillpos.push(bin_at[i]); }
+		}
+		for t in nt {
+			let o = 9 * t;
+			let mina = min(tri[o], min(tri[o + 3], tri[o + 6]));
+			let maxa = max(tri[o], max(tri[o + 3], tri[o + 6]));
+			let minb = min(tri[o + 1], min(tri[o + 4], tri[o + 7]));
+			let maxb = max(tri[o + 1], max(tri[o + 4], tri[o + 7]));
+			let c0 = cell_of(mina, minb);
+			let c1 = cell_of(maxa, maxb);
+			let col0 = c0 % gn;
+			let row0 = c0 / gn;
+			let col1 = c1 % gn;
+			let row1 = c1 / gn;
+			for r in row0..row1 + 1 {
+				for c in col0..col1 + 1 {
+					let k = r * gn + c;
+					if pass == 0 {
+						bin_at[k + 1] += 1;
+					} else {
+						bins[fillpos[k]] = t;
+						fillpos[k] += 1;
+					}
+				}
+			}
+		}
+	}
+	for v in open.len {
+		let x = P[3 * v] as real;
+		let y = P[3 * v + 1] as real;
+		let z = P[3 * v + 2] as real;
+		let a = x * fa[0] + y * fa[1] + z * fa[2];
+		let b = x * fb[0] + y * fb[1] + z * fb[2];
+		let h = x * fw[0] + y * fw[1] + z * fw[2];
+		let c = cell_of(a, b);
+		var blocked = false;
+		for e in bin_at[c]..bin_at[c + 1] {
+			if !blocked {
+				let o = 9 * bins[e];
+				let a0 = tri[o];
+				let b0 = tri[o + 1];
+				let h0 = tri[o + 2];
+				let a1 = tri[o + 3];
+				let b1 = tri[o + 4];
+				let h1 = tri[o + 5];
+				let a2 = tri[o + 6];
+				let b2 = tri[o + 7];
+				let h2 = tri[o + 8];
+				let area = (a1 - a0) * (b2 - b0) - (a2 - a0) * (b1 - b0);
+				if abs(area) >= 1e-20 {
+					let w0 = ((a1 - a) * (b2 - b) - (a2 - a) * (b1 - b)) / area;
+					let w1 = ((a2 - a) * (b0 - b) - (a0 - a) * (b2 - b)) / area;
+					let w2 = ((a0 - a) * (b1 - b) - (a1 - a) * (b0 - b)) / area;
+					if w0 >= -1e-9 && w1 >= -1e-9 && w2 >= -1e-9 {
+						let hh = w0 * h0 + w1 * h1 + w2 * h2;
+						if hh > h + tol { blocked = true; }
+					}
+				}
+			}
+		}
+		var val = 0.0;
+		if !blocked {
+			let nx = N[3 * v] as real;
+			let ny = N[3 * v + 1] as real;
+			let nz = N[3 * v + 2] as real;
+			let nl = sqrt(nx * nx + ny * ny + nz * nz);
+			if nl > 0.0 {
+				val = max(0.0, (nx * fw[0] + ny * fw[1] + nz * fw[2]) / nl);
+			}
+		}
+		open[v] = val as f32;
+	}
+	for i in mo.len { mo[i] = 0.0; }
+	for v in open.len {
+		let r = rep[v];
+		let o = open[v] as real;
+		if o > mo[r] { mo[r] = o; }
+	}
+	for v in open.len { open[v] = mo[rep[v]] as f32; }
+}
+fn step(dt real, rate real, dry real, wick real) {
+	let n = 1 + (dt * wick * 16.0) as int;
+	let h = dt / (n as real);
+	for i in mw.len { mw[i] = 0.0; }
+	for v in wet.len {
+		let r = rep[v];
+		let w = wet[v] as real;
+		if w > mw[r] { mw[r] = w; }
+	}
+	var ch real[>..] = [];
+	for s in n {
+		for i in mw.len { mw[i] += h * rate * mo[i] * (1.0 - mw[i]); }
+		ch.clear();
+		ch.resize(mw.len, 0.0);
+		for i in mw.len {
+			for e in nb_at[i]..nb_at[i + 1] {
+				let j = nb[e];
+				let dd = mw[i] - mw[j];
+				if dd > 0.0 {
+					let t = h * wick * nb_w[e] * dd;
+					ch[i] -= t;
+					ch[j] += t;
+				}
+			}
+		}
+		for i in mw.len {
+			mw[i] = clamp(mw[i] + ch[i], 0.0, 1.0);
+			mw[i] = mw[i] * exp(-h * dry);
+		}
+	}
+	for v in wet.len { wet[v] = mw[rep[v]] as f32; }
+}
+fn mean() real {
+	if wet.len == 0 { return 0.0; }
+	var s = 0.0;
+	for x in wet { s += x as real; }
+	s / (wet.len as real)
+}

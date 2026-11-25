@@ -1,8 +1,8 @@
 use check
 use pkg
 B_PRINT := 1; B_STR := 2; B_FORMAT := 3; B_ASSERT := 4; B_ABORT := 5; B_EXIT := 6; B_COPY := 7; B_DEFAULT := 8; B_LEN := 9
-B_PUSH := 20; B_APPEND := 21; B_POP := 22; B_POPN := 23; B_RESIZE := 24; B_CLEAR := 25; B_INDEXOF := 26; B_CAP := 27
-B_TOBYTES := 30; B_BYTESOF := 31; B_FROMBYTES := 32; B_EMBED := 33; B_EMBEDSH := 48
+B_PUSH := 20; B_APPEND := 21; B_POP := 22; B_POPN := 23; B_RESIZE := 24; B_CLEAR := 25; B_INDEXOF := 26; B_CAP := 27; B_RESERVE := 28
+B_TOBYTES := 30; B_BYTESOF := 31; B_FROMBYTES := 32; B_EMBED := 33; B_EMBEDSH := 48; B_CCB := 49; B_CCALL := 50
 B_SPAWN := 40; B_SPAWNC := 41; B_TWAIT := 42; B_HWT := 43; B_QPUT := 44; B_QGET := 45; B_QPOLL := 46; B_QLIMIT := 47
 B_ALLOCI := 34; B_ALLOCR := 35; B_FREE := 36; B_ALLOCS := 37; B_FREES := 38; B_REALLOCS := 39
 struct NF { name i32, node i32, inst i32, own i32 }
@@ -28,12 +28,12 @@ builtin_of(name const byte[:]) int:
 	if name == "abort" { return B_ABORT } if name == "exit" { return B_EXIT } if name == "copy" { return B_COPY } if name == "default": return B_DEFAULT
 	if name == "to_bytes" { return B_TOBYTES } if name == "bytes_of" { return B_BYTESOF } if name == "from_bytes" { return B_FROMBYTES } if name == "embed_file" { return B_EMBED } if name == "embed_shader": return B_EMBEDSH
 	if name == "len": return B_LEN
-	if name == "thread_spawn" { return B_SPAWN } if name == "thread_spawn_contained" { return B_SPAWNC } if name == "thread_wait" { return B_TWAIT } if name == "hardware_threads": return B_HWT
+	if name == "thread_spawn" { return B_SPAWN } if name == "thread_spawn_contained" { return B_SPAWNC } if name == "thread_wait" { return B_TWAIT } if name == "hardware_threads" { return B_HWT } if name == "c_callback" { return B_CCB } if name == "c_call": return B_CCALL
 	if name == "qput" { return B_QPUT } if name == "qget" { return B_QGET } if name == "qpoll" { return B_QPOLL } if name == "qlimit": return B_QLIMIT
 	-1
 member_of(name const byte[:]) int:
 	if name == "push" { return B_PUSH } if name == "append" { return B_APPEND } if name == "pop" { return B_POP } if name == "pop_n": return B_POPN
-	if name == "resize" { return B_RESIZE } if name == "clear" { return B_CLEAR } if name == "index_of" { return B_INDEXOF } if name == "len": return B_LEN
+	if name == "reserve" { return B_RESERVE } if name == "resize" { return B_RESIZE } if name == "clear" { return B_CLEAR } if name == "index_of" { return B_INDEXOF } if name == "len": return B_LEN
 	if name == "alloc_index" { return B_ALLOCI } if name == "alloc_ref" { return B_ALLOCR } if name == "free": return B_FREE
 	if name == "alloc_slice" { return B_ALLOCS } if name == "free_slice" { return B_FREES } if name == "realloc_slice": return B_REALLOCS
 	-1
@@ -46,6 +46,11 @@ cfnv(s int, an int) bool:
 			k := ND[DIDX[s + i]].k as int
 			if k != N_ID && k != N_FUNVAL: return true
 	false
+arity_hint(m byte[>..]&, name int, n int, an int):
+	d ~= lookup_q(name, ns_of(n), D_FN); if d < 0 { d = dmap(name); while d >= 0 && DC[d].k as int != D_FN { d = DC[d].next } }
+	if d < 0: return
+	f := DC[d].node as int; e ~= DC[d].next; while e >= 0 { if DC[e].k as int == D_FN && DC[e].node as int != f { return } e = DC[e].next }
+	if ND[f].n != an: format(m, ": declared with ", ND[f].n, " parameters, the call passes ", an)
 has_fn(name int) bool:
 	d ~= dmap(name); while d >= 0 { if DC[d].k as int == D_FN { return true } d = DC[d].next } false
 nscore(q int, at int) i64:
@@ -209,6 +214,7 @@ recursive has_valret(n int) bool:
 	if k == N_FOR: return has_valret(x.a) || has_valret(x.b) || has_valret(x.d)
 	if k == N_INT || k == N_FLT || k == N_STR || k == N_ID || k == N_EXT: return false
 	if k >= 40 && k < 50: return false
+	if k == N_VDECL: return has_valret(x.b)
 	if has_valret(x.a) || has_valret(x.b) || has_valret(x.c) || has_valret(x.d): return true
 	if k == N_BLOCK || k == N_CALL || k == N_MATCH || k == N_ARM || k == N_LIST || k == N_ARR || k == N_SLIT || k == N_RET:
 		for i x.n:
@@ -304,12 +310,24 @@ same_binds(i int, b0 int, bn int) bool:
 	true
 on_chain(i int, b int) bool:
 	j ~= b; while j >= 0 { if j == i { return true } j = if FI_[j].bown >= 0 { FI_[j].bown as int } else { FI_[j].par as int } } false
+var ISITE i32[>..]
+var ISOWN i32[>..]
+ISN ~= -1
+user_site(i int) int:
+	j ~= i; h ~= 0
+	while j >= 0 && j < ISITE.len && ISITE[j] >= 0 && h < 16: s := ISITE[j] as int; if !lib_file(TK[ND[s].t].f as int) { return s } j = ISOWN[j] as int; h++
+	-1
+err_at(n int, inst int, pre const byte[:], m const byte[:], out byte[>..]&):
+	x := TK[if n >= 0 { max(ND[n].t as int, 0) } else { 0 }]; us := if lib_file(x.f as int) && inst >= 0 { user_site(inst) } else { -1 }; y := if us >= 0 { TK[ND[us].t] } else { x }
+	out.append(nm(FILES[y.f].name)); format(out, ":", y.line, ": error: ", pre, m)
+	if us >= 0: format(out, " (inside ", nm(FI_[inst].name), ", ", nm(FILES[x.f].name), ":", x.line, ", which this call instantiates; rewrite the call without it: iterate the array, push copy(x) of each element to keep into a new growable array, then assign that array back)")
 recursive get_inst(node int, b0 int, bn int, blk int, bown int) int:
 	par := if ND[node].fl & F_NESTED != 0 { AOWN } else { -1 }
 	xb i32[>..<] ~= []; xb.append(XBS[..]); XBS.clear()
 	for f, i FI_:
 		if f.node as int == node && f.blk as int == blk && (blk == -1 && (!f.dy || on_chain(i, bown)) || f.bown as int == bown) && f.par as int == par && same_binds(i, b0, bn) && xb_same(i, xb[..]) && !DEFE.contains(i as i32): return i
 	i := new_inst(node, node, NEND[node] as int, par)
+	while ISITE.len <= i { ISITE.push(-1); ISOWN.push(-1) } ISITE[i] = ISN as i32; ISOWN[i] = AOWN as i32
 	FI_[i].g0 = GBS.len as i32
 	for j bn: GBS.push(BINDS[b0 + j])
 	FI_[i].gn = bn as i32
@@ -326,6 +344,11 @@ cands_add(name int, ns int):
 		d ~= dmap(qual(ns, name)); while d >= 0: if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d) } } d = DC[d].next
 	d ~= dmap(name)
 	while d >= 0: if DC[d].k as int == D_FN { if ngok(d) { CANDS.push(d) } } d = DC[d].next
+adl_add(name int, ns int, a0 int, an int):
+	seen i32[>..] ~= []
+	for k an:
+		t := deref(ARGW[a0 + k] as int); k0 := TY[t].k as int; sns := if k0 == TY_STRUCT || k0 == TY_ENUM || k0 == TY_VARIANT { decl_ns(inode(t)) } else { -1 }
+		if sns >= 0 && sns != ns && !seen.contains(sns as i32): seen.push(sns as i32); d ~= dmap(qual(sns, name)); while d >= 0 { if DC[d].k as int == D_FN && ngok(d) { CANDS.push(d) } d = DC[d].next }
 is_std_node(node int) bool:
 	f := node_file(node); sp := lib_path("std"); nm(FILES[f].name) == sp[..]
 fl_peer(fnode int, a0 int, ap int, j int) bool:
@@ -334,6 +357,8 @@ fl_peer(fnode int, a0 int, ap int, j int) bool:
 recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, report bool) int, int, int:
 	c0 := CANDS.len
 	cands_add(name, ns)
+	qa, _ := split_q(name)
+	if qa == -1: adl_add(name, ns, a0, an)
 	best ~= -1; bestr ~= 99; bestb0 ~= -1; bestbn ~= 0; tie ~= false; bestuser ~= false; bestgen ~= false; bestloc ~= false
 	nb0 := BINDS.len; cns := if n >= 0 { ns_of(n) } else { -1 }
 	for ci c0..CANDS.len:
@@ -388,7 +413,7 @@ recursive resolve(n int, name int, ns int, a0 int, an int, blk int, tyargs int, 
 		if worst < 2 && gen: worst = max(worst, 1)
 		if worst == 99: BINDS.pop_n(BINDS.len - b0); continue
 		user := !is_std_node(fnode); loc := cns >= 0 && fns == cns
-		if worst < bestr || worst == bestr && user && !bestuser || worst == bestr && user == bestuser && loc && !bestloc || worst == bestr && user == bestuser && loc == bestloc && !gen && bestgen: best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; bestgen = gen; bestloc = loc
+		if worst < bestr || worst == bestr && user && !bestuser || worst == bestr && user == bestuser && !gen && bestgen || worst == bestr && user == bestuser && gen == bestgen && loc && !bestloc: best = fnode; bestr = worst; bestb0 = b0; bestbn = BINDS.len - b0; tie = false; bestuser = user; bestgen = gen; bestloc = loc
 		else:
 			if worst == bestr && user == bestuser && loc == bestloc && gen == bestgen && (ND[best].fl & F_EXTERN == 0 || ND[fnode].fl & F_EXTERN == 0): tie = true
 	CANDS.pop_n(CANDS.len - c0)
@@ -675,6 +700,7 @@ note_caps_of(i int):
 recursive case_inst(n int, name int, s int, an int, j int, t int, blk int, bown int) int:
 	ARGW[s + j] = t
 	fnode, b0, bn := resolve(n, name, ns_of(n), s, an, blk, ND[n].c, false)
+	ISN = n
 	inst := if fnode >= 0 { get_inst(fnode, b0, bn, blk, if blk >= 0 { bown } else { AOWN }) } else { -1 }
 	BINDS.pop_n(BINDS.len - b0)
 	inst
@@ -727,6 +753,22 @@ recursive ck_spawn(n int, ctd bool) int:
 	note_edge(inst)
 	TSP.push(n); TSP.push(AOWN); TSP.push(inst)
 	set_t(n, T_I64)
+trip(l i32[>..<]&, n int) int:
+	r ~= -1; i ~= 0; while i < l.len { if l[i] == n && l[i + 1] == AOWN { r = l[i + 2] } i += 3 } r
+in3(l i32[>..<]&, f int) bool:
+	for k l.len / 3 { if l[3 * k + 2] as int == f { return true } } false
+var CCB i32[>..<]
+recursive ck_ccb(n int) int:
+	c := if ND[n].n == 1 { kid(n, 0) } else { -1 }; d := if c >= 0 && ND[c].k as int == N_ID { lookup_q(ND[c].s, ns_of(n), D_FN) } else { -1 }; f := if d >= 0 { DC[d].node as int } else { -1 }
+	e ~= if d >= 0 { DC[d].next } else { -1 }; while e >= 0 && f >= 0 { if DC[e].k as int == D_FN && DC[e].node as int != f { f = -1 } e = DC[e].next }
+	if f < 0 || ND[f].k as int != N_FN || ND[f].fl & (F_EXTERN | F_THREAD | F_NESTED) != 0 || gen_list(f) >= 0 || untyped_any(f): cerr(n, "c_callback needs the name of one plain function (not generic, overloaded, extern or a thread_fn)"); return set_t(n, T_ERRT)
+	inst := get_inst(f, BINDS.len, 0, -1, -1); sa := AOWN; check_inst(inst); AOWN = sa
+	ni ~= 0; nx ~= 0; bad ~= false; for j ND[f].n as int { k := TY[ptype_of(inst, j)].k; if k == TY_FLT { nx++ } else { if k == TY_INT || k == TY_BOOL { ni++ } else { bad = true } } }
+	rt := FI_[inst].ret; rk := if rt >= 0 && rt != T_VOID { TY[rt].k as int } else { TY_INT }
+	if bad || rk != TY_INT && rk != TY_BOOL && rk != TY_FLT: cerr(n, "c_callback functions take and return only integers, bools and floats (pass addresses as uint)"); return set_t(n, T_ERRT)
+	if nx > 8 || nx > 0 && ni > 6: cerr(n, "a c_callback function with float parameters takes at most 6 integer and 8 float parameters"); return set_t(n, T_ERRT)
+	note_edge(inst); CCB.push(n as i32); CCB.push(AOWN as i32); CCB.push(inst as i32)
+	set_t(n, T_U64)
 var CFEL i8[>..]
 recursive cf_try(n int, fnode int, s int, an int, b0 int, bn int, blk int, want int, name int) int, int, int:
 	r := ND[fnode].b; gl := gen_list(fnode); ty := ND[n].c
@@ -766,7 +808,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	if fnode < 0:
 		BINDS.pop_n(BINDS.len - b0); dr := try_case(n, name, s, an, blk, bown); if dr >= 0: pop_args(s); return dr
 	if fnode < 0:
-		m byte[>..] ~= []; lv9 := find_lv(name); if lv9 >= 0 && LVS[lv9].fl & LV_CFB != 0 { format(m, "const for field accessor is not callable") } else if lv9 >= 0 { format(m, nm(name), " is a variable, not a function") } else if has_fn(name) && cfnv(s, an) { format(m, "a function value must be a function name or block literal") } else if has_fn(name) { format(m, "no matching overload for call to ", nm(name)) } else if lookup_q(name, ns_of(n), D_GLOBAL) >= 0 { format(m, nm(name), " is a variable, not a function") } else { format(m, "unknown function: ", nm(name)) }
+		m byte[>..] ~= []; lv9 := find_lv(name); if lv9 >= 0 && LVS[lv9].fl & LV_CFB != 0 { format(m, "const for field accessor is not callable") } else if lv9 >= 0 { format(m, nm(name), " is a variable, not a function") } else if has_fn(name) && cfnv(s, an) { format(m, "a function value must be a function name or block literal") } else if has_fn(name) || lookup_q(name, ns_of(n), D_FN) >= 0 { format(m, "no matching overload for call to ", nm(name)); arity_hint(m, name, n, an) } else if lookup_q(name, ns_of(n), D_GLOBAL) >= 0 { format(m, nm(name), " is a variable, not a function") } else { format(m, "unknown function: ", nm(name)) }
 		cerr(n, m)
 		pop_args(s)
 		BINDS.pop_n(BINDS.len - b0)
@@ -775,6 +817,7 @@ recursive call_fn(n int, name int, recv int, want int) int:
 	if an > np0: ntya := if ND[n].c >= 0 { ND[ND[n].c].n as int } else { 0 }; for k an - np0 { fnm := ND[DIDX[s + np0 + k]].s; bg2 := block_binding(fnm); XBS.push(xcall(fnode, ntya, k)); XBS.push((if bg2 >= 0 { FI_[bg2].blk as int } else { -2 - fnm })); XBS.push((if bg2 >= 0 { FI_[bg2].bown as int } else { AOWN })) } while FNA.len <= n { FNA.push(0) } FNA[n] = fna(n) + an - np0; an = np0
 	lm := lit_mask(fnode, s, an)
 	if lm != 0: BINDS.push(Gb{LPN as i32, lm})
+	ISN = n
 	inst ~= get_inst(fnode, b0, BINDS.len - b0, blk, bown)
 	BINDS.pop_n(BINDS.len - b0)
 	ex := exp_of(inst); if ex >= 0 { inst = ex }
@@ -848,7 +891,7 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 		else:
 			kid(n, i)
 	total := na + (if recv >= 0 && !fm { 1 } else { 0 })
-	need := if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR || b == B_HWT || b == B_QGET || b == B_QPOLL { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_INDEXOF || b >= B_ALLOCI && b <= B_REALLOCS { 2 } else { 1 } } }
+	need := if b == B_PRINT || b == B_STR || b == B_DEFAULT || b == B_POP || b == B_CLEAR || b == B_HWT || b == B_QGET || b == B_QPOLL { 0 } else { if b == B_REALLOCS { 3 } else { if b == B_PUSH || b == B_APPEND || b == B_POPN || b == B_RESIZE || b == B_RESERVE || b == B_INDEXOF || b >= B_ALLOCI && b <= B_REALLOCS { 2 } else { 1 } } }
 	if total < need: cerr(n, "too few arguments to a builtin"); return set_t(n, T_ERRT)
 	if b == B_PRINT || b == B_STR:
 		for i total: c := arg(i); t := if recv >= 0 && i == 0 { at(c) } else { ck(c, -1) }; if is_pending(t) { default_t(c) } hook_walk(fin_t(c))
@@ -879,6 +922,13 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	if b == B_EMBED: ck(arg(0), TT_STR); default_t(arg(0)); return set_t(n, TT_STR)
 	if b == B_EMBEDSH: return ck_shader(n, total, recv)
 	if b == B_SPAWN || b == B_SPAWNC: return ck_spawn(n, b == B_SPAWNC)
+	if b == B_CCB: return ck_ccb(n)
+	if b == B_CCALL:
+		ta := x.c; rt := if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_VOID }; rk := if rt == T_VOID { TY_INT } else { TY[rt].k as int }; bad ~= rk != TY_INT && rk != TY_BOOL && rk != TY_FLT
+		ck(arg(0), T_U64); conv(arg(0), T_U64)
+		for i 1..total { c := arg(i); t ~= ck(c, -1); if is_pending(t) { t = default_t(c) } k := TY[t].k as int; if k != TY_INT && k != TY_BOOL && k != TY_FLT { bad = true } }
+		if bad: cerr(n, "c_call passes and returns only integers, bools and floats (pass addresses as uint)"); return set_t(n, T_ERRT)
+		return set_t(n, rt)
 	if b == B_TWAIT: ck(arg(0), T_I64); conv(arg(0), T_I64); if total > 1 { ck(arg(1), -1) } return set_t(n, T_BOOL)
 	if b == B_HWT: return set_t(n, T_I64)
 	if b == B_QPUT: c := arg(0); t ~= ck(c, -1); if is_pending(t) { t = default_t(c) } d := deref(t); if d != t { set_cv(c, d) } return set_t(n, T_BOOL)
@@ -892,14 +942,16 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	r := recv
 	if (b == B_PUSH || b == B_APPEND || b == B_ALLOCI || b == B_ALLOCR) && total == 2:
 		rt0 := deref(at(r)); if TY[rt0].k == TY_ARR && TY[rt0].a == T_ERRT && ND[r].k as int == N_ID && rk(r) == R_LOCAL:
-			c := arg(1); ct0 := ck(c, -1); ck0 := TY[ct0].k; e2 := if b == B_APPEND { if ck0 == TY_STRLIT { T_U8 } else { if ck0 == TY_ARRLIT { if ND[c].n > 0 { default_t(kid(c, 0)) } else { T_ERRT } } else { TY[deref(ct0)].a as int } } } else { if ck0 == TY_STRLIT { t_arr(T_U8, A_VAR, -1, 6) } else { if is_pending(ct0) { default_t(c) } else { deref_val(ct0) } } }; if e2 != T_ERRT: complete(r, e2)
+			c := arg(1); ct0 := ck(c, -1); ck0 := TY[ct0].k; e2 := if b == B_APPEND { if ck0 == TY_STRLIT { T_U8 } else { if ck0 == TY_ARRLIT { if ND[c].n > 0 { default_t(kid(c, 0)) } else { T_ERRT } } else { TY[deref(ct0)].a as int } } } else { if ck0 == TY_STRLIT { t_arr(T_U8, A_VAR, -1, 6) } else { if is_pending(ct0) { default_t(c) } else { deref_val(ct0) } } }; if e2 >= 0 && e2 != T_ERRT: complete(r, e2)
 	rt := deref(at(r))
 	e := TY[rt].a
+	if (b == B_PUSH || b == B_APPEND) && vpay_fixed(e as int): m byte[>..] ~= []; format(m, tn(e as int), " has a variable-size payload, which a fixed-mode ", tn(e as int), " keeps on the current scope's data stack, so the stored element would dangle: declare the array as ", tn(e as int), "..[>..] (variable mode) or give the payload byte[>..] fields"); cerr(n, m[..]); return set_t(n, T_ERRT)
 	if b == B_PUSH: if total != 2 { cerr(n, "push takes one value"); return set_t(n, T_ERRT) } c := arg(1); ck(c, e); conv(c, e); return set_t(n, elref(e))
 	if b == B_APPEND: c := arg(1); t := ck(c, t_slice(e, true)); if TY[t].k == TY_STRLIT { set_t(c, TT_STR); } else { if TY[t].k == TY_ARRLIT { conv(c, t_arr(e, A_GROW, -1, -1)); } else { dt := deref(t); if (TY[dt].k == TY_ARR || TY[dt].k == TY_SLICE) && TY[dt].a != e { cerr(c, "append of a different element type") } } } return set_t(n, T_VOID)
 	if b == B_POP: return set_t(n, decode_rel(e))
 	if b == B_POPN: ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID)
 	if b == B_RESIZE: ck(arg(1), T_I64); conv(arg(1), T_I64); if total > 2 { ck(arg(2), e); conv(arg(2), e) } return set_t(n, T_VOID)
+	if b == B_RESERVE: ck(arg(1), T_I64); conv(arg(1), T_I64); return set_t(n, T_VOID)
 	if b == B_CLEAR: return set_t(n, T_VOID)
 	if b == B_INDEXOF: c := arg(1); ck(c, t_ref(e, 0)); conv(c, t_ref(e, 0)); return set_t(n, T_I64)
 	if b == B_ALLOCI || b == B_ALLOCR: c := arg(1); ck(c, e); conv(c, e); return set_t(n, if b == B_ALLOCI { T_I64 } else { elref(e) })
@@ -1017,7 +1069,7 @@ recursive init_order_safe(n int, callee int) bool:
 		vty := at(init)
 		return init_store_safe(init, vty) && init_order_safe(init, callee)
 	if k == N_ARR:
-		if x.a >= 0: return false
+		if x.a >= 0 || at(n) < 0: return false
 		elem := TY[at(n)].a as int
 		for j x.n { if !init_store_safe(kid(n, j), elem) { return false } }
 	else if k == N_SLIT:

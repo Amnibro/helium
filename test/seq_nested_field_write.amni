@@ -1,0 +1,18 @@
+struct Tag { label byte[], hits u16 }
+struct In { id u32, name byte[], tag Tag, players byte }
+struct S { sum In, k int, hs u32[>..] }
+fn bump(xs S[>..]&, id u32) byte {
+	for &s in xs {
+		if s.sum.id == id { s.hs.push(id); s.sum.players = s.hs.len as! byte; s.sum.tag.hits += 3; return s.sum.players; }
+	}
+	0
+}
+fn main() {
+	var xs S[>..] = [];
+	xs.push(S { sum: In { id: 1, name: "a", tag: Tag { label: "x", hits: 1 }, players: 0 }, k: 0, hs: [] });
+	xs.push(S { sum: In { id: 2, name: "longer name", tag: Tag { label: "yyyy", hits: 2 }, players: 0 }, k: 0, hs: [] });
+	xs.push(S { sum: In { id: 3, name: "", tag: Tag { label: "", hits: 3 }, players: 0 }, k: 0, hs: [] });
+	print(bump(xs, 2), " ", bump(xs, 2), " ", bump(xs, 3), " ", bump(xs, 9), "\n");
+	for &s in xs { s.sum.id += 10; s.k = s.sum.tag.hits as int; }
+	for s in xs { print(s.sum.id, " ", s.sum.name, " ", s.sum.tag.label, " ", s.sum.tag.hits, " ", s.sum.players, " ", s.k, " ", s.hs.len, "\n"); }
+}

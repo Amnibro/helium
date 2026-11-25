@@ -31,11 +31,12 @@ void main() {
 		for (int i = 0; i < 6; i++) { if (dot(planes[i].xyz, bw) + planes[i].w < -br) gone = true; }
 		if (gone) return;
 		vec4 cn = ml_tab[c * 5 + 1];
-		if (lod.w > 0.5 && info.w > 0.5 && cn.w < 1.5) {
+		if (lod.w > 0.5 && mod(info.w, 2.0) > 0.5 && cn.w < 1.5) {
 			vec3 v = bw - eye.xyz;
 			if (dot(v, normalize(m0 * cn.x + m1 * cn.y + m2 * cn.z)) >= cn.w * length(v) + br) return;
 		}
 	}
+	else if (info.w > 1.5) return;
 	uint n = ml_rng[c * 2 + 1];
 	if (eye.w < 0.5) { atomicAdd(ml_args[k * 8], n); return; }
 	uint p = atomicAdd(ml_args[k * 8 + 5], n);

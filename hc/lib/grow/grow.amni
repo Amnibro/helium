@@ -1,0 +1,386 @@
+import math;
+import vec;
+import os;
+import dictionary;
+import noise.noise;
+namespace grow;
+var P f32[>..];
+var N f32[>..];
+var C f32[>..];
+var I int[>..];
+var S real[>..];
+var FORKS real[>..];
+var st u64 = 0;
+var nseed u64 = 0;
+let GOLDEN real = 2.39996322972865332;
+let PI2 real = 6.28318530717958648;
+fn clear() {
+	P.clear();
+	N.clear();
+	C.clear();
+	I.clear();
+	S.clear();
+	FORKS.clear();
+}
+fn vcount() int { P.len / 3 }
+fn tcount() int { I.len / 3 }
+fn next() u64 {
+	st = st + 0x9E3779B97F4A7C15;
+	noise::mix64(st)
+}
+fn rnd() real {
+	((next() >> 11) as real) / 9007199254740992.0
+}
+fn seed(s int) {
+	st = (s as! u64) ^ 0x9E3779B97F4A7C15;
+	rnd();
+	nseed = next();
+}
+fn range(a real, b real) real { a + (b - a) * rnd() }
+fn vary(v real, frac real) real { v * (1.0 + frac * (2.0 * rnd() - 1.0)) }
+fn pick(n int) int { min(floor(rnd() * n) as int, n - 1) }
+fn noise(p double3) real { noise::perlin3(nseed, p) }
+fn fbm(p double3, oct int) real {
+	noise::layered(noise::Noise { kind: noise::PERLIN, seed: nseed, step: 0, frequency: 1.0, fractal: noise::FBM, octaves: oct, lacunarity: 2.0, gain: 0.5, warp: 0.0, warp_freq: 1.0 }, p)
+}
+fn ridged(p double3, oct int) real {
+	noise::layered(noise::Noise { kind: noise::PERLIN, seed: nseed, step: 0, frequency: 1.0, fractal: noise::RIDGED, octaves: oct, lacunarity: 2.0, gain: 0.5, warp: 0.0, warp_freq: 1.0 }, p)
+}
+fn vert(p double3, n double3, c double3) int {
+	let id = vcount();
+	P.push(p.x as f32);
+	P.push(p.y as f32);
+	P.push(p.z as f32);
+	N.push(n.x as f32);
+	N.push(n.y as f32);
+	N.push(n.z as f32);
+	C.push(c.x as f32);
+	C.push(c.y as f32);
+	C.push(c.z as f32);
+	id
+}
+fn tri(a int, b int, c int) {
+	I.push(a);
+	I.push(b);
+	I.push(c);
+}
+fn quad(a int, b int, c int, d int) {
+	tri(a, b, c);
+	tri(a, c, d);
+}
+fn pos(v int) double3 { double3 { P[v * 3], P[v * 3 + 1], P[v * 3 + 2] } }
+fn nrm(v int) double3 { double3 { N[v * 3], N[v * 3 + 1], N[v * 3 + 2] } }
+fn col(v int) double3 { double3 { C[v * 3], C[v * 3 + 1], C[v * 3 + 2] } }
+fn set_pos(v int, p double3) {
+	P[v * 3] = p.x as f32;
+	P[v * 3 + 1] = p.y as f32;
+	P[v * 3 + 2] = p.z as f32;
+}
+fn set_nrm(v int, n double3) {
+	N[v * 3] = n.x as f32;
+	N[v * 3 + 1] = n.y as f32;
+	N[v * 3 + 2] = n.z as f32;
+}
+fn set_col(v int, c double3) {
+	C[v * 3] = c.x as f32;
+	C[v * 3 + 1] = c.y as f32;
+	C[v * 3 + 2] = c.z as f32;
+}
+fn tint(c double3, amount real) double3 {
+	let r = clamp(c.x * vary(1.0, amount), 0.0, 1.0);
+	let g = clamp(c.y * vary(1.0, amount), 0.0, 1.0);
+	let b = clamp(c.z * vary(1.0, amount), 0.0, 1.0);
+	double3 { r, g, b }
+}
+fn mixc(a double3, b double3, t real) double3 { a + (b - a) * t }
+fn unit(v double3) double3 {
+	let l = length(v);
+	if l < 1e-12 { double3 { 0.0, 1.0, 0.0 } } else { v / l }
+}
+fn basis(d double3) double3, double3 {
+	let other = if abs(d.x) <= abs(d.y) { double3 { 1.0, 0.0, 0.0 } } else { double3 { 0.0, 1.0, 0.0 } };
+	let u = unit(cross(d, other));
+	let w = cross(d, u);
+	return u, w;
+}
+fn rot(v double3, axis double3, ang real) double3 {
+	let cs = cos(ang);
+	let sn = sin(ang);
+	v * cs + cross(axis, v) * sn + axis * (dot(axis, v) * (1.0 - cs))
+}
+fn normals(v0 int, t0 int) {
+	var acc double3[>..] = [];
+	for v in v0..vcount() { acc.push(double3 { 0.0, 0.0, 0.0 }); }
+	for t in t0..tcount() {
+		let a = I[t * 3];
+		let b = I[t * 3 + 1];
+		let c = I[t * 3 + 2];
+		let pa = pos(a);
+		let face = cross(pos(b) - pa, pos(c) - pa);
+		if a >= v0 { acc[a - v0] = acc[a - v0] + face; }
+		if b >= v0 { acc[b - v0] = acc[b - v0] + face; }
+		if c >= v0 { acc[c - v0] = acc[c - v0] + face; }
+	}
+	for v in v0..vcount() { set_nrm(v, unit(acc[v - v0])); }
+}
+fn move(v0 int, d double3) {
+	for v in v0..vcount() { set_pos(v, pos(v) + d); }
+}
+fn spin(v0 int, c double3, axis double3, ang real) {
+	for v in v0..vcount() {
+		set_pos(v, c + rot(pos(v) - c, axis, ang));
+		set_nrm(v, rot(nrm(v), axis, ang));
+	}
+}
+fn scale(v0 int, c double3, s real) {
+	for v in v0..vcount() { set_pos(v, c + (pos(v) - c) * s); }
+}
+fn bounds(v0 int) double3, double3 {
+	var lo = double3 { 0.0, 0.0, 0.0 };
+	var hi = double3 { 0.0, 0.0, 0.0 };
+	if v0 < vcount() {
+		lo = pos(v0);
+		hi = pos(v0);
+		for v in v0..vcount() {
+			let p = pos(v);
+			lo = double3 { min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z) };
+			hi = double3 { max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z) };
+		}
+	}
+	return lo, hi;
+}
+fn fit(v0 int, base double3, size real) {
+	let lo, hi = bounds(v0);
+	let side = max(hi.x - lo.x, max(hi.y - lo.y, hi.z - lo.z));
+	if side >= 1e-12 { scale(v0, base, size / side); }
+}
+fn tube(path const double3[:], radius const real[:], cols const double3[:], sides int, caps bool) int {
+	let n = path.len;
+	let first = vcount();
+	var axis = double3 { 0.0, 0.0, 0.0 };
+	for i in n {
+		let tg = unit(path[min(i + 1, n - 1)] - path[max(i - 1, 0)]);
+		if i == 0 {
+			let u, w = basis(tg);
+			axis = u;
+		} else {
+			let rest = axis - tg * dot(axis, tg);
+			let l = length(rest);
+			if l < 1e-12 {
+				let u, w = basis(tg);
+				axis = u;
+			} else {
+				axis = rest / l;
+			}
+		}
+		let bn = cross(tg, axis);
+		for k in sides {
+			let a = PI2 * k / sides;
+			let dir = axis * cos(a) + bn * sin(a);
+			vert(path[i] + dir * radius[i], dir, cols[i]);
+		}
+	}
+	for i in n - 1 {
+		let low = first + i * sides;
+		let high = low + sides;
+		for k in sides {
+			let k1 = (k + 1) % sides;
+			quad(low + k, low + k1, high + k1, high + k);
+		}
+	}
+	if caps {
+		let head = unit(path[1] - path[0]);
+		let tail = unit(path[n - 1] - path[n - 2]);
+		let start = vert(path[0], double3 { 0.0, 0.0, 0.0 } - head, cols[0]);
+		let stop = vert(path[n - 1], tail, cols[n - 1]);
+		let last = first + (n - 1) * sides;
+		for k in sides {
+			let k1 = (k + 1) % sides;
+			tri(start, first + k1, first + k);
+			tri(stop, last + k, last + k1);
+		}
+	}
+	first
+}
+fn revolve(c double3, prof const real[:], segs int, ribs int, rib_depth real, wobble real, cols const double3[:]) int {
+	let first = vcount();
+	let t0 = tcount();
+	let count = prof.len / 2;
+	var starts int[>..] = [];
+	var poles bool[>..] = [];
+	for j in count {
+		let r = prof[j * 2];
+		let h = prof[j * 2 + 1];
+		let pole = r < 1e-9;
+		starts.push(vcount());
+		poles.push(pole);
+		if pole {
+			vert(c + double3 { 0.0, h, 0.0 }, double3 { 0.0, 1.0, 0.0 }, cols[j]);
+		} else {
+			for k in segs {
+				let a = PI2 * k / segs;
+				let rib = 0.5 * (1.0 - cos(ribs * a));
+				let rr = r * (1.0 - rib_depth * rib) * (1.0 + wobble * noise(double3 { 3.0 * cos(a), 3.0 * h, 3.0 * sin(a) }));
+				vert(c + double3 { rr * cos(a), h, rr * sin(a) }, double3 { 0.0, 1.0, 0.0 }, cols[j] * (1.0 - 0.35 * rib_depth * rib));
+			}
+		}
+	}
+	for j in count - 1 {
+		let up = starts[j];
+		let down = starts[j + 1];
+		for k in segs {
+			let k1 = (k + 1) % segs;
+			if poles[j] {
+				if !poles[j + 1] { tri(up, down + k1, down + k); }
+			} else if poles[j + 1] {
+				tri(up + k, up + k1, down);
+			} else {
+				quad(up + k, up + k1, down + k1, down + k);
+			}
+		}
+	}
+	normals(first, t0);
+	first
+}
+fn ico(c double3, r real, levels int) int {
+	let g = (1.0 + sqrt(5.0)) / 2.0;
+	var dirs double3[>..] = [];
+	dirs.push(unit(double3 { -1.0, g, 0.0 }));
+	dirs.push(unit(double3 { 1.0, g, 0.0 }));
+	dirs.push(unit(double3 { -1.0, 0.0 - g, 0.0 }));
+	dirs.push(unit(double3 { 1.0, 0.0 - g, 0.0 }));
+	dirs.push(unit(double3 { 0.0, -1.0, g }));
+	dirs.push(unit(double3 { 0.0, 1.0, g }));
+	dirs.push(unit(double3 { 0.0, -1.0, 0.0 - g }));
+	dirs.push(unit(double3 { 0.0, 1.0, 0.0 - g }));
+	dirs.push(unit(double3 { g, 0.0, -1.0 }));
+	dirs.push(unit(double3 { g, 0.0, 1.0 }));
+	dirs.push(unit(double3 { 0.0 - g, 0.0, -1.0 }));
+	dirs.push(unit(double3 { 0.0 - g, 0.0, 1.0 }));
+	var faces int[>..] = [0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8, 3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1];
+	for level in levels {
+		var mids = dictionary<int, int> {};
+		var finer int[>..] = [];
+		fn midpoint(a int, b int) int {
+			let key = (min(a, b) << 32) | max(a, b);
+			let found = mids.get(key);
+			if found { return found; }
+			let id = dirs.len;
+			let sum = dirs[a] + dirs[b];
+			dirs.push(unit(sum));
+			mids.insert(key, id);
+			id
+		}
+		for f in faces.len / 3 {
+			let a = faces[f * 3];
+			let b = faces[f * 3 + 1];
+			let d = faces[f * 3 + 2];
+			let ab = midpoint(a, b);
+			let bd = midpoint(b, d);
+			let da = midpoint(d, a);
+			finer.append([a, ab, da, b, bd, ab, d, da, bd, ab, bd, da]);
+		}
+		faces.clear();
+		faces.append(finer);
+	}
+	let first = vcount();
+	for dir in dirs { vert(c + dir * r, dir, double3 { 1.0, 1.0, 1.0 }); }
+	for f in faces.len / 3 { tri(first + faces[f * 3], first + faces[f * 3 + 1], first + faces[f * 3 + 2]); }
+	first
+}
+fn open_edges(t0 int) int {
+	var uses = dictionary<int, int> {};
+	for t in t0..tcount() {
+		for e in 3 {
+			let a = I[t * 3 + e];
+			let b = I[t * 3 + (e + 1) % 3];
+			let key = (min(a, b) << 32) | max(a, b);
+			uses.update(key, 0) { it += 1; };
+		}
+	}
+	var bad = 0;
+	each(uses) { k, v => if v != 2 { bad += 1; } };
+	bad
+}
+fn volume(t0 int) real {
+	var sum = 0.0;
+	for t in t0..tcount() {
+		let a = pos(I[t * 3]);
+		let b = pos(I[t * 3 + 1]);
+		let c = pos(I[t * 3 + 2]);
+		sum += dot(a, cross(b, c)) / 6.0;
+	}
+	sum
+}
+fn bad_normals(v0 int) int {
+	var bad = 0;
+	for v in v0..vcount() {
+		let l = length(nrm(v));
+		if l != l || abs(l - 1.0) > 1e-3 { bad += 1; }
+	}
+	bad
+}
+fn fnv(h u64, v u64) u64 { (h ^ v) * 0x100000001B3 }
+fn digest() u64 {
+	var h u64 = 0xCBF29CE484222325;
+	for b in bytes_of(P) { h = fnv(h, b as u64); }
+	for b in bytes_of(N) { h = fnv(h, b as u64); }
+	for b in bytes_of(C) { h = fnv(h, b as u64); }
+	for v in I {
+		var u u64 = v as! u64;
+		for k in 4 {
+			h = fnv(h, u & 255);
+			u = u >> 8;
+		}
+	}
+	h
+}
+fn put_u32(out byte[>..]&, v int) {
+	var u = v;
+	for k in 4 {
+		out.push((u & 255) as! byte);
+		u = u >> 8;
+	}
+}
+fn glb_bytes(out byte[>..]&) {
+	out.clear();
+	var bin byte[>..] = [];
+	bin.append(bytes_of(P));
+	let at_n = bin.len;
+	bin.append(bytes_of(N));
+	let at_c = bin.len;
+	bin.append(bytes_of(C));
+	let at_i = bin.len;
+	for v in I { put_u32(bin, v); }
+	let len_i = bin.len - at_i;
+	while bin.len % 4 != 0 { bin.push(0); }
+	let lo, hi = bounds(0);
+	var js byte[>..] = [];
+	format(js, "{\"asset\":{\"version\":\"2.0\",\"generator\":\"Helium grow\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],");
+	format(js, "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"COLOR_0\":2},\"indices\":3,\"material\":0,\"mode\":4}]}],");
+	format(js, "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,1,1,1],\"metallicFactor\":0,\"roughnessFactor\":0.87},\"doubleSided\":true}],");
+	format(js, "\"buffers\":[{\"byteLength\":", bin.len, "}],");
+	format(js, "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":", at_n, ",\"target\":34962},");
+	format(js, "{\"buffer\":0,\"byteOffset\":", at_n, ",\"byteLength\":", at_c - at_n, ",\"target\":34962},");
+	format(js, "{\"buffer\":0,\"byteOffset\":", at_c, ",\"byteLength\":", at_i - at_c, ",\"target\":34962},");
+	format(js, "{\"buffer\":0,\"byteOffset\":", at_i, ",\"byteLength\":", len_i, ",\"target\":34963}],");
+	format(js, "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":", vcount(), ",\"type\":\"VEC3\",\"min\":[", lo.x as f32, ",", lo.y as f32, ",", lo.z as f32, "],\"max\":[", hi.x as f32, ",", hi.y as f32, ",", hi.z as f32, "]},");
+	format(js, "{\"bufferView\":1,\"componentType\":5126,\"count\":", vcount(), ",\"type\":\"VEC3\"},");
+	format(js, "{\"bufferView\":2,\"componentType\":5126,\"count\":", vcount(), ",\"type\":\"VEC3\"},");
+	format(js, "{\"bufferView\":3,\"componentType\":5125,\"count\":", I.len, ",\"type\":\"SCALAR\"}]}");
+	while js.len % 4 != 0 { js.push(' '); }
+	put_u32(out, 0x46546C67);
+	put_u32(out, 2);
+	put_u32(out, 12 + 8 + js.len + 8 + bin.len);
+	put_u32(out, js.len);
+	put_u32(out, 0x4E4F534A);
+	out.append(js);
+	put_u32(out, bin.len);
+	put_u32(out, 0x004E4942);
+	out.append(bin);
+}
+fn glb(path const byte[:]) bool {
+	var data byte[>..] = [];
+	glb_bytes(data);
+	write_file(path, data)
+}

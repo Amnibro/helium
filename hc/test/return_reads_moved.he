@@ -1,0 +1,19 @@
+two(n int) byte[>..], byte[>..], bool:
+	c byte[>..] ~= []
+	k byte[>..] ~= []
+	c.resize(n, 1)
+	k.resize(n, 2)
+	return c, k, c.len > 0 && k.len > 0
+len_first(n int) int, byte[>..], int:
+	c byte[>..] ~= []
+	c.resize(n, 1)
+	return c.len, c, c.len
+both(n int) byte[>..], int, byte[>..]:
+	c byte[>..] ~= []
+	c.resize(n, 1)
+	return c, c.len, c
+main():
+	c, k, ok := two(5)
+	a, d, b := len_first(3)
+	e, m, f := both(4)
+	print(ok, " ", c.len, " ", k.len, " ", a, " ", d.len, " ", b, " ", e.len, " ", m, " ", f.len)

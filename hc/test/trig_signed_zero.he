@@ -1,0 +1,5 @@
+use math
+main():
+	n f32 := -0.0
+	r := -0.0
+	print(1.0 / sin(n), " ", 1.0 / tan(n), " ", cos(n), " ", 1.0 / sin(r), " ", 1.0 / tan(r), " ", cos(r), " ", 1.0 / sin(0.0))

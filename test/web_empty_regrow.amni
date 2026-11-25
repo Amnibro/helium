@@ -1,0 +1,18 @@
+import std;
+var V real[>..];
+fn fill(n int) real {
+	V.clear();
+	V.resize(n, 0.0);
+	for i in n { V[i] = (i % 7) as real; }
+	var s = 0.0;
+	for x in V { s += x; }
+	s
+}
+fn main() {
+	let a = fill(1000);
+	let b = fill(9000000);
+	let c = fill(3);
+	V.push(1.5);
+	let d = fill(5000000);
+	print(a, " ", b, " ", c, " ", V.len, " ", d);
+}

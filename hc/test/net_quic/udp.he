@@ -1,0 +1,46 @@
+use os
+use crypto.x509
+use crypto.ecc
+use crypto.hash
+use net.sock
+use net.quic
+use net.quic_ep
+data(n int, seed int) byte[>..]: b byte[>..] ~= []; b.resize(n, 0); for i n { b[i] = ((i * 7 + seed) % 251) as! byte } b
+serve(s net::QEp&, fin bool[>..]&, tmp byte[>..]&):
+	k ~= net::qe_next(s)
+	while k >= 0: k = net::qe_next(s)
+	for i s.c.len:
+		while fin.len <= i: fin.push(false)
+		if s.c[i].len == 0 || !s.given[i]: continue
+		if net::quic_state(s.c[i][0]) == net::QUIC_CLOSED: net::qe_free(s, i); fin[i] = false; continue
+		tmp.clear(); n := net::quic_read(s.c[i][0], 0, tmp)
+		if n > 0: net::quic_write(s.c[i][0], 0, tmp[..])
+		if !fin[i] && n >= 0 && (net::quic_stream(s.c[i][0], 0) & 2) != 0: fin[i] = true; net::quic_fin(s.c[i][0], 0)
+main():
+	priv := crypto::ec_generate(crypto::P256); cert, okc := crypto::x509_self_signed("amni-lan", priv[..], (time() as int) - 3600, 30); p8, ok8 := crypto::pkcs8_ec(priv[..]); pin := crypto::sha256(cert)
+	s ~= net::qe_bind(net::addr("127.0.0.1", 0)); sv := net::qe_serve(s, cert[..], p8[..], "amni-v1"); to := net::addr("127.0.0.1", net::qe_port(s))
+	ce net::QEp[>..] ~= []; sid int[>..] ~= []; got byte[>..][>..] ~= []; done ~= 0; fin bool[>..] ~= []; tmp byte[>..] ~= []; t0 := clock(); nc := 70; lim := 30.0; good ~= 0; opened ~= 0; peak ~= 0; same ~= true
+	for j 7: ce.push(net::qe_bind(net::addr("127.0.0.1", 0)))
+	for k nc: net::qe_dial(ce[k % 7], to, "amni-lan", "amni-v1", pin[..]); sid.push(-1); e byte[>..] ~= []; got.push(e)
+	while done < nc && clock() - t0 < lim:
+		n ~= net::qe_poll(s, 0); serve(s, fin, tmp); peak = max(peak, net::qe_same(s, to)); same = same && net::qe_same(s, to) == s.n
+		for j 7: n += net::qe_poll(ce[j], 0)
+		for k nc:
+			if sid[k] == -2: continue
+			if sid[k] == -1:
+				if net::quic_state(ce[k % 7].c[k / 7][0]) != net::QUIC_OPEN: continue
+				id := net::quic_open(ce[k % 7].c[k / 7][0], true)
+				if id < 0: continue
+				sid[k] = id; opened += 1; net::quic_write(ce[k % 7].c[k / 7][0], id, data(81920, k)[..]); net::quic_fin(ce[k % 7].c[k / 7][0], id)
+			net::quic_read(ce[k % 7].c[k / 7][0], sid[k], got[k])
+			if (net::quic_stream(ce[k % 7].c[k / 7][0], sid[k]) & 2) != 0: good += if got[k][..] == data(81920, k)[..] { 1 } else { 0 }; done += 1; sid[k] = -2; net::quic_close(ce[k % 7].c[k / 7][0], 0, "done")
+		if n == 0: net::wait_one(s.fd, net::READ, 1)
+	print("Q9 handshakes ", sv && opened == nc); print("Q9 echo ", good == nc); print("Q9 per-host count ", same && peak > 1 && peak <= nc && net::qe_same(s, net::addr("10.0.0.7", 0)) == 0)
+	raw := net::udp(net::addr("127.0.0.1", 0)); v byte[>..] ~= []; v.append([0xC0 as byte, 0x1a, 0x2a, 0x3a, 0x4a, 8][..]); v.append(data(8, 1)[..]); v.push(8 as byte); v.append(data(8, 2)[..]); v.resize(1200, 0); net::send_to(raw, to, v[..])
+	r byte[>..] ~= []; var from net::Addr; tr ~= 0
+	while tr < 50 && r.len == 0: net::qe_poll(s, 10); net::recv_from(raw, r, from); tr += 1
+	print("Q9 version negotiation ", r.len == 27 && r[0] >= 128 && r[1..5] == [0 as byte, 0, 0, 0][..] && r[5] == 8 && r[6..14] == data(8, 2)[..] && r[14] == 8 && r[15..23] == data(8, 1)[..] && r[23..27] == [0 as byte, 0, 0, 1][..])
+	w ~= net::qe_bind(net::addr("127.0.0.1", 0)); wi := net::qe_dial(w, to, "amni-lan", "amni-v1", crypto::sha256("x")[..]); t1 := clock()
+	while net::quic_state(w.c[wi][0]) != net::QUIC_CLOSED && clock() - t1 < 5.0: net::qe_poll(s, 0); net::qe_poll(w, 1)
+	print("Q9 control wrong pin ", w.c[wi][0].err == 256 + 42 && w.c[wi][0].elocal)
+	net::qe_close(w); net::close(raw); for j 7 { net::qe_close(ce[j]) } net::qe_close(s)

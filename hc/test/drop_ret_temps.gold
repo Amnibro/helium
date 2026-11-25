@@ -1,0 +1,18 @@
+into drop_ret_temps.he
+lang he
+
+```he
+tag(n int) byte[>..]: b byte[>..] ~= []; b.resize(n, 1); b
+eq(a const byte[:], b const byte[:]) bool: a.len == b.len
+both(n int) byte[>..], bool:
+	e byte[>..] ~= []
+	if !eq(tag(n)[..], e[..]): return e, false
+	return tag(n), true
+main():
+	t ~= 0
+	for i 100000: x, ok := both(40); t += x.len + (if ok { 1 } else { 0 })
+	print(t)
+```
+
+expect:
+0

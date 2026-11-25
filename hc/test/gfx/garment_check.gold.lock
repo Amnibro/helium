@@ -1,0 +1,291 @@
+=== 6f8972c90fd64a25
+import os;
+import math;
+import dictionary;
+import gfx.obj;
+import gfx.cloth;
+import gfx.garment;
+=== 50647f631445e072
+fn tri(t int) int, int, int {
+	let nb = garment::body.len / 3;
+	if t < nb {
+		return garment::body[t * 3] as int, garment::body[t * 3 + 1] as int, garment::body[t * 3 + 2] as int;
+	}
+	let r = t - nb;
+	return garment::rib[r * 3] as int, garment::rib[r * 3 + 1] as int, garment::rib[r * 3 + 2] as int;
+}
+fn ntri() int {
+	(garment::body.len + garment::rib.len) / 3
+}
+=== 470e2415c56460a3
+fn bits_of(x f32) int {
+	let a f32[1] = [x];
+	let b = bytes_of(a);
+	(b[0] as int) | ((b[1] as int) << 8) | ((b[2] as int) << 16) | ((b[3] as int) << 24)
+}
+fn wkey(x f32, y f32, z f32) int {
+	let m u64 = 1000003;
+	let bx u64 = bits_of(x) as u64;
+	let by u64 = bits_of(y) as u64;
+	let bz u64 = bits_of(z) as u64;
+	(bx * m * m + by * m + bz) as! int
+}
+fn uf_find(p int[>..]&, a int) int {
+	var x = a;
+	while p[x] != x {
+		p[x] = p[p[x]];
+		x = p[x];
+	}
+	x
+}
+fn add_edge(cnt dictionary<int, int>&, a int, b int, nv int) {
+	if a != b {
+		let lo = min(a, b);
+		let hi = max(a, b);
+		cnt.update(lo * nv + hi, 0) { it += 1; };
+	}
+}
+fn loops() int, int {
+	let nv = garment::pos.len / 3;
+	var head = dictionary<int, int> {};
+	var ent_v int[>..] = [];
+	var ent_n int[>..] = [];
+	var wid int[>..] = [];
+	for v in nv {
+		let x = garment::pos[v * 3];
+		let y = garment::pos[v * 3 + 1];
+		let z = garment::pos[v * 3 + 2];
+		let k = wkey(x, y, z);
+		var first = -1;
+		let h = head.get(k);
+		if h { first = h; }
+		var e = first;
+		var found = -1;
+		while e >= 0 && found < 0 {
+			let u = ent_v[e];
+			if garment::pos[u * 3] == x && garment::pos[u * 3 + 1] == y && garment::pos[u * 3 + 2] == z {
+				found = u;
+			} else {
+				e = ent_n[e];
+			}
+		}
+		if found >= 0 {
+			wid.push(found);
+		} else {
+			wid.push(v);
+			ent_v.push(v);
+			ent_n.push(first);
+			head.insert(k, ent_v.len - 1);
+		}
+	}
+	var cnt = dictionary<int, int> {};
+	for t in ntri() {
+		let a, b, c = tri(t);
+		let w0 = wid[a];
+		let w1 = wid[b];
+		let w2 = wid[c];
+		add_edge(cnt, w0, w1, nv);
+		add_edge(cnt, w1, w2, nv);
+		add_edge(cnt, w2, w0, nv);
+	}
+	var mx = 0;
+	var ea int[>..] = [];
+	var eb int[>..] = [];
+	each(cnt) { k, v =>
+		if v > mx { mx = v; }
+		if v == 1 {
+			ea.push(k / nv);
+			eb.push(k % nv);
+		}
+	};
+	var par int[>..] = [];
+	for i in nv { par.push(i); }
+	for i in ea.len {
+		let ra = uf_find(par, ea[i]);
+		let rb = uf_find(par, eb[i]);
+		if ra != rb { par[ra] = rb; }
+	}
+	var seen int[>..] = [];
+	seen.resize(nv, 0);
+	var nloops = 0;
+	for i in ea.len {
+		let ra = uf_find(par, ea[i]);
+		if seen[ra] == 0 {
+			seen[ra] = 1;
+			nloops += 1;
+		}
+		let rb = uf_find(par, eb[i]);
+		if seen[rb] == 0 {
+			seen[rb] = 1;
+			nloops += 1;
+		}
+	}
+	return mx, nloops;
+}
+=== 60fd0ff48521f0c6
+fn pos_edge(a int, b int) real {
+	let dx = (garment::pos[a * 3] - garment::pos[b * 3]) as real;
+	let dy = (garment::pos[a * 3 + 1] - garment::pos[b * 3 + 1]) as real;
+	let dz = (garment::pos[a * 3 + 2] - garment::pos[b * 3 + 2]) as real;
+	sqrt(dx * dx + dy * dy + dz * dz) * garment::S.unit
+}
+fn uv_edge(a int, b int, scale real) real {
+	let du = (garment::uv[a * 2] - garment::uv[b * 2]) as real * scale;
+	let dv = (garment::uv[a * 2 + 1] - garment::uv[b * 2 + 1]) as real;
+	sqrt(du * du + dv * dv)
+}
+fn uv_bad(scale real) real {
+	let n = ntri();
+	if n == 0 { return 0.0; }
+	var bad = 0;
+	for t in n {
+		let a, b, c = tri(t);
+		let sp = max(pos_edge(a, b), max(pos_edge(b, c), pos_edge(c, a)));
+		let su = max(uv_edge(a, b, scale), max(uv_edge(b, c, scale), uv_edge(c, a, scale)));
+		if su < 0.3 * sp || su > 2.5 * sp { bad += 1; }
+	}
+	bad as real / n as real
+}
+=== -4d5900145055c4c1
+fn hyp2(a real, b real) real {
+	sqrt(a * a + b * b)
+}
+fn tri_stretch(a int, b int, c int, scale real) real {
+	let u = garment::S.unit;
+	let p0x = garment::pos[a * 3] as real * u;
+	let p0y = garment::pos[a * 3 + 1] as real * u;
+	let p0z = garment::pos[a * 3 + 2] as real * u;
+	let e1x = garment::pos[b * 3] as real * u - p0x;
+	let e1y = garment::pos[b * 3 + 1] as real * u - p0y;
+	let e1z = garment::pos[b * 3 + 2] as real * u - p0z;
+	let e2x = garment::pos[c * 3] as real * u - p0x;
+	let e2y = garment::pos[c * 3 + 1] as real * u - p0y;
+	let e2z = garment::pos[c * 3 + 2] as real * u - p0z;
+	let len1 = sqrt(e1x * e1x + e1y * e1y + e1z * e1z);
+	if len1 < 1.0e-12 { return 1.0e9; }
+	let xx = e1x / len1;
+	let xy = e1y / len1;
+	let xz = e1z / len1;
+	let bx = e2x * xx + e2y * xy + e2z * xz;
+	let px = e2x - bx * xx;
+	let py = e2y - bx * xy;
+	let pz = e2z - bx * xz;
+	let ylen = sqrt(px * px + py * py + pz * pz);
+	if ylen < 1.0e-12 { return 1.0e9; }
+	let d1u = (garment::uv[b * 2] - garment::uv[a * 2]) as real * scale;
+	let d1v = (garment::uv[b * 2 + 1] - garment::uv[a * 2 + 1]) as real;
+	let d2u = (garment::uv[c * 2] - garment::uv[a * 2]) as real * scale;
+	let d2v = (garment::uv[c * 2 + 1] - garment::uv[a * 2 + 1]) as real;
+	let det = len1 * ylen;
+	let ja = d1u / len1;
+	let jb = (d2u * len1 - d1u * bx) / det;
+	let jc = d1v / len1;
+	let jd = (d2v * len1 - d1v * bx) / det;
+	let h1 = hyp2(ja + jd, jc - jb);
+	let h2 = hyp2(ja - jd, jc + jb);
+	let s1 = (h1 + h2) / 2.0;
+	let s2 = abs((h1 - h2) / 2.0);
+	if s2 < 1.0e-12 { return 1.0e9; }
+	s1 / s2
+}
+fn stretch(scale real) real, real {
+	let n = ntri();
+	if n == 0 { return 0.0, 0.0; }
+	var st real[>..] = [];
+	var over = 0;
+	for t in n {
+		let a, b, c = tri(t);
+		let s = tri_stretch(a, b, c, scale);
+		st.push(s);
+		if s > 2.0 { over += 1; }
+	}
+	sort(st) { a, b => a < b };
+	return st[n / 2], over as real / n as real;
+}
+=== 3f48130d26632cde
+fn clearance() real {
+	var best = 1.0e30;
+	let nv = garment::pos.len / 3;
+	for v in nv {
+		if !garment::held[v] {
+			let dx = (garment::pos[v * 3] - garment::anchor[v * 3]) as real;
+			let dy = (garment::pos[v * 3 + 1] - garment::anchor[v * 3 + 1]) as real;
+			let dz = (garment::pos[v * 3 + 2] - garment::anchor[v * 3 + 2]) as real;
+			let d = dx * garment::anchor_n[v * 3] + dy * garment::anchor_n[v * 3 + 1] + dz * garment::anchor_n[v * 3 + 2];
+			if d < best { best = d; }
+		}
+	}
+	best * garment::S.unit
+}
+=== -78955ec5a878f02d
+fn lowest() real {
+	var best = 1.0e30;
+	let nv = garment::pos.len / 3;
+	for v in nv {
+		let y = garment::pos[v * 3 + 1] as real;
+		if y < best { best = y; }
+	}
+	best * garment::S.unit
+}
+=== 31302b04017de405
+fn main() {
+	var path byte[>..] = [];
+	path.append("hc/test/gfx/fixtures/mh_tights.obj");
+	let argv = args();
+	for a, i in argv {
+		if i == 1 {
+			path.clear();
+			path.append(a);
+		}
+	}
+	if !obj::load(path) {
+		print("garment: no fixture");
+		return;
+	}
+	let names = ["joint-pelvis", "joint-spine-2", "joint-spine-1", "joint-neck", "joint-l-shoulder", "joint-l-elbow", "joint-l-hand", "joint-r-shoulder", "joint-r-elbow", "joint-r-hand"];
+	var joints f32[>..] = [];
+	var pelvis_y = 0.0;
+	for nm, i in names {
+		let x, y, z = obj::centroid(nm);
+		if i == 0 { pelvis_y = y; }
+		joints.push(x as f32);
+		joints.push(y as f32);
+		joints.push(z as f32);
+	}
+	var shell int[>..] = [];
+	obj::tris_of("helper-tights", shell);
+	var s = garment::spec();
+	s.fine = 2.0;
+	let t0 = clock();
+	let made = garment::make(obj::V, shell, joints, s);
+	let steps = garment::drape(240);
+	let cost = clock() - t0;
+	var failed = !made;
+	if !made { print("garment: make failed"); }
+	let mx, nl = loops();
+	let g1 = mx <= 2 && nl == 4;
+	if !g1 { failed = true; }
+	print("G1 edges: max use ", mx, " loops ", nl, if g1 { " ok" } else { " FAIL" });
+	let ux = uv_bad(1.0);
+	let uc = uv_bad(0.5);
+	let g2u = ux <= 0.005 && uc > 0.005;
+	print("G2 uv: share ", ux, " control ", uc, if g2u { " ok" } else { " FAIL (retired: its control cannot fire)" });
+	let med, sh = stretch(1.0);
+	let cmed, csh = stretch(0.5);
+	let g2 = med <= 1.25 && sh <= 0.05 && cmed > 1.25;
+	if !g2 { failed = true; }
+	print("G2 stretch: median ", med, " share ", sh, " control median ", cmed, if g2 { " ok" } else { " FAIL" });
+	let cl = clearance();
+	let g3 = cl >= s.gap;
+	if !g3 { failed = true; }
+	print("G3 clearance: ", cl, " m", if g3 { " ok" } else { " FAIL" });
+	let low = lowest();
+	let want = pelvis_y * s.unit + s.hem;
+	let g4 = abs(low - want) <= 0.01;
+	if !g4 { failed = true; }
+	print("G4 hem: lowest ", low, " want ", want, if g4 { " ok" } else { " FAIL" });
+	let g5 = cost <= 5.0;
+	if !g5 { failed = true; }
+	print("G5 cost: ", cost, " s", if g5 { " ok" } else { " FAIL" });
+	if failed { print("garment: FAILED"); } else { print("garment: ok"); }
+}

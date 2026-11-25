@@ -1,0 +1,44 @@
+use std
+use ffi
+extern "libc.so.6" {
+	qsort(base uint, n uint, sz uint, cmp uint) = "qsort";
+	dlopen(name uint, flags i32) uint = "dlopen";
+	dlsym(h uint, name uint) uint = "dlsym";
+	pthread_create(t uint, attr uint, f uint, arg uint) i32 = "pthread_create";
+	pthread_join(t uint, ret uint) i32 = "pthread_join";
+}
+by_byte(a uint, b uint) i32:
+	ffi::bytes(a, 1)[0] as i32 - ffi::bytes(b, 1)[0] as i32
+mix(a i8, b u16, c i32, x f64, d int, e bool, y f32, f int) f64:
+	(a as int + b as int + c as int + d + (if e { 1000 } else { 0 }) + f) as f64 + x * 2.0 + y as f64
+nine(a int, b int, c int, d int, e int, f int, g int, h int, i int) int:
+	(((((((a * 10 + b) * 10 + c) * 10 + d) * 10 + e) * 10 + f) * 10 + g) * 10 + h) * 10 + i
+half(x f32) f32:
+	x / 2.0
+tick():
+	print("tick")
+worker(arg uint) uint:
+	m byte[>..] ~= []
+	format(m, "worker got ", arg, " on a C thread")
+	print(m)
+	arg + 1
+le64(p uint) uint:
+	b := ffi::bytes(p, 8); r ~= 0 as uint; for k 8 { r = r | (b[7 - k] as uint) << (8 * (7 - k) as uint) } r
+main():
+	tb byte[>..] ~= [0, 0, 0, 0, 0, 0, 0, 0]
+	rb byte[>..] ~= [0, 0, 0, 0, 0, 0, 0, 0]
+	rc := pthread_create(ffi::ptr(tb[..]), 0, c_callback(worker), 41)
+	rj := pthread_join(le64(ffi::ptr(tb[..])), ffi::ptr(rb[..]))
+	print(rc, " ", rj, " ", le64(ffi::ptr(rb[..])))
+	s byte[>..] ~= []
+	s.append("zebra quilt")
+	qsort(ffi::ptr(s[..]), s.len as uint, 1, c_callback(by_byte))
+	print(s)
+	print(c_call<f64>(c_callback(mix), -3, 7, 0x100000005, 1.25, 20, true, 0.5 as f32, 300))
+	print(c_call<int>(c_callback(nine), 1, 2, 3, 4, 5, 7, 8, 9, 0))
+	print(c_call<f32>(c_callback(half), 9.0 as f32) as f64)
+	c_call(c_callback(tick))
+	print(c_callback(nine) == c_callback(nine))
+	m := dlopen(ffi::ptr("libm.so.6\0"), 2)
+	print(c_call<f64>(dlsym(m, ffi::ptr("hypot\0")), 3.0, 4.0))
+	print(c_call<int>(dlsym(0, ffi::ptr("strlen\0")), ffi::ptr("helium!\0")))

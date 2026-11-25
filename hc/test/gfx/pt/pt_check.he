@@ -1,0 +1,318 @@
+use math
+use os
+use gfx
+use gfx.envmap
+use gfx.codec_hdr
+use gfx.hwrt
+use gfx.pathtrace
+var EB real[>..]
+var W = 128
+var H = 128
+var NM = 128
+var NQ = 400
+lut(path const byte[:]) bool:
+	t byte[>..] ~= []
+	if !read_file(path, t): return false
+	k ~= 0; while k + 7 <= t.len && t[k..k + 7] != "uint[](" { k++ }
+	k += 7; v ~= 0; dg ~= false
+	while k < t.len && t[k] != ';':
+		ch := t[k]
+		if ch >= '0' && ch <= '9': v = v * 10 + (ch - '0') as int; dg = true
+		else if dg: EB.push((v & 0xFFFF) as real / 65535.0); EB.push((v >> 16) as real / 65535.0); v = 0; dg = false
+		k++
+	EB.len == 2048
+eb(nv real, r real) real, real:
+	x := sqrt(min(max(nv, 0.0), 1.0)) * 31.0; y := min(max(r, 0.0), 1.0) * 31.0; x0 := min(x as! int, 30); y0 := min(y as! int, 30); fx := x - x0 as real; fy := y - y0 as real; i := y0 * 32 + x0; j := i + 32
+	ae := EB[i * 2] + (EB[i * 2 + 2] - EB[i * 2]) * fx; ab := EB[i * 2 + 1] + (EB[i * 2 + 3] - EB[i * 2 + 1]) * fx; be := EB[j * 2] + (EB[j * 2 + 2] - EB[j * 2]) * fx; bb := EB[j * 2 + 1] + (EB[j * 2 + 3] - EB[j * 2 + 1]) * fx
+	return ae + (be - ae) * fy, ab + (bb - ab) * fy
+mse(nv real, r real, e real) real:
+	x := sqrt(min(max(nv, 0.0), 1.0)) * 31.0
+	if x >= 3.0: return e
+	i := min((min(max(r, 0.0), 1.0) * 31.0) as! int, 30) * 32 + min(x as! int, 30)
+	max(max(EB[i * 2], EB[i * 2 + 2]), max(EB[i * 2 + 64], EB[i * 2 + 66]))
+tab(r real) real[>..]:
+	a := max(r * r, 0.002); k := r * r * 0.5; o real[>..] ~= []; cp real[>..] ~= []; sp real[>..] ~= []
+	for iw NQ: ph := 3.141592653589793 * (iw as real + 0.5) / NQ as real; cp.push(cos(ph)); sp.push(sin(ph))
+	for i NM:
+		mu := 0.02 + 0.98 * i as real / (NM - 1) as real; sv := sqrt(1.0 - mu * mu); sa ~= 0.0; sb ~= 0.0; gv := mu / (mu * (1.0 - k) + k)
+		for iu NQ:
+			u := (iu as real + 0.5) / NQ as real; th := atan(a * sqrt(u / (1.0 - u))); ct := cos(th); st := sin(th)
+			for iw NQ:
+				vh := sv * st * cp[iw] + mu * ct; lz := 2.0 * vh * ct - mu
+				if vh > 0.0 && lz > 0.0: q := lz / (lz * (1.0 - k) + k) * gv * lz * 4.0 * vh / ((4.0 * lz * mu + 1e-4) * ct); m := 1.0 - vh; m5 := m * m * m * m * m; sa += q * (1.0 - m5); sb += q * m5
+		o.push(sa / (NQ * NQ) as real); o.push(sb / (NQ * NQ) as real)
+	o
+expect(m pathtrace::Mat, tb const real[:], mu real) real:
+	fd := (m.ior - 1.0) / (m.ior + 1.0); f90 := m.spec + (1.0 - m.spec) * m.metal; e, b := eb(mu, m.rough); me := mse(mu, m.rough, e)
+	x := (mu - 0.02) / 0.98 * (NM - 1) as real; i := min(max(x as! int, 0), NM - 2); f := x - i as real; sa := tb[i * 2] + (tb[i * 2 + 2] - tb[i * 2]) * f; sb := tb[i * 2 + 1] + (tb[i * 2 + 3] - tb[i * 2 + 1]) * f
+	y ~= 0.0; wl := [0.2126, 0.7152, 0.0722]
+	for c 3: f0 := fd * fd * m.spec * (1.0 - m.metal) + m.base[c] * m.metal; ms := if pathtrace::MS { 1.0 + f0 * (1.0 / max(me, 0.25) - 1.0) } else { 1.0 }; kd := max(1.0 - ms * (f0 * (e - b) + f90 * b), 0.0); y += wl[c] * (kd * m.base[c] * (1.0 - m.metal) + ms * (f0 * sa + f90 * sb))
+	y
+bsdf(m pathtrace::Mat, vx real, vy real, vz real, lx real, ly real, lz real) real[>..]:
+	o real[>..] ~= []; nl := ly; nv := max(vy, 1e-4)
+	if nl <= 0.0: return [0.0, 0.0, 0.0]
+	hx ~= vx + lx; hy ~= vy + ly; hz ~= vz + lz; hl := sqrt(hx * hx + hy * hy + hz * hz); hx /= hl; hy /= hl; hz /= hl
+	a := max(m.rough * m.rough, 0.002); a2 := a * a; nh := max(hy, 0.0); t := nh * nh * (a2 - 1.0) + 1.0; d := a2 / (3.14159265 * t * t); k := m.rough * m.rough * 0.5; g := nl / (nl * (1.0 - k) + k) * (nv / (nv * (1.0 - k) + k))
+	vh := max(vx * hx + vy * hy + vz * hz, 0.0); mm := 1.0 - vh; m5 := mm * mm * mm * mm * mm; fd := (m.ior - 1.0) / (m.ior + 1.0); f90 := m.spec + (1.0 - m.spec) * m.metal; e, b := eb(nv, m.rough); me := mse(nv, m.rough, e)
+	for c 3: f0 := fd * fd * m.spec * (1.0 - m.metal) + m.base[c] * m.metal; ms := 1.0 + f0 * (1.0 / max(me, 0.25) - 1.0); kd := max(1.0 - ms * (f0 * (e - b) + f90 * b), 0.0); o.push((kd * m.base[c] * (1.0 - m.metal) / 3.14159265 + ms * (f0 + (f90 - f0) * m5) * d * g / (4.0 * nl * nv + 1e-4)) * nl)
+	o
+ray(x int, y int, sx int, sy int) real, real, real:
+	th := tan(pathtrace::FOV * 0.5); u := ((x as real + (sx as real + 0.5) / 4.0) / W as real * 2.0 - 1.0) * th; v := (1.0 - (y as real + (sy as real + 0.5) / 4.0) / H as real * 2.0) * th
+	e := pathtrace::EYE; t := pathtrace::TGT; fx ~= t[0] - e[0]; fy ~= t[1] - e[1]; fz ~= t[2] - e[2]; fl := sqrt(fx * fx + fy * fy + fz * fz); fx /= fl; fy /= fl; fz /= fl
+	rx ~= -fz; rz ~= fx; rl := sqrt(rx * rx + rz * rz); rx /= rl; rz /= rl; ux := -rz * fy; uy := rz * fx - rx * fz; uz := rx * fy
+	dx := rx * u + ux * v + fx; dy := uy * v + fy; dz := rz * u + uz * v + fz; dl := sqrt(dx * dx + dy * dy + dz * dz)
+	return dx / dl, dy / dl, dz / dl
+furnace(name const byte[:], m pathtrace::Mat, mx pathtrace::Mat, want bool) bool:
+	pathtrace::clear(); pathtrace::sphere(0.0, 0.0, 0.0, 1.0, 6, pathtrace::mat(m)); pathtrace::EYE = [0.0, 0.0, 3.5]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.63; pathtrace::FURN = 1.0; pathtrace::SUN = [0.0, 0.0, 0.0]
+	acc := pathtrace::render(W, H, 1024); tb := tab(mx.rough)
+	if acc.len == 0: print(str(name, ": render failed")); return false
+	gs ~= 0.0; es ~= 0.0; bg real[>..] ~= []; be real[>..] ~= []; bg.resize(8, 0.0); be.resize(8, 0.0); np ~= 0; BAD += pathtrace::bad(acc[..]); MX = max(MX, pathtrace::MAXMS)
+	for y H:
+		for x W:
+			ok ~= true; ey ~= 0.0; mus ~= 0.0
+			for s 16: dx, dy, dz := ray(x, y, s % 4, s / 4); b := 3.5 * dz; c := 3.5 * 3.5 - 1.0; di := b * b - c; if di <= 0.0 { ok = false } else { t := -b - sqrt(di); mu := -(dx * dx * t + dy * dy * t + dz * (3.5 + dz * t)); if mu < 0.1 { ok = false } else { ey += expect(mx, tb[..], mu) / 16.0; mus += mu / 16.0 } }
+			if ok: i := y * W + x; gy := acc[i * 8 + 3] as real / acc[i * 8 + 5] as real; gs += gy; es += ey; k := min(((mus - 0.1) / 0.9 * 8.0) as! int, 7); bg[k] += gy; be[k] += ey; np++
+	wb ~= 0.0; for k 8 { if be[k] > 0.0 { wb = max(wb, abs(bg[k] / be[k] - 1.0)) } }
+	d := gs / es - 1.0; pass := abs(d) < 0.002 && wb < 0.005
+	print(str(name, ": ", np, " pixels, total ", (d * 1e6) as! int, " ppm, worst bin ", (wb * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+var BAD = 0
+plane(y real, r real, m int):
+	z := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
+	pathtrace::tri([-r, y, -r, -r, y, r, r, y, r][..], z[..], uv[..], cl[..], m); pathtrace::tri([-r, y, -r, r, y, r, r, y, -r][..], z[..], uv[..], cl[..], m)
+vdh(a real) real: h := 4.09712 + 4.20863 * a - sqrt(9.59217 + 41.6808 * a + 17.7126 * a * a); min(max(1.0 - h * h, 0.0), 1.0)
+rd(a real) real:
+	m1 ~= 0.0
+	for i 128:
+		mu := (i as real + 0.5) / 128.0; li ~= 0.0
+		for j 512: th := (j as real + 0.5) / 512.0 * 1.5707963267948966; sn := sin(th); cs := cos(th); li += log(1.0 - a * th * cs / sn) / (cs * cs + mu * mu * sn * sn)
+		m1 += mu * exp(-mu / 3.141592653589793 * li * 1.5707963267948966 / 512.0) / 128.0
+	1.0 - 2.0 * sqrt(max(1.0 - a, 0.0)) * m1
+fd(ci real, e real) real:
+	s2 := e * e * (1.0 - ci * ci)
+	if s2 >= 1.0: return 1.0
+	ct := sqrt(1.0 - s2); rs := (e * ci - ct) / (e * ci + ct); rp := (ci - e * ct) / (ci + e * ct)
+	0.5 * (rs * rs + rp * rp)
+wave(x real, z real, t real) real:
+	qx ~= x; qz ~= z; h ~= 0.0; f ~= 0.35; a ~= 0.045; an ~= 0.7
+	for i 11: dx := cos(an); dz := sin(an); sv := sin((qx * dx + qz * dz) * f + t * sqrt(9.81 * f)) * a / f; h += sv; qx += dx * sv * 0.5; qz += dz * sv * 0.5; f *= 1.31; a *= 0.87; an += 2.4
+	h
+sea(name const byte[:], dt real, want bool) bool:
+	pathtrace::WAVES = [0.35, 0.045, 1.0, 17.3]; p real[>..] ~= []
+	for k 4096: p.append([(k % 64) as real * 200.0 / 63.0 - 63.0, 0.0, (k / 64) as real * 200.0 / 63.0 - 151.0])
+	q real[>..] ~= []; q.append(p[..]); good := pathtrace::lift(q); pathtrace::WAVES = [0.35, 0.0, 1.0, 0.0]
+	if !good: print(str(name, ": lift failed")); return false
+	wd ~= 0.0; mv ~= 0.0
+	for k 4096: wd = max(wd, abs(q[k * 3 + 1] - wave(p[k * 3], p[k * 3 + 2], 17.3 + dt))); mv = max(mv, abs(q[k * 3] - p[k * 3]) + abs(q[k * 3 + 2] - p[k * 3 + 2]))
+	pass := wd <= 0.0001 && mv == 0.0
+	print(str(name, ": 4096 points, worst height difference ", (wd * 1e6) as! int, " um (bar 100), x and z moved ", mv, ": ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+sky(name const byte[:], ik real, mx real, want bool) bool:
+	e f32[>..] ~= []
+	for j 512: for i 1024 { ph := ((i as real + 0.5) / 1024.0 - 0.5) * 6.283185307179586; la := (0.5 - (j as real + 0.5) / 512.0) * 3.141592653589793; for v [0.5 + 0.4 * cos(la) * cos(ph), 0.5 + 0.4 * sin(la), 0.5 + 0.4 * cos(la) * sin(ph), 1.0] { e.push(v as f32) } }
+	envmap::set_equirect(e[..], 1024, 512); envmap::intensity = 0.8 as f32; envmap::rotation = 0.7 as f32
+	pathtrace::clear(); m := pathtrace::mat(pathtrace::Mat {}); z := [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
+	pathtrace::tri([5000.0, 5000.0, 5000.0, 5000.001, 5000.0, 5000.0, 5000.0, 5000.0, 5000.001][..], z[..], uv[..], cl[..], m)
+	if !pathtrace::sky_cube(envmap::cube_n): print(str(name, ": no cube read back")); return false
+	sun := pathtrace::SUN; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::FURN = -1.0; pathtrace::FOV = 1.7; wd ~= 0.0; c := cos(0.7); sn := sin(0.7)
+	for k 6:
+		ax := [0.0, 0.0, 0.0]; ax[k / 2] = if k % 2 == 0 { 1.0 } else { -1.0 }; up := if k / 2 == 1 { [0.0, 0.0, 1.0] } else { [0.0, 1.0, 0.0] }
+		pathtrace::EYE = [0.0, 0.0, 0.0]; pathtrace::TGT = ax; pathtrace::UP = up
+		a := pathtrace::render(64, 64, 1024)
+		if a.len == 0: print(str(name, ": render failed")); pathtrace::SUN = sun; return false
+		rx := ax[1] * up[2] - ax[2] * up[1]; ry := ax[2] * up[0] - ax[0] * up[2]; rz := ax[0] * up[1] - ax[1] * up[0]; vx := ry * ax[2] - rz * ax[1]; vy := rz * ax[0] - rx * ax[2]; vz := rx * ax[1] - ry * ax[0]; th := tan(0.85)
+		for i 4096:
+			u := ((i % 64) as real + 0.5) / 32.0 - 1.0; v := 1.0 - ((i / 64) as real + 0.5) / 32.0; dx ~= rx * u * th + vx * v * th + ax[0]; dy ~= ry * u * th + vy * v * th + ax[1]; dz ~= rz * u * th + vz * v * th + ax[2]; dl := sqrt(dx * dx + dy * dy + dz * dz); dx /= dl; dy /= dl; dz /= dl
+			q := [(c * dx + sn * dz) * mx, dy, c * dz - sn * dx]; n := a[i * 8 + 5] as real
+			for ch 3: wd = max(wd, abs(a[i * 8 + ch] as real / n - (0.5 + 0.4 * q[ch]) * 0.8 * ik))
+	pathtrace::SUN = sun; envmap::on = false; envmap::intensity = 1.0 as f32; envmap::rotation = 0.0 as f32; pathtrace::clear()
+	pass := wd <= 0.002
+	print(str(name, ": 6 x 4096 pixels, worst channel difference ", (wd * 1e6) as! int, " ppm of white (bar 2000): ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+water(name const byte[:], kind int, sk real, ak real, tk real, want bool) bool:
+	san := [0.3, 0.06, 0.045]; ss := [0.02, 0.04, 0.06]; srn := [3.0, 2.85, 2.6]; ts := [0.0, 0.5, -sqrt(0.75)]; g := 0.5; e := 1.0 / 1.33
+	pathtrace::clear(); plane(0.0, 400.0, pathtrace::mat(pathtrace::Mat { water: true })); pathtrace::EYE = [0.0, 3.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::TK = tk; pathtrace::ETA = 1.33; pathtrace::UNDER = false; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
+	pathtrace::WAVES = [0.35, if kind == 0 { 0.045 } else { 0.0 }, 1.0, 0.0]; pathtrace::PHASE_G = if kind == 0 { 0.7 } else { g }; pathtrace::ABSORB = if kind == 0 { [0.01 * ak, 0.01 * ak, 0.01 * ak] } else { [san[0] * ak, san[1] * ak, san[2] * ak] }
+	if kind == 0: plane(-2.0, 400.0, pathtrace::mat(pathtrace::Mat { spec: 0.0 })); pathtrace::SCATTER = [0.8, 1.0, 1.2]; pathtrace::FURN = 1.0; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::DEPTH = 256
+	else if kind == 1: plane(-2.0, 400.0, pathtrace::mat(pathtrace::Mat { base: [0.0, 0.0, 0.0, 1.0], glow: [sk, sk, sk], spec: 0.0 })); pathtrace::SCATTER = [0.0, 0.0, 0.0]; pathtrace::FURN = 0.5; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::DEPTH = 32
+	else if kind == 3: plane(-2.0, 400.0, pathtrace::mat(pathtrace::Mat { spec: 0.0 })); pathtrace::SCATTER = [0.0, 0.0, 0.0]; pathtrace::FURN = 0.0; pathtrace::SUN = [srn[0] * sk, srn[1] * sk, srn[2] * sk]; pathtrace::DEPTH = 2
+	else: pathtrace::SCATTER = ss; pathtrace::FURN = 0.0; pathtrace::SUN = [srn[0] * sk, srn[1] * sk, srn[2] * sk]; pathtrace::DEPTH = 2
+	acc := pathtrace::render(W, H, if kind == 3 { 32768 } else { 1024 }); pathtrace::DEPTH = 32; pathtrace::TK = 1.0; pathtrace::ABSORB = [0.0, 0.0, 0.0]; pathtrace::SCATTER = [0.0, 0.0, 0.0]; pathtrace::WAVES = [0.35, 0.0, 1.0, 0.0]; pathtrace::PHASE_G = 0.0
+	if acc.len == 0: print(str(name, ": render failed")); return false
+	gs ~= 0.0; es ~= 0.0; wp ~= 0.0; np ~= 0; wl := [0.2126, 0.7152, 0.0722]; bg real[>..] ~= []; be real[>..] ~= []; bg.resize(8, 0.0); be.resize(8, 0.0); BAD += pathtrace::bad(acc[..]); MX = max(MX, pathtrace::MAXMS)
+	cis := ts[1]; fs := fd(cis, e); cts := sqrt(1.0 - (1.0 - cis * cis) * e * e)
+	for y H:
+		for x W:
+			ey ~= 0.0
+			for s 16:
+				dx, dy, dz := ray(x, y, s % 4, s / 4); ci := -dy; f := fd(ci, e); ct := sqrt(1.0 - (1.0 - ci * ci) * e * e); mu := e * e * (ts[0] * dx + ts[2] * dz) - cts * ct; hd := 1.0 + g * g - 2.0 * g * mu; ph := (1.0 - g * g) / (12.566370614359172 * hd * sqrt(hd))
+				for c 3: ey += wl[c] / 16.0 * (if kind == 0 { 1.0 } else if kind == 1 { f * 0.5 + (1.0 - f) * exp(-san[c] * 2.0 / ct) * e * e } else if kind == 3 { (1.0 - f) * e * e * exp(-san[c] * 2.0 * (1.0 / ct + 1.0 / cts)) * srn[c] * (1.0 - fs) * cis / 3.141592653589793 } else { (1.0 - f) * e * e * ss[c] * ph * srn[c] * (1.0 - fs) * cis / cts / ((san[c] + ss[c]) * (1.0 + ct / cts)) })
+			i := y * W + x; gy := acc[i * 8 + 3] as real / acc[i * 8 + 5] as real; gs += gy; es += ey; wp = max(wp, abs(gy / ey - 1.0)); bg[y * 8 / H] += gy; be[y * 8 / H] += ey; np++
+	wb ~= 0.0; for k 8 { wb = max(wb, abs(bg[k] / be[k] - 1.0)) }
+	d := gs / es - 1.0; pass := abs(d) < (if kind == 0 { 0.002 } else if kind == 2 { 0.003 } else { 0.001 }) && (if kind == 1 || kind == 3 { wp < 0.02 } else { wb < (if kind == 0 { 0.005 } else { 0.01 }) })
+	print(str(name, ": ", np, " pixels, total ", (d * 1e6) as! int, " ppm, worst band ", (wb * 1e6) as! int, " ppm, worst pixel ", (wp * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+var MX = 0.0
+halves(v const f32[:], out u32[>..]&):
+	b byte[>..] ~= []; codec_hdr::half_pixels(v, b); while b.len % 4 != 0 { b.push(0 as byte) }
+	for i b.len / 4: out.push(b[i * 4] as u32 | (b[i * 4 + 1] as u32 << 8) | (b[i * 4 + 2] as u32 << 16) | (b[i * 4 + 3] as u32 << 24))
+layer(name const byte[:], na bool, flip bool, want bool) bool:
+	pathtrace::clear(); m := pathtrace::mat(pathtrace::Mat {}); z := [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]; uv := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; cl := [1.0, 1.0, 1.0, 1.0]
+	pathtrace::tri([5000.0, 5000.0, 5000.0, 5000.001, 5000.0, 5000.0, 5000.0, 5000.0, 5000.001][..], z[..], uv[..], cl[..], m)
+	f f32[>..] ~= []
+	for j 12: for i 16 { u := (i as real + 0.5) / 16.0; v := (j as real + 0.5) / 12.0; for x [0.2 * u, 0.1, 0.3 * v, 0.25 + 0.5 * u] { f.push(x as f32) } }
+	halves(f[..], pathtrace::CLD); pathtrace::CW = 16; pathtrace::CH = 12
+	sun := pathtrace::SUN; pathtrace::SUN = [0.0, 0.0, 0.0]; pathtrace::FURN = 1.0; pathtrace::EYE = [0.0, 0.0, 0.0]; pathtrace::TGT = [0.0, 0.0, -1.0]; pathtrace::UP = [0.0, 1.0, 0.0]; pathtrace::FOV = 0.9
+	a := pathtrace::render(64, 48, 256); pathtrace::SUN = sun; pathtrace::FURN = -1.0; pathtrace::clear()
+	if a.len == 0: print(str(name, ": render failed")); return false
+	wd ~= 0.0; np ~= 0
+	for i 3072:
+		u := ((i % 64) as real + 0.5) / 64.0; v := ((i / 64) as real + 0.5) / 48.0; tx := u * 16.0 - 0.5; ty := v * 12.0 - 0.5
+		if tx < 1.5 || tx > 12.5 || ty < 1.5 || ty > 8.5: continue
+		vv := if flip { 1.0 - v } else { v }; al := 0.25 + 0.5 * u; e := if na { 1.0 } else { al }; r := [e + 0.2 * u, e + 0.1, e + 0.3 * vv]; n := a[i * 8 + 5] as real; np++
+		for ch 3: wd = max(wd, abs(a[i * 8 + ch] as real / n - r[ch]))
+	pass := wd <= 0.002
+	print(str(name, ": ", np, " pixels, worst channel difference ", (wd * 1e6) as! int, " ppm of white (bar 2000): ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+direct(name const byte[:], sk real, pk real, cl int, sm int, want bool) bool:
+	eb := if sm == 1 { [rd(vdh(0.8)), rd(vdh(0.5)), rd(vdh(0.2))] } else { [0.8, 0.5, 0.2] }; lk := if sm > 0 { 0.0 } else { 1.0 }
+	m := if sm > 0 { pathtrace::Mat { base: [eb[0], eb[1], eb[2], 1.0], rough: 0.5 } } else { pathtrace::Mat { base: [0.6, 0.5, 0.4, 1.0], rough: 0.5 } }; pathtrace::clear(); plane(0.0, 10.0, pathtrace::mat(if sm > 0 { pathtrace::Mat { base: [0.8, 0.5, 0.2, 1.0], rough: 0.5, sss: [0.02, 0.01, 0.005] } } else { m }))
+	sr := [3.0, 2.85, 2.6]; ts := [0.3, 0.8, 0.2]; tl := sqrt(0.77); lp := [0.5, 1.2, -0.3]
+	if cl > 0 { f f32[>..] ~= []; for k 1024 { f.push((0.3 + 0.5 * ((k % 32) as real + 0.5) / 32.0) as f32) } halves(f[..], pathtrace::CLD); pathtrace::CSN = 32; pathtrace::CSK = 0.8; pathtrace::CLU = [0.05, 0.0, 0.0, 0.5]; pathtrace::CLV = [0.0, 0.0, 0.05, 0.5] }
+	pathtrace::light(lp[0], lp[1], lp[2], 5.0 * pk * lk, 5.0 * pk * lk, 5.0 * pk * lk, 10.0); pathtrace::EYE = [0.0, 2.0, 4.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::FURN = 0.0; pathtrace::SUN = [sr[0] * sk, sr[1] * sk, sr[2] * sk]; pathtrace::TO_SUN = ts; pathtrace::SUN_COS = 1.0
+	acc := pathtrace::render(W, H, if sm > 0 { 256 } else { 64 })
+	if acc.len == 0: print(str(name, ": render failed")); return false
+	gs ~= 0.0; es ~= 0.0; wp ~= 0.0; np ~= 0; wl := [0.2126, 0.7152, 0.0722]; gc real[>..] ~= []; ec real[>..] ~= []; ep real[>..] ~= []; gc.resize(3, 0.0); ec.resize(3, 0.0); ep.resize(3, 0.0); BAD += pathtrace::bad(acc[..]); MX = max(MX, pathtrace::MAXMS)
+	for y H:
+		for x W:
+			ok ~= true; ey ~= 0.0; for c 3 { ep[c] = 0.0 }
+			for s 16:
+				dx, dy, dz := ray(x, y, s % 4, s / 4)
+				if dy >= 0.0: ok = false; continue
+				t := -2.0 / dy; px := dx * t; pz := 4.0 + dz * t
+				if abs(px) > 9.0 || abs(pz) > 9.0: ok = false; continue
+				a := bsdf(m, -dx, -dy, -dz, ts[0] / tl, ts[1] / tl, ts[2] / tl); lx := lp[0] - px; ly := lp[1]; lz := lp[2] - pz; dd := sqrt(lx * lx + ly * ly + lz * lz); q := min(max(1.0 - dd * dd / 100.0, 0.0), 1.0); fo := 5.0 * lk * q * q / (1.0 + dd * dd); b := bsdf(m, -dx, -dy, -dz, lx / dd, ly / dd, lz / dd)
+				cu := (if cl == 3 { -px } else { px }) * 0.05 + 0.5; cf := if cl == 1 || cl == 3 { 0.2 + 0.8 * (0.3 + 0.5 * cu) } else { 1.0 }
+				for c 3: ey += wl[c] * (a[c] * sr[c] * cf + b[c] * fo) / 16.0; ep[c] += (a[c] * sr[c] * cf + b[c] * fo) / 16.0
+			if ok: i := y * W + x; gy := acc[i * 8 + 3] as real / acc[i * 8 + 5] as real; gs += gy; es += ey; wp = max(wp, abs(gy / ey - 1.0)); np++; for c 3 { gc[c] += acc[i * 8 + c] as real / acc[i * 8 + 5] as real; ec[c] += ep[c] }
+	d := gs / es - 1.0; wc ~= 0.0; for c 3 { wc = max(wc, abs(gc[c] / ec[c] - 1.0)) }
+	pass := if sm > 0 { abs(d) < 0.002 && wc < 0.004 } else { abs(d) < 0.001 && wp < 0.02 }
+	print(str(name, ": ", np, " pixels, total ", (d * 1e6) as! int, " ppm, ", if sm > 0 { "worst channel " } else { "worst pixel " }, ((if sm > 0 { wc } else { wp }) * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+d3(a const real[:], b const real[:]) real: a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+pw(x real, n int) real: r ~= 1.0; for i n { r *= x } r
+hi0(x real) real: v ~= 0.0; x2 ~= 1.0; fi ~= 1.0; i4 ~= 1.0; for i 16 { if i > 1 { fi *= i as real } v += x2 / (i4 * fi * fi); x2 *= x * x; i4 *= 4.0 } v
+hmp(cti real, cto real, sti real, sto real, v real) real:
+	a := cti * cto / v; b := sti * sto / v
+	if v <= 0.1: li := if a > 12.0 { a + 0.5 * (-log(6.283185307179586) + log(1.0 / a) + 1.0 / (8.0 * a)) } else { log(hi0(a)) }; return exp(li - b - 1.0 / v + 0.6931 + log(1.0 / (2.0 * v)))
+	exp(-b) * hi0(a) / ((exp(1.0 / v) - exp(-1.0 / v)) * v)
+hnp(phi real, p real, s real, go real, gt real) real:
+	d ~= phi - (2.0 * p * gt - 2.0 * go + p * 3.141592653589793); d -= 6.283185307179586 * floor((d + 3.141592653589793) / 6.283185307179586); e := exp(-abs(d) / s)
+	e / (s * (1.0 + e) * (1.0 + e)) / (1.0 / (1.0 + exp(-3.141592653589793 / s)) - 1.0 / (1.0 + exp(3.141592653589793 / s)))
+hfr(c0 real) real:
+	ci := min(max(c0, 0.0), 1.0); st := sqrt(max(0.0, 1.0 - ci * ci)) / 1.55
+	if st >= 1.0: return 1.0
+	ct := sqrt(max(0.0, 1.0 - st * st)); a := (1.55 * ci - ct) / (1.55 * ci + ct); b := (ci - 1.55 * ct) / (ci + 1.55 * ct); 0.5 * (a * a + b * b)
+hap(sto real, cto real, sig const real[:], h real) real[>..]:
+	etp := sqrt(max(1.55 * 1.55 - sto * sto, 1e-4)) / cto; sg := min(max(h / etp, -1.0), 1.0); cg := sqrt(1.0 - sg * sg); st := sto / 1.55; ct := sqrt(max(0.0, 1.0 - st * st)); f := hfr(cto * sqrt(max(0.0, 1.0 - h * h)))
+	o real[>..] ~= []; o.resize(14, 0.0)
+	for c 3: tr := exp(-sig[c] * 2.0 * cg / ct); o[c] = f; o[3 + c] = (1.0 - f) * (1.0 - f) * tr; o[6 + c] = o[3 + c] * f * tr; o[9 + c] = o[6 + c] * f * tr / (1.0 - f * tr)
+	o[12] = asin(min(max(h, -1.0), 1.0)); o[13] = asin(sg); o
+hxy(t const real[:]) real[>..]:
+	n0 := if abs(t[1]) < 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] }; k := d3(n0, t); x ~= [n0[0] - t[0] * k, n0[1] - t[1] * k, n0[2] - t[2] * k]; xl := sqrt(d3(x, x)); for c 3 { x[c] /= xl }
+	[x[0], x[1], x[2], t[1] * x[2] - t[2] * x[1], t[2] * x[0] - t[0] * x[2], t[0] * x[1] - t[1] * x[0]]
+hs(t const real[:], l const real[:], v const real[:], sig const real[:], h real, bm real, bn real, al real) real[>..]:
+	sto := min(max(d3(v, t), -0.9999), 0.9999); cto := sqrt(1.0 - sto * sto); sti := min(max(d3(l, t), -0.9999), 0.9999); cti := sqrt(1.0 - sti * sti); f := hxy(t); x := f[0..3]; y := f[3..6]
+	phi := atan2(d3(l, y), d3(l, x)) - atan2(d3(v, y), d3(v, x)); a := hap(sto, cto, sig, h); m0 := 0.726 * bm + 0.812 * bm * bm + 3.7 * pw(bm, 20); v0 := m0 * m0; s := 0.626657 * (0.265 * bn + 1.194 * bn * bn + 5.372 * pw(bn, 22)); to := asin(sto)
+	r real[>..] ~= [0.0, 0.0, 0.0]
+	for p 4: k := (if p == 0 { -2.0 } else if p == 1 { 1.0 } else if p == 2 { 4.0 } else { 0.0 }) * al; vp := v0 * (if p == 0 { 1.0 } else if p == 1 { 0.25 } else { 4.0 }); m := hmp(cti, abs(cos(to + k)), sti, sin(to + k), vp) * (if p < 3 { hnp(phi, p as real, s, a[12], a[13]) } else { 0.15915494309189535 }); for c 3 { r[c] += m * a[p * 3 + c] }
+	r
+hcyl(o const real[:], d const real[:], a const real[:], b const real[:], rad real) real[>..]:
+	tv := [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; ln := sqrt(d3(tv, tv)); t := [tv[0] / ln, tv[1] / ln, tv[2] / ln]; w := [o[0] - a[0], o[1] - a[1], o[2] - a[2]]; dd := d3(d, t); wd := d3(w, t)
+	dp := [d[0] - t[0] * dd, d[1] - t[1] * dd, d[2] - t[2] * dd]; wp := [w[0] - t[0] * wd, w[1] - t[1] * wd, w[2] - t[2] * wd]; aa := d3(dp, dp); bb := d3(wp, dp); di := bb * bb - aa * (d3(wp, wp) - rad * rad)
+	if aa <= 0.0 || di < 0.0: return [0.0]
+	tt := (-bb - sqrt(di)) / aa; s := wd + dd * tt
+	if tt <= 0.0 || s < 0.0 || s > ln: return [0.0]
+	cx := [t[1] * d[2] - t[2] * d[1], t[2] * d[0] - t[0] * d[2], t[0] * d[1] - t[1] * d[0]]
+	[1.0, min(max(d3(w, cx) / (sqrt(aa) * rad), -1.0), 1.0), t[0], t[1], t[2]]
+strand(name const byte[:], fu bool, cl int, want bool) bool:
+	a := [0.1, -0.75, -0.3]; b := [-0.1, 0.75, 0.3]; sg := [0.2, 0.5, 1.2]; bm := 0.3; bn := 0.3; al := 3.141592653589793 / 90.0; e3 := [3.0, 2.85, 2.6]; ns := 2048
+	tv := [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; tl := sqrt(d3(tv, tv)); t0 := [tv[0] / tl, tv[1] / tl, tv[2] / tl]; v0 := [0.0, 0.0, 1.0]; f := hxy(t0); x := f[0..3]; y := f[3..6]
+	ti := -asin(d3(v0, t0)) + 3.141592653589793 / 36.0; pi := atan2(d3(v0, y), d3(v0, x)) + 110.0 * 3.141592653589793 / 180.0; l := [t0[0] * sin(ti) + cos(ti) * (x[0] * cos(pi) + y[0] * sin(pi)), t0[1] * sin(ti) + cos(ti) * (x[1] * cos(pi) + y[1] * sin(pi)), t0[2] * sin(ti) + cos(ti) * (x[2] * cos(pi) + y[2] * sin(pi))]
+	nx ~= t0[1] * v0[2] - t0[2] * v0[1]; ny ~= t0[2] * v0[0] - t0[0] * v0[2]; nz ~= t0[0] * v0[1] - t0[1] * v0[0]; nl := sqrt(nx * nx + ny * ny + nz * nz); nx /= nl; ny /= nl; nz /= nl; q := nx * l[0] + ny * l[1] + nz * l[2]; lm := [l[0] - 2.0 * nx * q, l[1] - 2.0 * ny * q, l[2] - 2.0 * nz * q]
+	pathtrace::clear(); pathtrace::KB = if fu { 1 } else { 3 }; m := pathtrace::mat(pathtrace::Mat { fiber: [bm, bn, al] }); rs := if fu && cl == 2 { [0.204, 0.51, 1.224] } else { sg }
+	if !fu && cl == 2 { pathtrace::fiber(b, a, 0.1, sg, m) } else { pathtrace::fiber(a, b, 0.1, rs, m) }
+	pathtrace::tri([0.0, -1000.0, 0.0, 0.001, -1000.0, 0.0, 0.0, -1000.0, 0.001], [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0], pathtrace::mat(pathtrace::Mat {}))
+	pathtrace::EYE = [0.0, 0.0, 2.0]; pathtrace::TGT = [0.0, 0.0, 0.0]; pathtrace::FOV = 0.9; pathtrace::FURN = if fu { 1.0 } else { 0.0 }; pathtrace::SUN = if fu { [0.0, 0.0, 0.0] } else { e3 }; pathtrace::TO_SUN = if !fu && cl == 1 { lm } else { l }; pathtrace::SUN_COS = 1.0; pathtrace::PDFK = if fu && cl == 1 { 1.02 } else { 1.0 }
+	acc := pathtrace::render(W, H, ns); pathtrace::PDFK = 1.0; pathtrace::KB = 1
+	if acc.len == 0: print(str(name, ": render failed")); return false
+	BAD += pathtrace::bad(acc[..]); MX = max(MX, pathtrace::MAXMS); th := tan(0.45); ax := (a[0] / (2.0 - a[2]) / th + 1.0) * 0.5 * W as real; ay := (1.0 - a[1] / (2.0 - a[2]) / th) * 0.5 * H as real; bx := (b[0] / (2.0 - b[2]) / th + 1.0) * 0.5 * W as real; by := (1.0 - b[1] / (2.0 - b[2]) / th) * 0.5 * H as real
+	gd real[>..] ~= []; gd.resize(6, 0.0); rd real[>..] ~= []; rd.resize(6, 0.0); ep real[>..] ~= []; ep.resize(3, 0.0); np ~= 0
+	for py H:
+		for px W:
+			hit ~= 0; for c 3 { ep[c] = 0.0 }
+			for s 256:
+				u := ((px as real + ((s % 16) as real + 0.5) / 16.0) / W as real * 2.0 - 1.0) * th; v := (1.0 - (py as real + ((s / 16) as real + 0.5) / 16.0) / H as real * 2.0) * th; dl := sqrt(u * u + v * v + 1.0); d := [u / dl, v / dl, -1.0 / dl]; hc := hcyl([0.0, 0.0, 2.0], d, a, b, 0.1)
+				if hc[0] < 0.5 { if fu { for c 3 { ep[c] += 1.0 } } continue }
+				hit++; vv := [-d[0], -d[1], -d[2]]; tt := [hc[2], hc[3], hc[4]]
+				if fu { sto := d3(vv, tt); ap := hap(sto, sqrt(1.0 - sto * sto), sg, hc[1]); for c 3 { ep[c] += ap[c] + ap[3 + c] + ap[6 + c] + ap[9 + c] } } else { fs := hs(tt, l, vv, sg, hc[1], bm, bn, al); for c 3 { ep[c] += fs[c] * e3[c] } }
+			if hit == 0: continue
+			i := py * W + px; np++; sd := if !fu && (bx - ax) * (py as real + 0.5 - ay) - (by - ay) * (px as real + 0.5 - ax) < 0.0 { 3 } else { 0 }
+			for c 3: g := acc[i * 8 + c] as real / acc[i * 8 + 5] as real; r := ep[c] / 256.0; if fu { gd[c] += 1.0 - g; rd[c] += 1.0 - r } else { gd[sd + c] += g; rd[sd + c] += r }
+	wc ~= 0.0; for k (if fu { 3 } else { 6 }) { wc = max(wc, abs(gd[k] / rd[k] - 1.0)) }
+	pass := wc < (if fu { 0.002 } else { 0.003 })
+	print(str(name, ": ", np, " pixels, worst ", if fu { "channel loss " } else { "half channel " }, (wc * 1e6) as! int, " ppm: ", if pass { "PASS" } else { "FAIL" }, if pass == want { "" } else if want { " (bar missed)" } else { " (control passed; it must fail)" }))
+	pass == want
+main():
+	lp byte[>..] ~= []; arg(1, lp)
+	if !lut(lp[..]): print("pathtrace: FAILED (no ms_lut.glsl)"); return
+	if !hwrt::init(): print("pathtrace: skipped (no ray-query device)"); return
+	cpu := hwrt::is_cpu(); print(str("pathtrace device: ", hwrt::name(), if cpu { " (CPU device: P5 reported, not gated)" } else { "" }))
+	a := pathtrace::Mat { rough: 0.2 }; b := pathtrace::Mat { rough: 0.7 }; c := pathtrace::Mat { base: [0.95, 0.93, 0.88, 1.0], metal: 1.0, rough: 0.3 }; g := pathtrace::Mat { base: [1.0, 0.77, 0.33, 1.0], metal: 1.0, rough: 0.5 }; b2 := pathtrace::Mat { base: [1.01, 1.01, 1.01, 1.0], rough: 0.7 }
+	ok ~= furnace("P1 furnace, white dielectric rough 0.2", a, a, true)
+	ok = furnace("P1 furnace, white dielectric rough 0.7", b, b, true) && ok
+	ok = furnace("P1 furnace, white metal rough 0.3", c, c, true) && ok
+	ok = furnace("P1 furnace, gold metal rough 0.5", g, g, true) && ok
+	pathtrace::PDFK = 1.02; ok = furnace("P1 control, white metal with the specular pdf x 1.02", c, c, false) && ok; pathtrace::PDFK = 1.0
+	ok = furnace("P1 control, white dielectric base x 1.01", b2, b, false) && ok
+	ok = direct("P2 sun and point light", 1.0, 1.0, 0, 0, true) && ok
+	ok = direct("P2 control, sun x 1.01", 1.01, 1.0, 0, 0, false) && ok
+	ok = direct("P2 control, point light x 1.01", 1.0, 1.01, 0, 0, false) && ok
+	ok = water("P5 water furnace", 0, 1.0, 0.0, 1.0, true) && ok
+	ok = water("P5 control, absorption 0.01 per m", 0, 1.0, 1.0, 1.0, false) && ok
+	ok = water("P5 control, refraction weight x 1.02", 0, 1.0, 0.0, 1.02, false) && ok
+	ok = water("P6 water Beer-Lambert", 1, 1.0, 1.0, 1.0, true) && ok
+	ok = water("P6 control, absorption x 1.05", 1, 1.0, 1.05, 1.0, false) && ok
+	ok = water("P6 control, floor glow x 1.01", 1, 1.01, 1.0, 1.0, false) && ok
+	ok = water("P7 sunlight scattered in water", 2, 1.0, 1.0, 1.0, true) && ok
+	ok = water("P7 control, sun x 1.01", 2, 1.01, 1.0, 1.0, false) && ok
+	ok = water("P7 control, absorption x 1.05", 2, 1.0, 1.05, 1.0, false) && ok
+	ok = water("P8 sunlit floor under water", 3, 1.0, 1.0, 1.0, true) && ok
+	ok = water("P8 control, sun x 1.01", 3, 1.01, 1.0, 1.0, false) && ok
+	ok = water("P8 control, absorption x 1.05", 3, 1.0, 1.05, 1.0, false) && ok
+	ok = sea("P9 sea lift", 0.0, true) && ok
+	ok = sea("P9 control, reference at time + 0.01 s", 0.01, false) && ok
+	ok = layer("P11 cloud layer", false, false, true) && ok
+	ok = layer("P11 control, layer without its alpha", true, false, false) && ok
+	ok = layer("P11 control, layer flipped top to bottom", false, true, false) && ok
+	ok = direct("P11 cloud shadow on the P2 scene", 1.0, 1.0, 1, 0, true) && ok
+	ok = direct("P11 control, reference without the cloud factor", 1.0, 1.0, 2, 0, false) && ok
+	ok = direct("P11 control, map mirrored in x", 1.0, 1.0, 3, 0, false) && ok
+	ok = direct("P12 skin slab", 1.0, 0.0, 0, 1, true) && ok
+	ok = direct("P12 control, sun x 1.01", 1.01, 0.0, 0, 1, false) && ok
+	ok = direct("P12 control, reference with the plain base color", 1.0, 0.0, 0, 2, false) && ok
+	sb := pathtrace::Mat { rough: 0.7, sss: [0.2, 0.1, 0.05] }; sb2 := pathtrace::Mat { base: [0.9, 0.9, 0.9, 1.0], rough: 0.7, sss: [0.2, 0.1, 0.05] }; bw := pathtrace::Mat { rough: 0.7 }
+	ok = furnace("P12 skin furnace, white, roughness 0.7", sb, bw, true) && ok
+	ok = furnace("P12 control, skin base 0.9 against 1.0", sb2, bw, false) && ok
+	ok = strand("P13 hair furnace", true, 0, true) && ok
+	ok = strand("P13 control, pdf x 1.02", true, 1, false) && ok
+	ok = strand("P13 control, absorption x 1.02", true, 2, false) && ok
+	ok = strand("P13 sunlit fiber", false, 0, true) && ok
+	ok = strand("P13 control, sun mirrored across the fiber plane", false, 1, false) && ok
+	ok = strand("P13 control, fiber drawn tip to root", false, 2, false) && ok
+	if !gfx::open_headless(64, 64): print("P10: no gfx device"); ok = false
+	else { ok = sky("P10 engine sky", 1.0, 1.0, true) && ok; ok = sky("P10 control, reference x 1.01", 1.01, 1.0, false) && ok; ok = sky("P10 control, x axis mirrored", 1.0, -1.0, false) && ok; gfx::close() }
+	print(str("P4 longest dispatch ", MX as! int, " ms (bar 1000), bad samples ", BAD, " (bar 0): ", if MX < 1000.0 && BAD == 0 { "PASS" } else { "FAIL" }, if cpu { " (dispatch time reported)" } else { "" }))
+	ok = ok && BAD == 0 && (cpu || MX < 1000.0)
+	print(if ok { "pathtrace: ok" } else { "pathtrace: FAILED" })
+	hwrt::done()

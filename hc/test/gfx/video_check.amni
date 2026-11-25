@@ -1,0 +1,303 @@
+import os;
+import math;
+import gfx.video;
+
+var failed bool = false;
+var work byte[>..];
+
+fn check(name const byte[:], ok bool, detail const byte[:]) {
+	var line byte[>..] = [];
+	if ok { line.append("PASS "); } else { line.append("FAIL "); }
+	line.append(name);
+	if detail.len > 0 {
+		line.append(" (");
+		line.append(detail);
+		line.append(")");
+	}
+	print(line);
+	if !ok { failed = true; }
+}
+
+fn setup_work() {
+	work.clear();
+	let a = args();
+	if a.len >= 2 {
+		work.append(a[1]);
+	} else {
+		work.append("hc/test/gfx/out");
+	}
+	if !file_exists(work) { make_dir(work); }
+}
+fn paint(kind int, t int, w int, h int, px byte[>..]&) {
+	px.clear();
+	var k = kind;
+	var swap = false;
+	if kind == 4 {
+		if t < 5 { k = 1; } else { k = 0; swap = true; }
+	}
+	var x32 u32 = ((2463534242 + t) as u32);
+	fn nxt() int {
+		x32 = x32 ^ (x32 << 13);
+		x32 = x32 ^ (x32 >> 17);
+		x32 = x32 ^ (x32 << 5);
+		(x32 % 256) as int
+	}
+	for y in h {
+		for x in w {
+			var r = 0;
+			var g = 0;
+			var b = 0;
+			if k == 0 {
+				r = 255 * x / w;
+				g = 255 * y / h;
+				b = (x + 2 * y) % 256 / 2 + 64;
+				if swap {
+					let tmp = r;
+					r = b;
+					b = tmp;
+				}
+			} else if k == 1 {
+				let u = x + 3 * t;
+				let v = y + 200 - 2 * t;
+				r = (u * 4) % 256;
+				g = (v * 3) % 256;
+				b = if (u / 8 + v / 8) % 2 == 0 { 230 } else { 30 };
+			} else if k == 2 {
+				let dx = x - w / 2;
+				let dy = y - h / 2;
+				let rad = 6 + 3 * t;
+				if dx * dx + dy * dy < rad * rad {
+					r = 250;
+					g = (40 + 20 * t) % 256;
+					b = 40;
+				} else {
+					r = 20;
+					g = x * 255 / w;
+					b = y * 255 / h;
+				}
+			} else if k == 3 {
+				r = nxt();
+				g = nxt();
+				b = nxt();
+			} else {
+				let v = if (x + y + t) % 4 < 2 { 255 } else { 0 };
+				r = v;
+				g = v;
+				b = v;
+			}
+			px.push(r as byte);
+			px.push(g as byte);
+			px.push(b as byte);
+			px.push(255 as byte);
+		}
+	}
+}
+struct Case { name byte[..24], kind int, w int, h int, frames int, qp int, gop int }
+var cases Case[>..];
+var avgs real[>..];
+var first_sz int[>..];
+var rest_max int[>..];
+fn add_case(name const byte[:], kind int, w int, h int, frames int, qp int, gop int) {
+	cases.push(Case { name: name, kind: kind, w: w, h: h, frames: frames, qp: qp, gop: gop });
+}
+fn init_cases() {
+	cases.clear();
+	add_case("still 64x48", 0, 64, 48, 7, 26, 100);
+	add_case("pan 96x64", 1, 96, 64, 10, 26, 100);
+	add_case("pan crop 50x30", 1, 50, 30, 8, 20, 4);
+	add_case("pan intra 34x18", 1, 34, 18, 6, 10, 1);
+	add_case("zoom 80x80", 2, 80, 80, 8, 32, 100);
+	add_case("noise 48x32", 3, 48, 32, 5, 26, 100);
+	add_case("noise q51 48x32", 3, 48, 32, 4, 51, 2);
+	add_case("cut 64x64", 4, 64, 64, 10, 26, 100);
+	add_case("extremes 32x32", 5, 32, 32, 6, 10, 100);
+	add_case("tiny 2x2", 1, 2, 2, 3, 26, 100);
+	add_case("pan 176x144 q40", 1, 176, 144, 12, 40, 100);
+	add_case("extremes q51 16x16", 5, 16, 16, 3, 51, 100);
+}
+var last byte[>..];
+fn ffmpeg_same(path const byte[:], w int, h int, frames int) bool {
+	last.clear();
+	var cmd byte[>..] = [];
+	format(cmd, "ffmpeg -nostdin -v error -i ", path, " -f rawvideo -pix_fmt yuv420p -y ", path, ".yuv 2> ", path, ".err");
+	let rc = run_command(cmd);
+	if rc != 0 {
+		last.append("ffmpeg exit");
+		return false;
+	}
+	var ename byte[>..] = [];
+	format(ename, path, ".err");
+	var err byte[>..] = [];
+	let eok = read_file(ename, err);
+	if !eok || err.len > 0 {
+		last.append("ffmpeg said: ");
+		last.append(err[..min(err.len, 200)]);
+		return false;
+	}
+	var yname byte[>..] = [];
+	format(yname, path, ".yuv");
+	var yuv byte[>..] = [];
+	let yok = read_file(yname, yuv);
+	let expected = frames * (w * h + 2 * (w / 2) * (h / 2));
+	if !yok || yuv.len != expected || yuv.len != video::recon.len {
+		last.append("length");
+		return false;
+	}
+	for i in yuv.len {
+		if yuv[i] != video::recon[i] {
+			format(last, "byte ", i);
+			return false;
+		}
+	}
+	true
+}
+fn v0() bool {
+	let rc = run_command("ffmpeg -version > /dev/null 2>&1");
+	check("V0 ffmpeg found", rc == 0, "");
+	rc == 0
+}
+fn v1() {
+	avgs.clear();
+	first_sz.clear();
+	rest_max.clear();
+	for i in cases.len {
+		let c = cases[i];
+		var name byte[>..] = [];
+		format(name, "V1 ", c.name);
+		var path byte[>..] = [];
+		format(path, work, "/video_", i, ".mp4");
+		video::keep_recon = true;
+		video::recon.clear();
+		var ok = video::start(c.w, c.h, 30, c.qp, c.gop);
+		var sum = 0.0;
+		var first = 0;
+		var rest = 0;
+		var px byte[>..] = [];
+		if ok {
+			for t in c.frames {
+				paint(c.kind, t, c.w, c.h, px);
+				if !video::add(px) {
+					ok = false;
+					break;
+				}
+				sum += video::psnr_y();
+				let fb = video::frame_bytes(t);
+				if t == 0 { first = fb; } else { rest = max(rest, fb); }
+			}
+		}
+		if ok { ok = video::save(path); }
+		var pass = false;
+		if ok { pass = ffmpeg_same(path, c.w, c.h, c.frames); }
+		let avg = sum / c.frames;
+		avgs.push(avg);
+		first_sz.push(first);
+		rest_max.push(rest);
+		var detail byte[>..] = [];
+		if pass {
+			var data byte[>..] = [];
+			var size = 0;
+			if read_file(path, data) { size = data.len; }
+			format(detail, size, " bytes, ");
+			format_flt(detail, avg, 1);
+			format(detail, " dB");
+		} else if !ok {
+			format(detail, video::error());
+		} else {
+			format(detail, last);
+		}
+		check(name, pass, detail);
+	}
+}
+fn v2() {
+	guard avgs.len >= 12 else {
+		check("V2 qp 10 quality", false, "no results");
+		return;
+	}
+	var d1 byte[>..] = [];
+	format_flt(d1, avgs[3], 1);
+	format(d1, " dB, ");
+	format_flt(d1, avgs[8], 1);
+	format(d1, " dB");
+	check("V2 qp 10 quality", avgs[3] > 44.0 && avgs[8] > 44.0, d1);
+	var d2 byte[>..] = [];
+	format_flt(d2, avgs[0], 1);
+	format(d2, " dB, ");
+	format_flt(d2, avgs[1], 1);
+	format(d2, " dB");
+	check("V2 qp 26 quality", avgs[0] > 36.0 && avgs[1] > 36.0, d2);
+	var d3 byte[>..] = [];
+	format(d3, "first ", first_sz[0], " bytes, largest later ", rest_max[0], " bytes");
+	check("V2 still frames are cheap", rest_max[0] * 10 < first_sz[0], d3);
+}
+fn v3() {
+	var n = 0;
+	if !video::start(0, 32, 30, 26, 10) { n++; }
+	if !video::start(33, 32, 30, 26, 10) { n++; }
+	if !video::start(32, 9000, 30, 26, 10) { n++; }
+	if !video::start(32, 32, 0, 26, 10) { n++; }
+	if !video::start(32, 32, 30, 26, 0) { n++; }
+	var small byte[100] = [0; 100];
+	if video::start(32, 32, 30, 26, 10) {
+		if !video::add(small) { n++; }
+	}
+	var path byte[>..] = [];
+	format(path, work, "/video_bad.mp4");
+	if video::start(32, 32, 30, 26, 10) {
+		if !video::save(path) { n++; }
+	}
+	var detail byte[>..] = [];
+	format(detail, n, " of 7 refused");
+	check("V3 bad input refused", n == 7, detail);
+}
+fn v4() {
+	let w = 1280;
+	let h = 720;
+	let frames = 30;
+	video::keep_recon = true;
+	video::recon.clear();
+	var ok = video::start(w, h, 30, 26, 30);
+	var total = 0;
+	var px byte[>..] = [];
+	if ok {
+		for t in frames {
+			paint(1, t, w, h, px);
+			let t0 = clock_ns();
+			let r = video::add(px);
+			total += clock_ns() - t0;
+			if !r {
+				ok = false;
+				break;
+			}
+		}
+	}
+	var path byte[>..] = [];
+	format(path, work, "/video_speed.mp4");
+	if ok { ok = video::save(path); }
+	var same = false;
+	if ok { same = ffmpeg_same(path, w, h, frames); }
+	let fps = if total > 0 { frames * 1.0e9 / total } else { 0.0 };
+	var detail byte[>..] = [];
+	if !ok {
+		format(detail, video::error());
+	} else {
+		var data byte[>..] = [];
+		var size = 0;
+		if read_file(path, data) { size = data.len; }
+		format_flt(detail, fps, 1);
+		format(detail, " fps, ", size / 1024, " KB");
+		if !same { format(detail, ", ", last); }
+	}
+	check("V4 speed 1280x720", same && fps > 10.0, detail);
+}
+fn main() {
+	setup_work();
+	init_cases();
+	let have = v0();
+	if have {
+		v1();
+		v2();
+		v4();
+	}
+	v3();
+	if failed { print("video: FAILED"); } else { print("video: ok"); }
+}

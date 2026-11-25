@@ -1,0 +1,17 @@
+T2 sample true
+T2 test true
+T2 random 100/100
+T2 openssl 5/5
+T2 control rejected 100/100
+T1 parse true
+T1 self-signed true
+T1 name true
+T1 key true
+T1 dates true
+T1 pkcs8 true
+T1 openssl x509 true
+T1 openssl verify true
+T1 openssl key true
+T1 openssl key loads true
+T1 control ours true
+T1 control openssl true

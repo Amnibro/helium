@@ -1,0 +1,194 @@
+import math;
+import vec;
+import os;
+import nav.mesh;
+import nav.crowd;
+var FAILS int = 0;
+let DT f32 = 1.0 / 60.0;
+fn check(ok bool, label const byte[:]) {
+	if ok {
+		print("ok ", label);
+	} else {
+		print("FAIL ", label);
+		FAILS += 1;
+	}
+}
+fn r3(x f32) real {
+	let v real = x;
+	round(v * 1000.0) / 1000.0
+}
+fn flat_len(x f32, z f32) f32 {
+	let s real = x * x + z * z;
+	sqrt(s) as f32
+}
+fn min_gap() f32 {
+	var best f32 = 1000000000.0;
+	let n = crowd::count();
+	for i in n {
+		let a = crowd::pos(i);
+		for j in i + 1..n {
+			let b = crowd::pos(j);
+			let d = flat_len(a.x - b.x, a.z - b.z);
+			if d < best { best = d; }
+		}
+	}
+	best
+}
+fn fastest() f32 {
+	var best f32 = 0.0;
+	for i in crowd::count() {
+		let v = crowd::vel(i);
+		let s = flat_len(v.x, v.z);
+		if s > best { best = s; }
+	}
+	best
+}
+fn all_arrived() bool {
+	for i in crowd::count() {
+		if !crowd::arrived(i) { return false; }
+	}
+	true
+}
+fn agent(p float3, g float3) {
+	let i = crowd::add(p, 0.3, 1.4);
+	crowd::set_goal(i, g);
+}
+fn swap(avoid bool) f32, bool {
+	nav::clear();
+	crowd::clear();
+	crowd::avoid = avoid;
+	let left = float3 { -5.0, 0.0, 0.0 };
+	let right = float3 { 5.0, 0.0, 0.0 };
+	agent(left, right);
+	agent(right, left);
+	var gap f32 = 1000000000.0;
+	for s in 900 {
+		crowd::step(DT);
+		let g = min_gap();
+		if g < gap { gap = g; }
+	}
+	return gap, all_arrived();
+}
+fn k1() {
+	let gap, done = swap(true);
+	check(gap >= 0.59 && done, "K1 head-on swap passes cleanly");
+	print("K1 gap ", r3(gap), " arrived ", done);
+	let cgap, cdone = swap(false);
+	check(cgap < 0.1, "K1 control: no avoidance collides");
+}
+fn circle(avoid bool) f32, bool, f32, float3 {
+	nav::clear();
+	crowd::clear();
+	crowd::avoid = avoid;
+	for i in 37 {
+		let a real = 2.0 * PI * (i as real) / 37.0;
+		let x = (7.0 * cos(a)) as f32;
+		let z = (7.0 * sin(a)) as f32;
+		agent(float3 { x, 0.0, z }, float3 { -x, 0.0, -z });
+	}
+	var gap f32 = 1000000000.0;
+	var fast f32 = 0.0;
+	for s in 2400 {
+		crowd::step(DT);
+		let g = min_gap();
+		if g < gap { gap = g; }
+		let f = fastest();
+		if f > fast { fast = f; }
+	}
+	var total = float3 { 0.0, 0.0, 0.0 };
+	for i in crowd::count() {
+		total = total + crowd::pos(i);
+	}
+	return gap, all_arrived(), fast, total;
+}
+fn k2() {
+	let gap, done, fast, total = circle(true);
+	check(gap >= 0.58 && done && fast <= 1.401, "K2 37-agent circle swap");
+	print("K2 gap ", r3(gap), " arrived ", done, " fastest ", r3(fast));
+	let gap2, done2, fast2, total2 = circle(true);
+	check(total == total2, "K2 same run, same result");
+	let cgap, cdone, cfast, ctotal = circle(false);
+	check(cgap < 0.3, "K2 control: no avoidance collides");
+}
+fn quad(a float3, b float3, c float3, d float3) {
+	nav::add(a, b, c);
+	nav::add(a, c, d);
+}
+fn field() {
+	nav::clear();
+	nav::radius = 0.3;
+	quad(float3 { -10.0, 0.0, -10.0 }, float3 { -10.0, 0.0, 10.0 }, float3 { 10.0, 0.0, 10.0 }, float3 { 10.0, 0.0, -10.0 });
+	quad(float3 { -1.0, 1.0, -1.0 }, float3 { -1.0, 1.0, 1.0 }, float3 { 1.0, 1.0, 1.0 }, float3 { 1.0, 1.0, -1.0 });
+	quad(float3 { 1.0, 0.0, -1.0 }, float3 { 1.0, 1.0, -1.0 }, float3 { 1.0, 1.0, 1.0 }, float3 { 1.0, 0.0, 1.0 });
+	quad(float3 { -1.0, 0.0, -1.0 }, float3 { -1.0, 0.0, 1.0 }, float3 { -1.0, 1.0, 1.0 }, float3 { -1.0, 1.0, -1.0 });
+	quad(float3 { -1.0, 0.0, 1.0 }, float3 { 1.0, 0.0, 1.0 }, float3 { 1.0, 1.0, 1.0 }, float3 { -1.0, 1.0, 1.0 });
+	quad(float3 { -1.0, 0.0, -1.0 }, float3 { -1.0, 1.0, -1.0 }, float3 { 1.0, 1.0, -1.0 }, float3 { 1.0, 0.0, -1.0 });
+	nav::build();
+}
+fn clearance(p float3) f32 {
+	var dx f32 = abs(p.x) - 1.0;
+	if dx < 0.0 { dx = 0.0; }
+	var dz f32 = abs(p.z) - 1.0;
+	if dz < 0.0 { dz = 0.0; }
+	flat_len(dx, dz)
+}
+fn around(mesh bool) f32, bool {
+	field();
+	crowd::clear();
+	crowd::avoid = true;
+	crowd::on_mesh = mesh;
+	for i in 7 {
+		let o f32 = 0.7 * (i as f32);
+		agent(float3 { -7.0, 0.0, -2.1 + o }, float3 { 7.0, 0.0, 2.1 - o });
+	}
+	var near f32 = 1000000000.0;
+	for s in 1800 {
+		crowd::step(DT);
+		for i in crowd::count() {
+			let c = clearance(crowd::pos(i));
+			if c < near { near = c; }
+		}
+	}
+	let done = all_arrived();
+	crowd::on_mesh = true;
+	return near, done;
+}
+fn k3() {
+	let near, done = around(true);
+	check(near >= 0.15 && done, "K3 routes around a box on the mesh");
+	print("K3 clearance ", r3(near), " arrived ", done);
+	let cnear, cdone = around(false);
+	check(cnear < 0.05, "K3 control: straight lines cut through the box");
+}
+fn k4() {
+	nav::clear();
+	crowd::clear();
+	crowd::avoid = true;
+	for row in 20 {
+		for col in 20 {
+			let x f32 = -19.0 + 2.0 * (col as f32);
+			let z f32 = -19.0 + 2.0 * (row as f32);
+			agent(float3 { x, 0.0, z }, float3 { -x, 0.0, -z });
+		}
+	}
+	let t0 = time_ns();
+	for s in 300 {
+		crowd::step(DT);
+	}
+	let t1 = time_ns();
+	let ms = ((t1 - t0) as real) / 1000000.0 / 300.0;
+	print("K4 ms per step ", ms);
+	check(ms < 2.0, "K4 400 agents under 2 ms a step");
+}
+fn main() {
+	k1();
+	k2();
+	k3();
+	k4();
+	if FAILS == 0 {
+		print("crowd: ok");
+	} else {
+		print("crowd: FAILED ", FAILS);
+		exit(1);
+	}
+}

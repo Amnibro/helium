@@ -1,0 +1,47 @@
+into cert.he
+lang he
+use os, crypto.x509, crypto.ecc, crypto.hash, crypto.rand
+
+A standalone program that checks the certificate writer and ECDSA signing, with OpenSSL as the outside judge, and prints one line per check. Every function listed in this paragraph already exists in the imported library modules and is called with its `crypto::` prefix: this program must not define any of them, and defines only `sh`, the helpers named in the blocks below and `main`. Library calls it uses, all in namespace `crypto` unless said otherwise; every "bytes" result is a growable byte array and every bytes argument a read-only byte slice: `hexb(text)` bytes from hex text; `random_bytes(n)`; `ec_generate(crypto::P256)` a fresh private key (32 bytes); `ec_public(crypto::P256, priv)` gives bytes and a bool, the 65-byte public point; `ecdsa_sign(crypto::P256, crypto::SHA256, priv, msg)` gives bytes and a bool, the 64-byte raw signature; `ecdsa_sign_der(crypto::P256, crypto::SHA256, priv, msg)` gives bytes and a bool, the same signature in DER; `ecdsa_verify_der(crypto::P256, crypto::SHA256, pub, msg, sig)` a bool; `x509_self_signed(name, priv, from int, days int)` gives bytes and a bool, a DER certificate valid from the unix time `from`; `x509_parse(der)` gives a `crypto::Cert` and a bool, the Cert having fields `dns` (a list of byte arrays), `kalg` (int), `kcurve` (int), `kpub` (bytes), `nb` and `na` (int unix times: not before, not after); `signed_by(a, b)` a bool, true when Cert a is signed by Cert b's key; `pkcs8_ec(priv)` gives bytes and a bool, the PKCS#8 DER of the key; `pkcs8_ec_parse(der)` gives the private key bytes and the curve as an int (0 when it cannot be read); the constants `crypto::KEY_EC` and `crypto::P256`. From os, without a namespace: `run_command(text) int` runs a shell command and returns its exit status, `write_file(path, bytes) bool`, `read_file(path, out) bool` appends the file to a growable byte array, `time()` the unix time as a real, `args()` the command-line arguments with the program name first.
+
+`sh(cmd) bool` runs the command with " >/dev/null 2>&1" added and is true when the status is 0.
+
+`main` sets up the work directory, runs the signing checks, then the certificate checks, then cleans up. The work directory is the first command-line argument when there is one, otherwise "cert_test.tmp"; create it with `mkdir -p`. All files below live in it. At the very end, when no argument was given, remove the directory with `rm -rf`.
+
+Signing checks. The key is hex C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721.
+- Print "T2 sample " and whether the raw signature of the message "sample" equals hex EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716F7CB1C942D657C41D436C7A1B6E29F65F3E900DBB9AFF4064DC4AB2F843ACDA8.
+- Print "T2 test " and whether the raw signature of the message "test" equals hex F1ABB023518351CD71D881567B1EA663ED3EFCF6C5132B354F28D3B0B7D38367019F4113742A2B14BD25926B49C649155F267E60D3814B4C0CC84250E46F0083.
+- Make a fresh key and its public point. Write its PKCS#8 form to "r.der" and have OpenSSL write the public key: `openssl pkey -inform der -in <dir>/r.der -pubout -out <dir>/r.pub`. Then 100 times: a random message of 40 bytes, its DER signature; count it as good when signing worked and the signature verifies; count it as rejected when the same signature does not verify for the message with the lowest bit of its first byte flipped. For the first 5 messages also write the message to "m.bin" and the signature to "s.bin" and count it when `openssl dgst -sha256 -verify <dir>/r.pub -signature <dir>/s.bin <dir>/m.bin` succeeds.
+- Print "T2 random " good "/100", then "T2 openssl " count "/5", then "T2 control rejected " rejected "/100".
+
+Certificate checks. Make a fresh key; `from` is the time now as an int; write a certificate for the name "amni-lan" lasting 3700 days and the key's PKCS#8 form; save them as "cert.der" and "key.der". Parse the certificate.
+- Print "T1 parse " and whether writing and parsing both worked.
+- Print "T1 self-signed " and whether the certificate is signed by itself.
+- Print "T1 name " and whether it has exactly one DNS name and that is "amni-lan".
+- Print "T1 key " and whether the key kind is EC, the curve P-256 and the public key equals the key's public point.
+- Print "T1 dates " and whether not-before equals `from` and not-after equals `from` plus 3700 days in seconds.
+- Print "T1 pkcs8 " and whether parsing the PKCS#8 bytes gives back the same private key with curve P-256.
+- Print "T1 openssl x509 " and whether `openssl x509 -inform der -in <dir>/cert.der -out <dir>/cert.pem` succeeds.
+- Print "T1 openssl verify " and whether `openssl verify -CAfile <dir>/cert.pem -verify_hostname amni-lan <dir>/cert.pem` succeeds.
+- Print "T1 openssl key " and whether `openssl pkey -inform der -in <dir>/key.der -pubout -outform der -out <dir>/k.pub` succeeds and the last 65 bytes of "k.pub" equal the public key in the parsed certificate.
+- Print "T1 openssl key loads " and whether all of this holds: `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform der -out <dir>/o.der` succeeds (OpenSSL writes the older EC private key form here, which the same parser reads), the file reads and parses as a P-256 key, `openssl pkey -inform der -in <dir>/o.der -pubout -outform der -out <dir>/o.pub` succeeds, the last 65 bytes of "o.pub" equal the public point of the parsed key, `openssl pkcs8 -topk8 -nocrypt -inform der -in <dir>/o.der -outform der -out <dir>/o8.der` succeeds, and "o8.der" reads and parses to the same private key with curve P-256.
+- Control: copy the certificate, flip the lowest bit of its last byte, save it as "bad.der". Print "T1 control ours " and whether the changed certificate still parses but is not signed by the good certificate. Print "T1 control openssl " and whether `openssl x509 -inform der -in <dir>/bad.der -out <dir>/bad.pem` succeeds and `openssl verify -CAfile <dir>/cert.pem <dir>/bad.pem` fails.
+
+expect:
+T2 sample true
+T2 test true
+T2 random 100/100
+T2 openssl 5/5
+T2 control rejected 100/100
+T1 parse true
+T1 self-signed true
+T1 name true
+T1 key true
+T1 dates true
+T1 pkcs8 true
+T1 openssl x509 true
+T1 openssl verify true
+T1 openssl key true
+T1 openssl key loads true
+T1 control ours true
+T1 control openssl true

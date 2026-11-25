@@ -5,6 +5,7 @@ use crypto.hash
 use crypto.rsa
 use crypto.ecc
 use crypto.c25519
+use crypto.rand
 X509_OK := 0
 X509_UNTRUSTED := 1
 X509_BAD_NAME := 2
@@ -190,3 +191,38 @@ x509_verify(chain const Cert[:], host const byte[:], now int, roots const Cert[:
 			if nx < 0 && k != cur && p.ca && (p.ku < 0 || p.ku & 0x400 != 0) && p.server && (p.plen < 0 || p.plen >= depth) && signed_by(c, p): nx = k
 		if nx < 0 || depth >= 8: return X509_UNTRUSTED
 		cur = nx; depth += 1
+der_tlv(tag int, body const byte[:]) byte[>..]:
+	o byte[>..] ~= [tag as! byte]; n := body.len; k := if n < 0x80 { 0 } else if n < 0x100 { 1 } else if n < 0x10000 { 2 } else { 3 }
+	if k > 0: o.push((0x80 | k) as! byte)
+	for i max(k, 1): o.push(((n >> (8 * (max(k, 1) - 1 - i))) & 255) as! byte)
+	o.append(body); o
+x509_date(t int) byte[>..]:
+	z := t / 86400 + 719468; era := z / 146097; doe := z - era * 146097; yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; doy := doe - (365 * yoe + yoe / 4 - yoe / 100); mp := (5 * doy + 2) / 153
+	d := doy - (153 * mp + 2) / 5 + 1; m := if mp < 10 { mp + 3 } else { mp - 9 }; y := yoe + era * 400 + (if m <= 2 { 1 } else { 0 }); s := t % 86400; g := y >= 2050 || y < 1950; o byte[>..] ~= []
+	v int[7] := [if g { y / 100 } else { -1 }, y % 100, m, d, s / 3600, s / 60 % 60, s % 60]
+	for x v: if x >= 0 { o.push((48 + x / 10) as! byte); o.push((48 + x % 10) as! byte) }
+	o.push('Z'); der_tlv(if g { 0x18 } else { 0x17 }, o[..])
+x509_self_signed(name const byte[:], priv const byte[:], from int, days int) byte[>..], bool:
+	e byte[>..] ~= []; pub, ok := ec_public(P256, priv)
+	if !ok: return e, false
+	alg := hexb("300a06082a8648ce3d040302"); cn ~= hexb("0603550403"); cn.append(der_tlv(0x0C, name)[..]); nm := der_tlv(0x30, der_tlv(0x31, der_tlv(0x30, cn[..])[..])[..])
+	val ~= x509_date(from); val.append(x509_date(from + days * 86400)[..]); bits byte[>..] ~= [0]; bits.append(pub[..]); sp ~= hexb("301306072a8648ce3d020106082a8648ce3d030107"); sp.append(der_tlv(3, bits[..])[..])
+	ip := ipv4(name); gn := if ip.len == 4 { der_tlv(0x87, ip[..]) } else { der_tlv(0x82, name) }; san ~= hexb("0603551d11"); san.append(der_tlv(4, der_tlv(0x30, gn[..])[..])[..])
+	ser ~= random_bytes(16); ser[0] = (ser[0] & 0x7F) | 0x40
+	tbs ~= hexb("a003020102"); tbs.append(der_tlv(2, ser[..])[..]); tbs.append(alg[..]); tbs.append(nm[..]); tbs.append(der_tlv(0x30, val[..])[..]); tbs.append(nm[..]); tbs.append(der_tlv(0x30, sp[..])[..])
+	tbs.append(der_tlv(0xA3, der_tlv(0x30, der_tlv(0x30, san[..])[..])[..])[..]); t := der_tlv(0x30, tbs[..]); sig, ok2 := ecdsa_sign_der(P256, SHA256, priv, t[..])
+	if !ok2: return e, false
+	sb byte[>..] ~= [0]; sb.append(sig[..]); c ~= copy(t); c.append(alg[..]); c.append(der_tlv(3, sb[..])[..]); return der_tlv(0x30, c[..]), true
+pkcs8_ec(priv const byte[:]) byte[>..], bool:
+	e byte[>..] ~= []; id := if priv.len == 48 { P384 } else { P256 }; pub, ok := ec_public(id, priv)
+	if !ok: return e, false
+	bits byte[>..] ~= [0]; bits.append(pub[..]); k ~= hexb("020101"); k.append(der_tlv(4, priv)[..]); k.append(der_tlv(0xA1, der_tlv(3, bits[..])[..])[..])
+	o ~= hexb(if id == P384 { "020100301006072a8648ce3d020106052b81040022" } else { "020100301306072a8648ce3d020106082a8648ce3d030107" }); o.append(der_tlv(4, der_tlv(0x30, k[..])[..])[..]); return der_tlv(0x30, o[..]), true
+pkcs8_ec_parse(d const byte[:]) byte[>..], int:
+	e byte[>..] ~= []; top := der_at(d, 0, d.len); t, ok := kids(d, top)
+	if top.tag != 0x30 || !ok || t.len < 3: return e, 0
+	sec := t[1].tag == 4 && t[2].tag == 0xA0; al, ok2 := kids(d, t[1]); sk := der_at(d, t[2].s, t[2].e); f, ok3 := kids(d, sk)
+	if !sec && (t[1].tag != 0x30 || t[2].tag != 4 || !ok2 || al.len != 2 || !oid_is(d, al[0], "2a8648ce3d0201") || sk.tag != 0x30 || !ok3 || f.len < 2 || f[1].tag != 4): return e, 0
+	k := if sec { t[1] } else { f[1] }; o := if sec { sk } else { al[1] }; id := if oid_is(d, o, "2a8648ce3d030107") { P256 } else if oid_is(d, o, "2b81040022") { P384 } else { 0 }
+	if id == 0 || k.n != (if id == P256 { 32 } else { 48 }): return e, 0
+	e.append(d[k.s..k.e]); return e, id

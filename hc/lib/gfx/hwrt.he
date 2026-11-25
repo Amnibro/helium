@@ -1,0 +1,186 @@
+namespace hwrt
+use os
+use ffi
+use lutgpu
+extern "libvulkan.so.1?" {
+	vk_ci(ci uint, a uint, o uint) i32 = "vkCreateInstance";
+	vk_di(i uint, a uint) = "vkDestroyInstance";
+	vk_epd(i uint, n uint, o uint) i32 = "vkEnumeratePhysicalDevices";
+	vk_gpp(p uint, o uint) = "vkGetPhysicalDeviceProperties";
+	vk_gpf2(p uint, o uint) = "vkGetPhysicalDeviceFeatures2";
+	vk_edep(p uint, l uint, n uint, o uint) i32 = "vkEnumerateDeviceExtensionProperties";
+	vk_gqf(p uint, n uint, o uint) = "vkGetPhysicalDeviceQueueFamilyProperties";
+	vk_gmp(p uint, o uint) = "vkGetPhysicalDeviceMemoryProperties";
+	vk_cd(p uint, ci uint, a uint, o uint) i32 = "vkCreateDevice";
+	vk_dd(d uint, a uint) = "vkDestroyDevice";
+	vk_gdq(d uint, f u32, i u32, o uint) = "vkGetDeviceQueue";
+	vk_gdpa(d uint, n uint) uint = "vkGetDeviceProcAddr";
+	vk_gbda(d uint, i uint) uint = "vkGetBufferDeviceAddress";
+	vk_cb(d uint, ci uint, a uint, o uint) i32 = "vkCreateBuffer";
+	vk_db(d uint, b uint, a uint) = "vkDestroyBuffer";
+	vk_bmr(d uint, b uint, o uint) = "vkGetBufferMemoryRequirements";
+	vk_am(d uint, ci uint, a uint, o uint) i32 = "vkAllocateMemory";
+	vk_fm(d uint, m uint, a uint) = "vkFreeMemory";
+	vk_bbm(d uint, b uint, m uint, off uint) i32 = "vkBindBufferMemory";
+	vk_mm(d uint, m uint, off uint, sz uint, f u32, o uint) i32 = "vkMapMemory";
+	vk_csm(d uint, ci uint, a uint, o uint) i32 = "vkCreateShaderModule";
+	vk_dsm(d uint, m uint, a uint) = "vkDestroyShaderModule";
+	vk_cdsl(d uint, ci uint, a uint, o uint) i32 = "vkCreateDescriptorSetLayout";
+	vk_ddsl(d uint, l uint, a uint) = "vkDestroyDescriptorSetLayout";
+	vk_cpl(d uint, ci uint, a uint, o uint) i32 = "vkCreatePipelineLayout";
+	vk_dpl(d uint, l uint, a uint) = "vkDestroyPipelineLayout";
+	vk_ccp(d uint, c uint, n u32, ci uint, a uint, o uint) i32 = "vkCreateComputePipelines";
+	vk_dp(d uint, p uint, a uint) = "vkDestroyPipeline";
+	vk_cdp(d uint, ci uint, a uint, o uint) i32 = "vkCreateDescriptorPool";
+	vk_ddp(d uint, p uint, a uint) = "vkDestroyDescriptorPool";
+	vk_ads(d uint, ci uint, o uint) i32 = "vkAllocateDescriptorSets";
+	vk_uds(d uint, n u32, w uint, c u32, cp uint) = "vkUpdateDescriptorSets";
+	vk_ccpool(d uint, ci uint, a uint, o uint) i32 = "vkCreateCommandPool";
+	vk_dcpool(d uint, p uint, a uint) = "vkDestroyCommandPool";
+	vk_acb(d uint, ci uint, o uint) i32 = "vkAllocateCommandBuffers";
+	vk_bcb(c uint, bi uint) i32 = "vkBeginCommandBuffer";
+	vk_ecb(c uint) i32 = "vkEndCommandBuffer";
+	vk_rcb(c uint, f u32) i32 = "vkResetCommandBuffer";
+	vk_cbp(c uint, bp u32, p uint) = "vkCmdBindPipeline";
+	vk_cbds(c uint, bp u32, l uint, first u32, n u32, s uint, dn u32, d uint) = "vkCmdBindDescriptorSets";
+	vk_cdis(c uint, x u32, y u32, z u32) = "vkCmdDispatch";
+	vk_cpb(c uint, s u32, d u32, f u32, mn u32, m uint, bn u32, b uint, inn u32, i uint) = "vkCmdPipelineBarrier";
+	vk_qs(q uint, n u32, s uint, f uint) i32 = "vkQueueSubmit";
+	vk_qwi(q uint) i32 = "vkQueueWaitIdle";
+}
+extern cc3(f int, a int, b int, c int) int = "!cc3"
+extern cc4(f int, a int, b int, c int, d int) int = "!cc4"
+extern cc5(f int, a int, b int, c int, d int, e int) int = "!cc5"
+var ST = 0
+var INST uint = 0
+var PHYS uint = 0
+var DEV uint = 0
+var QUEUE uint = 0
+var CPOOL uint = 0
+var CB uint = 0
+var MEMP byte[>..]
+var NAME byte[>..]
+var DTY = 0
+var FN int[>..]
+var BUF uint[>..]
+var MEM uint[>..]
+var MAP uint[>..]
+var ADR uint[>..]
+var AS uint[>..]
+var PP uint[>..]
+EXTS := ["VK_KHR_acceleration_structure", "VK_KHR_ray_query", "VK_KHR_deferred_host_operations"]
+pt(b const byte[:]) uint: ffi::ptr(b)
+ok(r int) bool: r & 0xFFFFFFFF == 0
+name() const byte[:]: NAME[..]
+is_cpu() bool: DTY == 4
+hasx(pd uint, x const byte[:]) bool:
+	n := lutgpu::zb(8); vk_edep(pd, 0, pt(n[..]), 0); c := lutgpu::g32(n[..], 0); e := lutgpu::zb(260 * c + 8); vk_edep(pd, 0, pt(n[..]), pt(e[..])); f ~= false
+	for i c: s := ffi::cstr(pt(e[..]) + (i * 260) as uint); if s[..] == x { f = true }
+	f
+feats(on bool) byte[>..]:
+	f := lutgpu::zb(336); lutgpu::p32(f, 0, 1000150013); lutgpu::p64(f, 8, pt(f[..]) + 40); lutgpu::p32(f, 40, 1000348013); lutgpu::p64(f, 48, pt(f[..]) + 64); lutgpu::p32(f, 64, 1000257000)
+	if on: lutgpu::p32(f, 16, 1); lutgpu::p32(f, 56, 1); lutgpu::p32(f, 80, 1)
+	f
+init() bool:
+	if ST != 0: return ST == 1
+	ST = 2; want byte[>..] ~= []; env("HELIUM_GPU", want); if want[..] == "off": return false
+	nm := "helium\0"; app := lutgpu::zb(48); lutgpu::p64(app, 16, pt(nm)); lutgpu::p32(app, 24, 1); lutgpu::p64(app, 32, pt(nm)); lutgpu::p32(app, 40, 1); lutgpu::p32(app, 44, 1 << 22 | 2 << 12)
+	ici := lutgpu::zb(64); lutgpu::p32(ici, 0, 1); lutgpu::p64(ici, 24, pt(app[..])); o := lutgpu::zb(8)
+	if vk_ci(pt(ici[..]), 0, pt(o[..])) != 0: return false
+	INST = lutgpu::g64(o[..], 0); nd := lutgpu::zb(8); lutgpu::p32(nd, 0, 16); ds := lutgpu::zb(128)
+	if vk_epd(INST, pt(nd[..]), pt(ds[..])) < 0: return false
+	rank := [0, 2, 3, 0, 1]; pick ~= -1; best ~= -1
+	for i lutgpu::g32(nd[..], 0):
+		pd := lutgpu::g64(ds[..], i * 8); pp := lutgpu::zb(1024); vk_gpp(pd, pt(pp[..])); ty := lutgpu::g32(pp[..], 16); f2 := lutgpu::zb(240); ch := feats(false); lutgpu::p32(f2, 0, 1000059000); lutgpu::p64(f2, 8, pt(ch[..])); vk_gpf2(pd, pt(f2[..]))
+		r := (if ty < 5 { rank[ty] } else { 0 }) + (if want[..] == "integrated" && ty == 1 { 7 } else { 0 })
+		if lutgpu::g32(pp[..], 0) >= (1 << 22 | 2 << 12) && hasx(pd, EXTS[0]) && hasx(pd, EXTS[1]) && hasx(pd, EXTS[2]) && lutgpu::g32(ch[..], 16) == 1 && lutgpu::g32(ch[..], 56) == 1 && lutgpu::g32(ch[..], 80) == 1 && r > best: pick = i; best = r
+	if pick < 0: return false
+	PHYS = lutgpu::g64(ds[..], pick * 8); nq := lutgpu::zb(8); lutgpu::p32(nq, 0, 16); qf := lutgpu::zb(24 * 16); vk_gqf(PHYS, pt(nq[..]), pt(qf[..])); qfam ~= -1
+	for i lutgpu::g32(nq[..], 0): if qfam < 0 && lutgpu::g32(qf[..], i * 24) & 2 != 0 { qfam = i }
+	if qfam < 0: return false
+	pr := lutgpu::zb(4); lutgpu::p32(pr, 0, 0x3F800000); qci := lutgpu::zb(40); lutgpu::p32(qci, 0, 2); lutgpu::p32(qci, 20, qfam); lutgpu::p32(qci, 24, 1); lutgpu::p64(qci, 32, pt(pr[..]))
+	xs := lutgpu::zb(24); xn byte[>..] ~= []; for x EXTS { xn.append(x); xn.push(0) } q ~= 0; for x, i EXTS { lutgpu::p64(xs, i * 8, pt(xn[..]) + q as uint); q += x.len + 1 }
+	en := feats(true); dci := lutgpu::zb(72); lutgpu::p32(dci, 0, 3); lutgpu::p64(dci, 8, pt(en[..])); lutgpu::p32(dci, 20, 1); lutgpu::p64(dci, 24, pt(qci[..])); lutgpu::p32(dci, 48, 3); lutgpu::p64(dci, 56, pt(xs[..]))
+	if vk_cd(PHYS, pt(dci[..]), 0, pt(o[..])) != 0: return false
+	DEV = lutgpu::g64(o[..], 0); MEMP = lutgpu::zb(520); vk_gmp(PHYS, pt(MEMP[..])); vk_gdq(DEV, qfam as u32, 0, pt(o[..])); QUEUE = lutgpu::g64(o[..], 0)
+	pp := lutgpu::zb(1024); vk_gpp(PHYS, pt(pp[..])); NAME = ffi::cstr(pt(pp[..]) + 20); DTY = lutgpu::g32(pp[..], 16)
+	for f ["vkGetAccelerationStructureBuildSizesKHR\0", "vkCreateAccelerationStructureKHR\0", "vkCmdBuildAccelerationStructuresKHR\0", "vkGetAccelerationStructureDeviceAddressKHR\0", "vkDestroyAccelerationStructureKHR\0"]: FN.push(vk_gdpa(DEV, pt(f)) as! int)
+	cpci := lutgpu::zb(24); lutgpu::p32(cpci, 0, 39); lutgpu::p32(cpci, 16, 2); lutgpu::p32(cpci, 20, qfam); if vk_ccpool(DEV, pt(cpci[..]), 0, pt(o[..])) != 0 { return false } CPOOL = lutgpu::g64(o[..], 0)
+	cbi := lutgpu::zb(32); lutgpu::p32(cbi, 0, 40); lutgpu::p64(cbi, 16, CPOOL); lutgpu::p32(cbi, 28, 1); if vk_acb(DEV, pt(cbi[..]), pt(o[..])) != 0 { return false } CB = lutgpu::g64(o[..], 0)
+	ST = 1; true
+begin() bool: vk_rcb(CB, 0); bgi := lutgpu::zb(32); lutgpu::p32(bgi, 0, 42); lutgpu::p32(bgi, 16, 1); vk_bcb(CB, pt(bgi[..])) == 0
+bar(s int, d int, sa int, da int): mb := lutgpu::zb(24); lutgpu::p32(mb, 0, 46); lutgpu::p32(mb, 16, sa); lutgpu::p32(mb, 20, da); vk_cpb(CB, s as u32, d as u32, 0, 1, pt(mb[..]), 0, 0, 0, 0)
+submit() bool: cbl := lutgpu::zb(8); lutgpu::p64(cbl, 0, CB); si := lutgpu::zb(72); lutgpu::p32(si, 0, 4); lutgpu::p32(si, 40, 1); lutgpu::p64(si, 48, pt(cbl[..])); vk_ecb(CB) == 0 && vk_qs(QUEUE, 1, pt(si[..]), 0) == 0 && vk_qwi(QUEUE) == 0
+mtype(bits int, wants const int[:]) int:
+	t ~= -1
+	for w wants: for i lutgpu::g32(MEMP[..], 0) { if t < 0 && bits & (1 << i) != 0 && lutgpu::g32(MEMP[..], 4 + i * 8) & w == w { t = i } }
+	t
+buf(size int, use int, local bool) int:
+	bci := lutgpu::zb(56); lutgpu::p32(bci, 0, 12); lutgpu::p64(bci, 24, max(size, 16) as uint); lutgpu::p32(bci, 32, use | 0x20000); o := lutgpu::zb(8)
+	if vk_cb(DEV, pt(bci[..]), 0, pt(o[..])) != 0: return -1
+	b := lutgpu::g64(o[..], 0); rq := lutgpu::zb(24); vk_bmr(DEV, b, pt(rq[..])); t := mtype(lutgpu::g32(rq[..], 16), if local { [1, 0] } else { [7, 6] })
+	fi := lutgpu::zb(24); lutgpu::p32(fi, 0, 1000060000); lutgpu::p32(fi, 16, 2); mai := lutgpu::zb(32); lutgpu::p32(mai, 0, 5); lutgpu::p64(mai, 8, pt(fi[..])); lutgpu::p64(mai, 16, lutgpu::g64(rq[..], 0)); lutgpu::p32(mai, 24, t)
+	if t < 0 || vk_am(DEV, pt(mai[..]), 0, pt(o[..])) != 0: vk_db(DEV, b, 0); return -1
+	m := lutgpu::g64(o[..], 0); mp := lutgpu::zb(8); vk_bbm(DEV, b, m, 0)
+	if lutgpu::g32(MEMP[..], 4 + t * 8) & 6 == 6: vk_mm(DEV, m, 0, lutgpu::g64(rq[..], 0), 0, pt(mp[..]))
+	ai := lutgpu::zb(24); lutgpu::p32(ai, 0, 1000244001); lutgpu::p64(ai, 16, b)
+	BUF.push(b); MEM.push(m); MAP.push(lutgpu::g64(mp[..], 0)); ADR.push(vk_gbda(DEV, pt(ai[..]))); BUF.len - 1
+drop(b int): if BUF[b] != 0 { vk_db(DEV, BUF[b], 0); vk_fm(DEV, MEM[b], 0); BUF[b] = 0; MEM[b] = 0; MAP[b] = 0 }
+put<T>(b int, d const T[:]): ffi::write(MAP[b], bytes_of(d))
+get<T>(b int, d T[:]): ffi::read(MAP[b], bytes_of(d))
+asbuild(ty int, geo const byte[:], count int) uint:
+	gi := lutgpu::zb(80); lutgpu::p32(gi, 0, 1000150000); lutgpu::p32(gi, 16, ty); lutgpu::p32(gi, 20, 4); lutgpu::p32(gi, 48, 1); lutgpu::p64(gi, 56, pt(geo))
+	mc := lutgpu::zb(4); lutgpu::p32(mc, 0, count); sz := lutgpu::zb(40); lutgpu::p32(sz, 0, 1000150020)
+	cc5(FN[0], DEV as! int, 1, pt(gi[..]) as! int, pt(mc[..]) as! int, pt(sz[..]) as! int)
+	sb := buf(lutgpu::g64(sz[..], 16) as! int, 0x100000, true); sc := buf(lutgpu::g64(sz[..], 32) as! int + 256, 0x20, true)
+	if sb < 0 || sc < 0: return 0
+	ci := lutgpu::zb(64); lutgpu::p32(ci, 0, 1000150017); lutgpu::p64(ci, 24, BUF[sb]); lutgpu::p64(ci, 40, lutgpu::g64(sz[..], 16)); lutgpu::p32(ci, 48, ty); o := lutgpu::zb(8)
+	if !ok(cc4(FN[1], DEV as! int, pt(ci[..]) as! int, 0, pt(o[..]) as! int)): return 0
+	a := lutgpu::g64(o[..], 0); AS.push(a); lutgpu::p64(gi, 40, a); lutgpu::p64(gi, 72, (ADR[sc] + 255) & ~(255 as uint))
+	rg := lutgpu::zb(16); lutgpu::p32(rg, 0, count); rp := lutgpu::zb(8); lutgpu::p64(rp, 0, pt(rg[..]))
+	if !begin(): return 0
+	cc4(FN[2], CB as! int, 1, pt(gi[..]) as! int, pt(rp[..]) as! int); bar(0x2000000, 0x2000800, 0x400000, 0x200020)
+	good := submit(); drop(sc); if good { a } else { 0 }
+scene(tris const f32[:], boxes const f32[:], opaque bool) bool:
+	if !init(): return false
+	n := tris.len / 9; vb := buf(tris.len * 4, 0x80020, false); if vb < 0 { return false } put(vb, tris)
+	g := lutgpu::zb(96); lutgpu::p32(g, 0, 1000150006); lutgpu::p32(g, 24, 1000150005); lutgpu::p32(g, 40, 106); lutgpu::p64(g, 48, ADR[vb]); lutgpu::p64(g, 56, 12); lutgpu::p32(g, 64, n * 3 - 1); lutgpu::p32(g, 68, 1000165000); lutgpu::p32(g, 88, if opaque { 1 } else { 0 })
+	bl := asbuild(1, g[..], n); drop(vb); if bl == 0 { return false }
+	nb := boxes.len / 6; bb ~= 0 as uint
+	if nb > 0: xb := buf(boxes.len * 4, 0x80020, false); if xb < 0 { return false } put(xb, boxes); ga := lutgpu::zb(96); lutgpu::p32(ga, 0, 1000150006); lutgpu::p32(ga, 16, 1); lutgpu::p32(ga, 24, 1000150003); lutgpu::p64(ga, 40, ADR[xb]); lutgpu::p64(ga, 48, 24); lutgpu::p32(ga, 88, 1); bb = asbuild(1, ga[..], nb); drop(xb); if bb == 0 { return false }
+	ni := if nb > 0 { 2 } else { 1 }; ins := lutgpu::zb(64 * ni)
+	for k ni: o := k * 64; ai := lutgpu::zb(24); lutgpu::p32(ai, 0, 1000150002); lutgpu::p64(ai, 16, if k == 0 { bl } else { bb }); lutgpu::p32(ins, o, 0x3F800000); lutgpu::p32(ins, o + 20, 0x3F800000); lutgpu::p32(ins, o + 40, 0x3F800000); lutgpu::p32(ins, o + 48, 0xFF << 24); lutgpu::p32(ins, o + 52, 1 << 24); lutgpu::p64(ins, o + 56, cc3(FN[3], DEV as! int, pt(ai[..]) as! int, 0) as! uint)
+	ib := buf(64 * ni, 0x80000, false); if ib < 0 { return false } put(ib, ins[..])
+	g2 := lutgpu::zb(96); lutgpu::p32(g2, 0, 1000150006); lutgpu::p32(g2, 16, 2); lutgpu::p32(g2, 24, 1000150004); lutgpu::p64(g2, 48, ADR[ib]); lutgpu::p32(g2, 88, if opaque { 1 } else { 0 })
+	tl := asbuild(0, g2[..], ni); drop(ib); tl != 0
+pipe(blob const byte[:], nb int) int:
+	if !init(): return -1
+	spv := if blob.len >= 68 && blob[..4] == "GSHD" { blob[lutgpu::g32(blob, 32)..lutgpu::g32(blob, 32) + lutgpu::g32(blob, 36)] } else { blob }
+	o := lutgpu::zb(8); sc byte[>..] ~= []; sc.append(spv); smi := lutgpu::zb(40); lutgpu::p32(smi, 0, 16); lutgpu::p64(smi, 24, spv.len as uint); lutgpu::p64(smi, 32, pt(sc[..]))
+	if vk_csm(DEV, pt(smi[..]), 0, pt(o[..])) != 0: return -1
+	sm := lutgpu::g64(o[..], 0); bd := lutgpu::zb(24 * (nb + 1))
+	for k nb + 1: lutgpu::p32(bd, k * 24, k); lutgpu::p32(bd, k * 24 + 4, if k == 0 { 1000150000 } else { 7 }); lutgpu::p32(bd, k * 24 + 8, 1); lutgpu::p32(bd, k * 24 + 12, 0x20)
+	dli := lutgpu::zb(32); lutgpu::p32(dli, 0, 32); lutgpu::p32(dli, 20, nb + 1); lutgpu::p64(dli, 24, pt(bd[..])); if vk_cdsl(DEV, pt(dli[..]), 0, pt(o[..])) != 0 { return -1 } dsl := lutgpu::g64(o[..], 0)
+	sl := lutgpu::zb(8); lutgpu::p64(sl, 0, dsl); pli := lutgpu::zb(48); lutgpu::p32(pli, 0, 30); lutgpu::p32(pli, 20, 1); lutgpu::p64(pli, 24, pt(sl[..])); if vk_cpl(DEV, pt(pli[..]), 0, pt(o[..])) != 0 { return -1 } pl := lutgpu::g64(o[..], 0)
+	en := "main\0"; cpi := lutgpu::zb(96); lutgpu::p32(cpi, 0, 29); lutgpu::p32(cpi, 24, 18); lutgpu::p32(cpi, 44, 0x20); lutgpu::p64(cpi, 48, sm); lutgpu::p64(cpi, 56, pt(en)); lutgpu::p64(cpi, 72, pl); lutgpu::p32(cpi, 88, -1)
+	if vk_ccp(DEV, 0, 1, pt(cpi[..]), 0, pt(o[..])) != 0: return -1
+	pi := lutgpu::g64(o[..], 0); ps := lutgpu::zb(16); lutgpu::p32(ps, 0, 1000150000); lutgpu::p32(ps, 4, 1); lutgpu::p32(ps, 8, 7); lutgpu::p32(ps, 12, max(nb, 1))
+	dpi := lutgpu::zb(40); lutgpu::p32(dpi, 0, 33); lutgpu::p32(dpi, 20, 1); lutgpu::p32(dpi, 24, 2); lutgpu::p64(dpi, 32, pt(ps[..])); if vk_cdp(DEV, pt(dpi[..]), 0, pt(o[..])) != 0 { return -1 } dp := lutgpu::g64(o[..], 0)
+	dai := lutgpu::zb(40); lutgpu::p32(dai, 0, 34); lutgpu::p64(dai, 16, dp); lutgpu::p32(dai, 24, 1); lutgpu::p64(dai, 32, pt(sl[..])); if vk_ads(DEV, pt(dai[..]), pt(o[..])) != 0 { return -1 }
+	PP.append([sm, dsl, pl, pi, dp, lutgpu::g64(o[..], 0), nb as uint]); PP.len / 7 - 1
+run(p int, bufs const int[:], gx int, gy int, gz int) bool:
+	b := p * 7; ds := PP[b + 5]; nb := PP[b + 6] as! int
+	al := lutgpu::zb(8); lutgpu::p64(al, 0, AS[AS.len - 1]); wa := lutgpu::zb(32); lutgpu::p32(wa, 0, 1000150007); lutgpu::p32(wa, 16, 1); lutgpu::p64(wa, 24, pt(al[..]))
+	bi := lutgpu::zb(24 * nb + 8); for k nb { lutgpu::p64(bi, k * 24, BUF[bufs[k]]); lutgpu::p64(bi, k * 24 + 16, ~(0 as uint)) }
+	w := lutgpu::zb(64 * (nb + 1))
+	for k nb + 1: o := k * 64; lutgpu::p32(w, o, 35); lutgpu::p64(w, o + 16, ds); lutgpu::p32(w, o + 24, k); lutgpu::p32(w, o + 32, 1); lutgpu::p32(w, o + 36, if k == 0 { 1000150000 } else { 7 }); if k == 0 { lutgpu::p64(w, o + 8, pt(wa[..])) } else { lutgpu::p64(w, o + 48, pt(bi[..]) + ((k - 1) * 24) as uint) }
+	vk_uds(DEV, (nb + 1) as u32, pt(w[..]), 0, 0)
+	if !begin(): return false
+	dl := lutgpu::zb(8); lutgpu::p64(dl, 0, ds); vk_cbp(CB, 1, PP[b + 3]); vk_cbds(CB, 1, PP[b + 2], 0, 1, pt(dl[..]), 0, 0); vk_cdis(CB, gx as u32, gy as u32, gz as u32); bar(0x800, 0x4800, 0x40, 0x2060)
+	submit()
+done():
+	if ST != 1: return
+	for k PP.len / 7: b := k * 7; vk_ddp(DEV, PP[b + 4], 0); vk_dp(DEV, PP[b + 3], 0); vk_dpl(DEV, PP[b + 2], 0); vk_ddsl(DEV, PP[b + 1], 0); vk_dsm(DEV, PP[b], 0)
+	for a AS: cc3(FN[4], DEV as! int, a as! int, 0)
+	for b BUF.len: drop(b)
+	vk_dcpool(DEV, CPOOL, 0); vk_dd(DEV, 0); vk_di(INST, 0); PP.clear(); AS.clear(); BUF.clear(); MEM.clear(); MAP.clear(); ADR.clear(); FN.clear(); ST = 0

@@ -1,0 +1,7 @@
+namespace rules;
+struct Dice { sides int }
+enum Coin { Heads, Tails }
+fn score(d Dice&) int { d.sides * 7 }
+fn score(c Coin) int { match c { Heads => 1, Tails => 2 } }
+fn label(d Dice&) const byte[:] { "dice" }
+fn bonus(d Dice&) int { 70 }

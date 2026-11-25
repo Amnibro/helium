@@ -1,0 +1,8 @@
+// error: (inside retain,
+struct S { name byte[], n int }
+fn main() {
+	var xs S[>..] = [];
+	xs.push(S { name: "a", n: 1 });
+	xs.retain() { it.n > 0 };
+	print(xs.len, "\n");
+}

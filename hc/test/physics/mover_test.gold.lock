@@ -1,0 +1,290 @@
+=== 40e2efa411c552e6
+import math;
+import vec;
+import os;
+import physics;
+import physics.mover;
+var FAILS int = 0;
+let DT f32 = 1.0 / 60.0;
+fn check(ok bool, label const byte[:]) {
+	if ok {
+		print("ok ", label);
+	} else {
+		print("FAIL ", label);
+		FAILS += 1;
+	}
+}
+fn r3(x f32) real {
+	round((x as real) * 1000.0) / 1000.0
+}
+=== 7a78856c408ae0aa
+fn yaw(a f32) physics::Quat {
+	let h = (a as real) * 0.5;
+	physics::Quat { x: 0.0, y: sin(h) as f32, z: 0.0, w: cos(h) as f32 }
+}
+fn roll(a f32) physics::Quat {
+	let h = (a as real) * 0.5;
+	physics::Quat { x: 0.0, y: 0.0, z: sin(h) as f32, w: cos(h) as f32 }
+}
+fn no_turn() physics::Quat {
+	physics::Quat { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+}
+fn box(w physics::World&, center float3, half float3, q physics::Quat, category u64) {
+	let body = physics::create_body(w, physics::default_body_def());
+	var sd = physics::default_shape_def();
+	sd.filter.category_bits = category;
+	physics::create_box_shape(body, sd, half, physics::Transform { p: center, q: q });
+}
+fn floor(w physics::World&) {
+	box(w, float3 { x: 0.0, y: -0.5, z: 0.0 }, float3 { x: 50.0, y: 0.5, z: 50.0 }, no_turn(), 1);
+}
+fn world() physics::World {
+	physics::create_world(physics::default_world_def())
+}
+fn run(w physics::World&, m mover::Mover&, wish float3, n int) {
+	for i in n {
+		mover::step(w, m, wish, false, DT);
+	}
+}
+=== 64fb3fd179cee0cb
+fn c1() {
+	var w = world();
+	floor(w);
+	var m = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	let wish = float3 { x: 1.0, y: 0.0, z: 0.0 };
+	var held = true;
+	var high f32 = 0.0;
+	for i in 180 {
+		mover::step(w, m, wish, false, DT);
+		if i >= 12 && !m.grounded { held = false; }
+		high = max(high, abs(m.pos.y));
+	}
+	let speed = sqrt((m.vel.x * m.vel.x + m.vel.z * m.vel.z) as real) as f32;
+	let top = m.s.max_speed;
+	print("C1 grounded=", held, " max |y|=", r3(high), " speed=", r3(speed));
+	check(held && high < 0.01 && abs(speed - top) <= top * 0.02, "C1 flat walk");
+	physics::destroy(w);
+	var w2 = world();
+	floor(w2);
+	var s = mover::settings();
+	s.filter.mask_bits = 0;
+	var blind = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, s);
+	run(w2, blind, wish, 180);
+	print("C1 control y=", r3(blind.pos.y));
+	check(blind.pos.y < -1.0, "C1 control: blind mover falls");
+	physics::destroy(w2);
+}
+=== -3e80f59fc110cf38
+fn c2() {
+	var w = world();
+	floor(w);
+	box(w, float3 { x: 3.0, y: 2.0, z: 0.0 }, float3 { x: 0.1, y: 2.0, z: 5.0 }, no_turn(), 1);
+	var m = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	let wish = float3 { x: 1.0, y: 0.0, z: 0.0 };
+	var far f32 = 0.0;
+	for i in 180 {
+		mover::step(w, m, wish, false, DT);
+		far = max(far, m.pos.x);
+	}
+	let stop = 2.9 - m.s.radius;
+	print("C2 x=", r3(m.pos.x), " max x=", r3(far), " vx=", r3(m.vel.x));
+	check(m.pos.x <= stop && m.pos.x >= stop - 0.03 && far <= stop + 0.005 && abs(m.vel.x) < 0.05, "C2 wall stops");
+	physics::destroy(w);
+	var w2 = world();
+	floor(w2);
+	box(w2, float3 { x: 3.0, y: 2.0, z: 0.0 }, float3 { x: 0.1, y: 2.0, z: 5.0 }, no_turn(), 2);
+	var s = mover::settings();
+	s.filter.mask_bits = 0xFFFFFFFFFFFFFFFD;
+	var unseen = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, s);
+	run(w2, unseen, wish, 180);
+	print("C2 control x=", r3(unseen.pos.x));
+	check(unseen.pos.x > 5.0, "C2 control: unseen wall is walked through");
+	physics::destroy(w2);
+}
+=== 73ccb35e904dbe0d
+fn c3() {
+	var w = world();
+	floor(w);
+	box(w, float3 { x: 3.0, y: 2.0, z: 0.0 }, float3 { x: 0.1, y: 2.0, z: 7.0 }, yaw((PI / 4.0) as f32), 1);
+	var m = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	let wish = float3 { x: 1.0, y: 0.0, z: 0.0 };
+	let k f32 = 0.70710677;
+	let fx = 3.0 - 0.1 * k;
+	let fy f32 = 2.0;
+	let fz = 0.1 * k;
+	var near f32 = 1000.0;
+	for i in 120 {
+		mover::step(w, m, wish, false, DT);
+		let d = (m.pos.x - fx) * (0.0 - k) + (m.pos.y - fy) * 0.0 + (m.pos.z - fz) * k;
+		near = min(near, d);
+	}
+	let along = m.vel.x * k + m.vel.z * k;
+	print("C3 speed along=", r3(along), " min distance=", r3(near));
+	check(along >= 0.6 * m.s.max_speed && near >= m.s.radius - 0.01, "C3 slides along a 45 degree wall");
+	physics::destroy(w);
+}
+=== -18cc9cac0f2ba76
+fn step_box(w physics::World&, top f32) {
+	box(w, float3 { x: 14.5, y: top / 2.0, z: 0.0 }, float3 { x: 12.5, y: top / 2.0, z: 5.0 }, no_turn(), 1);
+}
+fn c4() {
+	var w = world();
+	floor(w);
+	step_box(w, 0.3);
+	var m = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	let wish = float3 { x: 1.0, y: 0.0, z: 0.0 };
+	run(w, m, wish, 180);
+	print("C4 x=", r3(m.pos.x), " y=", r3(m.pos.y));
+	check(m.pos.x > 4.0 && abs(m.pos.y - 0.3) < 0.01, "C4 climbs a 0.3 step");
+	physics::destroy(w);
+	var w2 = world();
+	floor(w2);
+	step_box(w2, 0.5);
+	var blocked = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	run(w2, blocked, wish, 180);
+	print("C4 control x=", r3(blocked.pos.x), " y=", r3(blocked.pos.y));
+	check(blocked.pos.x < 2.0 && blocked.pos.y < 0.01, "C4 control: 0.5 step blocks");
+	physics::destroy(w2);
+}
+=== 449db3315748d800
+fn ramp(w physics::World&, a f32) {
+	let sa = sin(a as real) as f32;
+	let ca = cos(a as real) as f32;
+	box(w, float3 { x: 1.0 + 5.0 * ca + 0.1 * sa, y: 5.0 * sa - 0.1 * ca, z: 0.0 }, float3 { x: 5.0, y: 0.1, z: 5.0 }, roll(a), 1);
+}
+fn c5() {
+	let gentle = (PI / 6.0) as f32;
+	let steep = (PI / 3.0) as f32;
+	let wish = float3 { x: 1.0, y: 0.0, z: 0.0 };
+	var w = world();
+	floor(w);
+	ramp(w, gentle);
+	var m = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	run(w, m, wish, 90);
+	let want = (m.pos.x - 1.0) * (tan(PI / 6.0) as f32);
+	print("C5 grounded=", m.grounded, " x=", r3(m.pos.x), " y=", r3(m.pos.y));
+	check(m.grounded && m.pos.y > 1.7 && abs(m.pos.y - want) < 0.05, "C5 walks up 30 degrees");
+	physics::destroy(w);
+	var w2 = world();
+	floor(w2);
+	ramp(w2, steep);
+	var refused = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	var high f32 = 0.0;
+	for i in 180 {
+		mover::step(w2, refused, wish, false, DT);
+		high = max(high, refused.pos.y);
+	}
+	print("C5 60 degrees max y=", r3(high));
+	check(high < 0.45, "C5 refuses 60 degrees");
+	physics::destroy(w2);
+	var w3 = world();
+	floor(w3);
+	ramp(w3, steep);
+	var s = mover::settings();
+	s.max_slope = 1.5;
+	var climber = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, s);
+	var climbed f32 = 0.0;
+	for i in 180 {
+		mover::step(w3, climber, wish, false, DT);
+		climbed = max(climbed, climber.pos.y);
+	}
+	print("C5 control max y=", r3(climbed));
+	check(climbed > 1.0, "C5 control: steep allowed climbs");
+	physics::destroy(w3);
+}
+=== -3bd8f67f5b8fafc
+fn c6() {
+	var w = world();
+	floor(w);
+	var m = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	let still = float3 { x: 0.0, y: 0.0, z: 0.0 };
+	var apex f32 = 0.0;
+	var landed = -1;
+	run(w, m, still, 12);
+	for i in 121 {
+		mover::step(w, m, still, i == 0, DT);
+		if m.pos.y > apex {
+			apex = m.pos.y;
+			landed = -1;
+		} else if landed < 0 && m.grounded && m.pos.y < apex {
+			landed = i + 1;
+		}
+	}
+	let v = m.s.jump_speed;
+	let g = m.s.gravity;
+	let want = v * v / (2.0 * g);
+	let limit = (2.0 * v / g + 0.2) / DT;
+	print("C6 apex=", r3(apex), " expected=", r3(want));
+	check(abs(apex - want) <= want * 0.05 && landed >= 0 && (landed as f32) <= limit && abs(m.pos.y) < 0.01, "C6 jump arc");
+	physics::destroy(w);
+}
+=== -72b5671dcf9313bc
+fn c7() {
+	var w = world();
+	floor(w);
+	var m = mover::new(float3 { x: 0.0, y: 37.0, z: 0.0 }, mover::settings());
+	let still = float3 { x: 0.0, y: 0.0, z: 0.0 };
+	var low f32 = 37.0;
+	for i in 300 {
+		mover::step(w, m, still, false, DT);
+		low = min(low, m.pos.y);
+	}
+	print("C7 min y=", r3(low), " y=", r3(m.pos.y), " grounded=", m.grounded);
+	check(low >= -0.01 && m.grounded && abs(m.pos.y) < 0.01, "C7 37 m fall lands");
+	physics::destroy(w);
+}
+=== -142c9be28d004897
+struct Walker { pos float3, vel float3, grounded bool, ground_normal float3 }
+fn c8() {
+	var w = world();
+	floor(w);
+	for i in 100 {
+		let x = -17.0 + 3.4 * ((i % 10) as f32);
+		let z = -17.0 + 3.4 * ((i / 10) as f32);
+		box(w, float3 { x: x, y: 0.5, z: z }, float3 { x: 0.5, y: 0.5, z: 0.5 }, no_turn(), 1);
+	}
+	var m = mover::new(float3 { x: 0.0, y: 0.0, z: 0.0 }, mover::settings());
+	var crowd Walker[>..] = [];
+	for i in 77 {
+		let x = -16.0 + 0.43 * (i as f32);
+		crowd.push(Walker { pos: float3 { x: x, y: 0.0, z: 1.7 }, vel: m.vel, grounded: m.grounded, ground_normal: m.ground_normal });
+	}
+	let start = time_ns();
+	for r in 600 {
+		for &k, i in crowd {
+			let angle = 0.01 * (r as real) + (i as real);
+			let wish = float3 { x: cos(angle) as f32, y: 0.0, z: sin(angle) as f32 };
+			m.pos = k.pos;
+			m.vel = k.vel;
+			m.grounded = k.grounded;
+			m.ground_normal = k.ground_normal;
+			mover::step(w, m, wish, false, DT);
+			k.pos = m.pos;
+			k.vel = m.vel;
+			k.grounded = m.grounded;
+			k.ground_normal = m.ground_normal;
+		}
+	}
+	let total = time_ns() - start;
+	let us = (total as real) / ((77 * 600) as real) / 1000.0;
+	print("C8 us per mover step=", us);
+	check(us < 50.0, "C8 under 50 us per mover step");
+	physics::destroy(w);
+}
+=== 124c09016bb5b9b5
+fn main() {
+	c1();
+	c2();
+	c3();
+	c4();
+	c5();
+	c6();
+	c7();
+	c8();
+	if FAILS == 0 {
+		print("mover: ok");
+	} else {
+		print("mover: FAILED ", FAILS);
+		exit(1);
+	}
+}

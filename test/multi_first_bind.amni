@@ -1,0 +1,8 @@
+struct H { name byte[>..], n int }
+fn mk(n int) H, bool { var h = H { name: [], n: n }; h.name.append("hdr"); return h, n > 1; }
+fn two(n int) byte[>..], byte[>..] { var a byte[>..] = []; var b byte[>..] = []; for i in n { a.push('x'); b.push('y'); } return a, b; }
+fn main() {
+	var t = 0;
+	for i in 1000 { let h, _ = mk(i); t += h.n + h.name.len; let a, _ = two(i % 7); t += a.len; }
+	print(t, "\n");
+}

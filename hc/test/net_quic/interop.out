@@ -1,0 +1,3 @@
+Q10 openssl echo true
+Q10 curl control stream true
+Q10 control other name true

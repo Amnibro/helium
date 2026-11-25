@@ -47,7 +47,7 @@ extern exp(x f32) f32 = "hr_expf"
 extern log(x f32) f32 = "hr_logf"
 extern log2(x f32) f32 = "hr_log2f"
 extern log10(x f32) f32 = "hr_log10f"
-fabs(x real) real: if x <= 0.0 { 0.0 - x } else { x }
+fabs(x real) real: std_from_bits(std_bits(x) & 0x7fffffffffffffff)
 extern tanh(x real) real = "hr_tanh"
 extern sinh(x real) real = "hr_sinh"
 extern cosh(x real) real = "hr_cosh"

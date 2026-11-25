@@ -1,0 +1,16 @@
+#version 460
+#extension GL_EXT_ray_query : require
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+layout(std430, set = 0, binding = 2) buffer Acc { vec4 acc[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Par { vec4 par[]; };
+layout(std430, set = 0, binding = 4) readonly buffer Nodes { vec4 bvh_nodes[]; };
+layout(std430, set = 0, binding = 5) readonly buffer Tris { vec4 bvh_tris[]; };
+layout(std430, set = 0, binding = 6) readonly buffer Irr { vec4 probe_irr[]; };
+layout(std430, set = 0, binding = 7) readonly buffer Dist { vec2 probe_dist[]; };
+#include "../../../lib/gfx/shaders/gi.glsl"
+float trace(vec3 o, vec3 d, float tmax, out int prim) { return gi_any(o, d, tmax, false, prim); }
+bool vis(vec3 o, vec3 d, float tmax) { return gi_visible(o, d, tmax); }
+vec3 tri_n(int p) { return normalize(cross(bvh_tris[p * 4 + 1].xyz, bvh_tris[p * 4 + 2].xyz)); }
+vec3 tri_al(int p) { return bvh_tris[p * 4 + 3].xyz; }
+#include "cornell_pt.glsl"

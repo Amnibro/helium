@@ -1,0 +1,300 @@
+import os;
+import math;
+import gfx.obj;
+import gfx.cloth;
+import gfx.garment;
+import gfx.soak;
+var GP f32[>..];
+var GN f32[>..];
+var GI u32[>..];
+var SP f32[>..];
+var SI u32[>..];
+var U real = 1.0;
+var reach bool[>..];
+fn hit(ox real, oy real, oz real, P const f32[:], I const u32[:]) bool {
+	let nt = I.len / 3;
+	for k in nt {
+		let a = I[k * 3] as int;
+		let b = I[k * 3 + 1] as int;
+		let c = I[k * 3 + 2] as int;
+		let v0x real = P[a * 3];
+		let v0y real = P[a * 3 + 1];
+		let v0z real = P[a * 3 + 2];
+		let e1x real = (P[b * 3] as real) - v0x;
+		let e1y real = (P[b * 3 + 1] as real) - v0y;
+		let e1z real = (P[b * 3 + 2] as real) - v0z;
+		let e2x real = (P[c * 3] as real) - v0x;
+		let e2y real = (P[c * 3 + 1] as real) - v0y;
+		let e2z real = (P[c * 3 + 2] as real) - v0z;
+		let hx = e2z;
+		let hy = 0.0;
+		let hz = 0.0 - e2x;
+		let det = e1x * hx + e1y * hy + e1z * hz;
+		if abs(det) < 1e-20 { continue; }
+		let inv = 1.0 / det;
+		let sx = ox - v0x;
+		let sy = oy - v0y;
+		let sz = oz - v0z;
+		let u = inv * (sx * hx + sy * hy + sz * hz);
+		if u < 0.0 || u > 1.0 { continue; }
+		let qx = sy * e1z - sz * e1y;
+		let qy = sz * e1x - sx * e1z;
+		let qz = sx * e1y - sy * e1x;
+		let v = inv * qy;
+		if v < 0.0 || u + v > 1.0 { continue; }
+		let t = inv * (e2x * qx + e2y * qy + e2z * qz);
+		if t > 1e-9 { return true; }
+	}
+	false
+}
+fn rays(stride int) {
+	let n = GP.len / 3;
+	reach.clear();
+	reach.resize(n, false);
+	var v = 0;
+	while v < n {
+		let nx real = GN[v * 3];
+		let ny real = GN[v * 3 + 1];
+		let nz real = GN[v * 3 + 2];
+		if ny > 0.0 {
+			let px real = GP[v * 3];
+			let py real = GP[v * 3 + 1];
+			let pz real = GP[v * 3 + 2];
+			let ox = px + nx * 0.001 / U;
+			let oy = py + ny * 0.001 / U;
+			let oz = pz + nz * 0.001 / U;
+			reach[v] = !hit(ox, oy, oz, GP, GI) && !hit(ox, oy, oz, SP, SI);
+		}
+		v += stride;
+	}
+}
+fn agree(stride int) real, real {
+	let n = GP.len / 3;
+	var total = 0;
+	var same = 0;
+	var up = 0;
+	var blocked = 0;
+	var v = 0;
+	while v < n {
+		total += 1;
+		let o = soak::open[v] > 0.0;
+		if o == reach[v] { same += 1; }
+		let ny real = GN[v * 3 + 1];
+		if ny > 0.0 {
+			up += 1;
+			if !reach[v] { blocked += 1; }
+		}
+		v += stride;
+	}
+	return (same as real) / (max(total, 1) as real), (blocked as real) / (max(up, 1) as real);
+}
+fn prep(tol_cells real) {
+	let n = GP.len / 3;
+	var lx = 1e30;
+	var ly = 1e30;
+	var lz = 1e30;
+	var hx = -1e30;
+	var hy = -1e30;
+	var hz = -1e30;
+	for v in n {
+		let x real = GP[v * 3];
+		let y real = GP[v * 3 + 1];
+		let z real = GP[v * 3 + 2];
+		lx = min(lx, x);
+		ly = min(ly, y);
+		lz = min(lz, z);
+		hx = max(hx, x);
+		hy = max(hy, y);
+		hz = max(hz, z);
+	}
+	let g = 0.05 / U;
+	soak::setup(GP, GI, 1.0);
+	soak::rain_map(0.0, -1.0, 0.0, lx - g, ly - g, lz - g, hx + g, hy + g, hz + g, 0.004 / U);
+	soak::occlude(GP, GI);
+	soak::occlude(SP, SI);
+	soak::expose(GP, GN, tol_cells * 0.001 / U);
+}
+fn soak_all() {
+	for i in soak::wet.len { soak::wet[i] = 1.0; }
+}
+fn run(seconds real, rate real, dry real, wick real) {
+	let n = round(seconds * 30.0) as int;
+	for i in n { soak::step(1.0 / 30.0, rate, dry, wick); }
+}
+fn water() real, real, real {
+	let n = soak::rep.len;
+	var seen bool[>..] = [];
+	seen.resize(n, false);
+	var total = 0.0;
+	var cnt = 0;
+	var ysum = 0.0;
+	for v in n {
+		let r = soak::rep[v];
+		if seen[r] { continue; }
+		seen[r] = true;
+		let w real = soak::wet[v];
+		let y real = GP[v * 3 + 1];
+		total += w;
+		if w > 0.05 { cnt += 1; }
+		ysum += w * y;
+	}
+	let ym = if total == 0.0 { 0.0 } else { ysum / total * U };
+	return total, cnt as real, ym;
+}
+fn patch() {
+	let n = GP.len / 3;
+	var lo = 1e30;
+	var hi = -1e30;
+	for v in n {
+		let y real = GP[v * 3 + 1];
+		lo = min(lo, y);
+		hi = max(hi, y);
+	}
+	let my = (lo + hi) / 2.0;
+	let tol = 0.02 / U;
+	var mz = -1e30;
+	for v in n {
+		let x real = GP[v * 3];
+		let y real = GP[v * 3 + 1];
+		let z real = GP[v * 3 + 2];
+		if abs(x) <= tol && abs(y - my) <= tol { mz = max(mz, z); }
+	}
+	let rad = 0.03 / U;
+	for v in n {
+		let x real = GP[v * 3];
+		let y real = GP[v * 3 + 1] - my;
+		let z real = GP[v * 3 + 2] - mz;
+		let d = sqrt(x * x + y * y + z * z);
+		soak::wet[v] = if d <= rad { 1.0 } else { 0.0 };
+	}
+}
+fn verdict(b bool) const byte[:] {
+	if b { "ok" } else { "FAIL" }
+}
+fn share_up(stride int) real {
+	let n = GP.len / 3;
+	var total = 0;
+	var hot = 0;
+	var v = 0;
+	while v < n {
+		if reach[v] {
+			total += 1;
+			let w real = soak::wet[v];
+			if w > 0.5 { hot += 1; }
+		}
+		v += stride;
+	}
+	(hot as real) / (max(total, 1) as real)
+}
+fn share_down() real {
+	let n = GP.len / 3;
+	var total = 0;
+	var hot = 0;
+	for v in n {
+		let ny real = GN[v * 3 + 1];
+		if ny < -0.5 {
+			total += 1;
+			let w real = soak::wet[v];
+			if w > 0.5 { hot += 1; }
+		}
+	}
+	(hot as real) / (max(total, 1) as real)
+}
+fn wet_zero() {
+	for i in soak::wet.len { soak::wet[i] = 0.0; }
+}
+fn main() {
+	let argv = args();
+	var path const byte[:] = "hc/test/gfx/fixtures/mh_tights.obj";
+	if argv.len > 1 { path = argv[1]; }
+	if !obj::load(path) {
+		print("soak: no fixture");
+		return;
+	}
+	var joints f32[>..] = [];
+	fn jp(name const byte[:]) {
+		let cx, cy, cz = obj::centroid(name);
+		joints.push(cx as f32);
+		joints.push(cy as f32);
+		joints.push(cz as f32);
+	}
+	jp("joint-pelvis");
+	jp("joint-spine-2");
+	jp("joint-spine-1");
+	jp("joint-neck");
+	jp("joint-l-shoulder");
+	jp("joint-l-elbow");
+	jp("joint-l-hand");
+	jp("joint-r-shoulder");
+	jp("joint-r-elbow");
+	jp("joint-r-hand");
+	var shell int[>..] = [];
+	obj::tris_of("helper-tights", shell);
+	SP.clear();
+	SP.append(obj::V);
+	SI.clear();
+	for t in shell { SI.push(t as u32); }
+	var s = garment::spec();
+	s.fine = 2;
+	garment::make(obj::V, shell, joints, s);
+	garment::drape(240);
+	GP.clear();
+	GP.append(garment::pos);
+	GN.clear();
+	GN.append(garment::nrm);
+	GI.clear();
+	GI.append(garment::body);
+	GI.append(garment::rib);
+	U = s.unit;
+	var allok = true;
+	let t0 = clock();
+	prep(1.0);
+	let tp = clock() - t0;
+	rays(37);
+	let a, blocked = agree(37);
+	var ok1 = a >= 0.97 && blocked >= 0.1;
+	prep(1e12);
+	let ac, ab = agree(37);
+	ok1 = ok1 && ac <= 0.9;
+	prep(1.0);
+	print("S1 rain map: agree ", a, " blocked ", blocked, " control ", ac, " ", verdict(ok1));
+	allok = allok && ok1;
+	soak_all();
+	run(log(2.0) / 0.01, 0.0, 0.01, 0.0);
+	let m = soak::mean();
+	soak_all();
+	run(log(2.0) / 0.01, 0.0, 0.02, 0.0);
+	let mc = soak::mean();
+	let ok2 = abs(m - 0.5) <= 0.01 && abs(mc - 0.5) > 0.1;
+	print("S2 drying: mean ", m, " control ", mc, " ", verdict(ok2));
+	allok = allok && ok2;
+	patch();
+	let w0, n0, y0 = water();
+	run(10.0, 0.0, 0.0, 2.0);
+	let w1, n1, y1 = water();
+	soak::setup(GP, GI, 0.0);
+	patch();
+	run(10.0, 0.0, 0.0, 2.0);
+	let w2, n2, y2 = water();
+	prep(1.0);
+	let ok3 = abs(w1 / w0 - 1.0) <= 0.01 && n1 >= 2.0 * n0 && (y0 - y1) >= 3.0 * max(y0 - y2, 1e-6);
+	print("S3 wicking: water ", w1, " over ", w0, ", area ", n0, " to ", n1, ", drop with fall ", y0 - y1, " without ", y0 - y2, " ", verdict(ok3));
+	allok = allok && ok3;
+	wet_zero();
+	run(60.0, 0.2, 0.002, 0.05);
+	let r = share_up(37);
+	let d = share_down();
+	wet_zero();
+	run(60.0, 0.2, 0.002, 5.0);
+	let dc = share_down();
+	let ok4 = r >= 0.9 && d <= 0.2 && dc > 0.2;
+	print("S4 shelter: reached ", r, " down ", d, " control ", dc, " ", verdict(ok4));
+	allok = allok && ok4;
+	let t1 = clock();
+	run(1.0 / 30.0, 0.2, 0.002, 0.05);
+	let ts = clock() - t1;
+	let ok5 = tp <= 0.5 && ts <= 0.007;
+	print("S5 cost: prep ", tp, " s step ", ts, " s ", verdict(ok5));
+	allok = allok && ok5;
+	if allok { print("soak: ok"); } else { print("soak: FAILED"); }
+}

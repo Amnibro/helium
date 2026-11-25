@@ -252,6 +252,25 @@ thru_ref(e int) bool:
 		t := at(c)
 		if t > 0 && TY[t].k == TY_REF: return true
 	false
+vseq_msg(d int, b int) byte[>..]:
+	op := if b == B_PUSH { "push" } else if b == B_APPEND { "append" } else if b == B_POP { "pop" } else if b == B_CLEAR { "clear" } else if b == B_RESIZE { "resize" } else { "pop_n" }
+	m byte[>..] ~= []
+	format(m, op, " on ", tn(d), " is not supported yet: its elements have variable size")
+	if !is_res(d): format(m, " and the array is not growable (rewrite: build a growable ", tn(TY[d].a as int), "[>..] local with push, then store copy(local) in the ", tn(d), " field)")
+	m
+lost_w(e int) int:
+	c ~= e
+	while ND[c].k as int == N_DOT || ND[c].k as int == N_IDX:
+		c = ND[c].a as int
+		t := at(c)
+		if t > 0 && (TY[t].k == TY_REF || TY[t].k == TY_SLICE || TY[t].k == TY_ARR && is_grow(t)): return -1
+	if ND[c].k as int != N_ID || rk(c) != R_LOCAL || CFN < 0: return -1
+	v := rv(c)
+	l := LVS[v]
+	if l.fl & LV_PARAM == 0 || l.fl & LV_VAR != 0 || l.cfn != CFN as i32 || FI_[CFN].ret as int != T_VOID: return -1
+	k := TY[l.ty].k
+	if (k == TY_STRUCT || k == TY_ARR) && is_fixed(l.ty as int): return v
+	-1
 is_construct(n int) bool:
 	k := ND[n].k; k == N_CALL || k == N_ARR || k == N_STR
 recursive commit(n int, t int):
@@ -1116,7 +1135,8 @@ recursive ck_vdecl(n int):
 				if TY[t].k == TY_VOID: cerr(init, "this expression has no value (the call returns nothing), so there is nothing to bind"); return
 				if pysl(t) && FILES[TK[ND[n].t].f].py: pywrap(init, "pyown"); ck(init, -1); t = default_t(init)
 				if intloc(n, init, t) && !(t == T_U8 && ND[init].k as int == N_IDX && FILES[TK[ND[n].t].f].py): conv(init, T_I64); t = T_I64
-				if TY[t].k == TY_MULTI: t = TYL[TY[t].l] as int
+				if TY[t].k == TY_MULTI && TY[t].n > 1: m byte[>..] ~= []; format(m, "this call returns ", TY[t].n, " values but one name binds it, which would keep only the first (rewrite: name every value, using _ for the ones to drop: a, _ := f(...))"); cerr(init, m); return
+				if TY[t].k == TY_MULTI: t = m1(init, t); if TY[t].k == TY_MULTI { t = TYL[TY[t].l] as int }
 				if TY[t].k == TY_VARIANT && ND[init].k == N_DOT && lf & LV_VAR != 0: t = t_enum(TY[t].a as int, false); set_cv(init, t)
 				if fl & V_PYCOPY != 0 && TY[t].k == TY_REF && TY[t].c < 0 && TY[t].fl & RF_OPT == 0 && !has_rel(TY[t].a as int): t = TY[t].a as int; conv(init, t)
 				if byref || ND[init].k == N_UN && ND[init].op as int == T_AND:
@@ -1155,14 +1175,17 @@ recursive ck_assign(n int):
 	tt := ck(x.a, -1)
 	d := deref(tt)
 	if o == T_PLUSEQ && x.c >= 0 && TY[d].k == TY_ARR && is_grow(d): ND[n] = ND[x.c]; cstmt(n); return
+	lw := if ND[x.a].k as int == N_DOT || ND[x.a].k as int == N_IDX { lost_w(x.a) } else { -1 }
+	if lw >= 0: m byte[>..] ~= []; format(m, "this write is lost: ", nm(LVS[lw].name as int), " is a by-value parameter, a copy of the caller's ", tn(LVS[lw].ty as int), ", and ", nm(FI_[CFN].name as int), " returns nothing (take it by reference, ", nm(LVS[lw].name as int), " ", tn(LVS[lw].ty as int), "&, or write var ", nm(LVS[lw].name as int), " for a deliberate local copy)"); cerr(n, m[..]); return
 	if o == T_ASSIGN:
 		if pend_local(x.a): rt := ck(x.b, -1); dr := deref(rt); if TY[dr].k == TY_ARR || TY[dr].k == TY_SLICE { complete(x.a, TY[dr].a) } conv(x.b, deref(at(x.a))); return
 		if TY[tt].k == TY_REF && is_opt(tt):
 			rt := ck(x.b, tt)
 			if TY[rt].k == TY_NULL: commit(x.b, tt); return
 			if TY[rt].k == TY_REF: conv(x.b, tt); return
-		if ND[x.a].k as int == N_DOT && !is_fixed(d) && TY[d].k != TY_REF && TY[d].k != TY_SLICE && !(TY[d].k == TY_ARR && is_grow(d)) && thru_ref(x.a): m byte[>..] ~= []; format(m, "cannot assign field ", nm(ND[x.a].s as int), " through a reference: it is stored inline with a variable size (", tn(d), "), so only the variable that owns the struct can replace it; make the field growable (T[>..]) or build and return a new struct"); cerr(n, m[..]); return
+		if ND[x.a].k as int == N_DOT && !is_fixed(d) && TY[d].k != TY_REF && TY[d].k != TY_SLICE && !(TY[d].k == TY_ARR && is_grow(d)) && thru_ref(x.a): m byte[>..] ~= []; format(m, "cannot assign field ", nm(ND[x.a].s as int), " through a reference: it is stored inline with a variable size (", tn(d), "), so only the variable that owns the struct can replace it (rewrite: assign its fields one by one, where growable T[>..] fields can be replaced whole, as ", nm(ND[x.a].s as int), ".f = copy(src.f); returning a new struct only helps if every caller stores it)"); cerr(n, m[..]); return
 		if d == T_U8 && ND[x.b].k as int == N_CALL && ND[x.b].n == 1 && ND[ND[x.b].a].k as int == N_ID && ND[ND[x.b].a].s == NAME_STR && py1(kid(x.b, 0)): ND[x.b] = ND[kid(x.b, 0)]
+		if ND[x.a].k as int == N_ID && TY[tt].k == TY_REF && hvimg(d): m byte[>..] ~= []; format(m, "cannot replace ", nm(ND[x.a].s as int), " through a reference: a ", tn(d), " holds immutable arrays that live in this call's memory or inline in the caller's struct, so the caller would see freed or overlapping memory (rewrite: return the new value instead, as fn f(..) T, or make the arrays growable, T[>..])"); cerr(n, m[..])
 		ck(x.b, d); conv(x.b, d)
 		return
 	if (TY[d].k == TY_STRUCT || TY[d].k == TY_ARR) && !FILES[TK[x.t].f].he && o != T_ASSIGN:

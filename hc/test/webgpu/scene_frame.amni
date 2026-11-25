@@ -4,6 +4,7 @@ import gfx.gltf;
 import gfx.scene3d;
 import gfx.shapes;
 import gfx.fx;
+import gfx.cloth;
 fn num(s const byte[:]) f32 {
 	var v real = 0.0;
 	var neg = false;
@@ -105,9 +106,14 @@ fn main() {
 	s3d::rt_shadows = gi;
 	s3d::gi_updates_per_frame = 8;
 	if arg_count() > 13 && arg_of(13)[..] == "rtr" { s3d::rt_reflect = true; }
+	if arg_count() > 13 && arg_of(13)[..] == "sss" { var skin = shapes::material(linalg::v3(0.9, 0.72, 0.62), 0.0, 0.5); skin.shading = 1; skin.shade_a = gltf::shade_preset(1, 0); skin.shade_b = gltf::shade_preset(1, 1); skin.shade_c = gltf::shade_preset(1, 2); skin.shade_c.y = 0.7; skin.shade_c.z = 0.35; s3d::sss_on = true; s3d::place(s3d::add(shapes::sphere(0.1, 48, 24, skin)), gfx::translate(float3 { 1.409, 1.448, 2.908 })); }
+	if arg_count() > 13 && arg_of(13)[..] == "cloth" { var cm = shapes::material(linalg::v3(0.2, 0.35, 0.8), 0.0, 0.8); cm.double_sided = true; cm.shading = 3; cm.shade_a = float4 { 0.25, 0.3, 0.3, 0.0 }; cm.shade_c = float4 { 0.7, 28.0, 3.0, 0.5 }; let ca = shapes::sheet(33, float3 { 0.6, 1.5, 0.9 }, float3 { 1.0, 0.0, 0.0 }, float3 { 0.0, -1.0, 0.0 }, cm); let ck = s3d::add_cloth(ca); let _ = s3d::add(ca); for i in 33 { cloth::pin(s3d::cloths[ck].c, i, 0.6 + i as real / 32.0, 1.5, 0.9); } cloth::ball(1.1, 0.9, 1.25, 0.25); s3d::place(s3d::add(shapes::sphere(0.25, 32, 16, shapes::material(linalg::v3(0.7, 0.2, 0.2), 0.0, 0.5))), gfx::translate(float3 { 1.1, 0.9, 1.25 })); for s in 90 { s3d::step_cloth(ck, 1.0 / 60.0, float3 { 0.0, 0.0, 3.0 }); } }
 	if arg_count() > 13 && arg_of(13)[..] == "meshlet" { s3d::meshlets = true; s3d::place(s3d::add(shapes::sphere(0.5, 128, 64, shapes::material(linalg::v3(0.2, 0.7, 0.3), 0.0, 0.7))), gfx::translate(float3 { 1.1, 0.5, 0.9 })); }
 	if arg_count() > 13 && arg_of(13)[..] == "taa" { s3d::temporal = 1; s3d::ao_mode = 1; }
 	s3d::init(w, h);
+	if arg_count() > 13 && arg_of(13)[..] == "fog" { s3d::fog_on = true; s3d::fog_density = 0.08; s3d::fog_falloff = 0.0; s3d::fog_far = 20.0; s3d::fog_steps = 48; s3d::fog_lights = 8.0; s3d::fog_ambient = float3 { 0.1, 0.11, 0.13 }; s3d::fog_noise = 1.0; s3d::fog_noise_size = 4.0; s3d::fog_volumes.push(s3d::FogVolume { pos: float3 { 0.0, 0.4, 0.0 }, half: float3 { 2.0, 0.5, 2.0 }, density: 0.7, rgb: float3 { 0.6, 0.8, 1.0 }, soft: 0.7, round: true }); s3d::add_spot(float3 { 2.0, 3.0, 1.5 }, float3 { 0.0, 0.4, 0.0 }, float3 { 60.0, 52.0, 40.0 }, 9.0, 0.35, true); }
+	if arg_count() > 13 && arg_of(13)[..] == "sea" { let a = shapes::sea(7.0, 65); gltf::materials[gltf::materials.len - 1].shade_c.w = 1.0; s3d::place(s3d::add(a), gfx::translate(float3 { 0.0, 0.35, 0.0 })); s3d::world_time = 1.5; }
+	if arg_count() > 13 && arg_of(13)[..] == "clouds" { s3d::atmosphere(float3 { 0.7071, 0.5657, -0.4243 }, 3.5, 1.0, 0.0); s3d::clouds = s3d::Clouds { on: true, cover: 0.7 }; }
 	let out = gfx::render_target(w, h, gfx::RGBA8);
 	for k in if gi || sg { 7 } else if e2 { 3 } else { 2 } {
 		if e8 { s3d::place(it, gfx::translate(float3 { 0.04 * k as f32, 0.0, 0.0 })); }
@@ -116,6 +122,6 @@ fn main() {
 	let mcam, mall, mlost = s3d::meshlet_stats();
 	var son = 0;
 	for s in s3d::streams { if s.on { son += 1; } }
-	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " e2 ", e2, " compressed textures ", s3d::tex_encoded, " streamed textures ", son, " meshlet triangles ", mcam, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
+	print("scene_frame: ", model[..], " ", w, "x", h, " gi ", gi, " e3 ", e3, " e8 ", e8, " e2 ", e2, " compressed textures ", s3d::tex_encoded, " streamed textures ", son, " meshlet triangles ", mcam, " skin pass ", s3d::sss_ran, " saved ", gfx::save_png(out, out_path[..]), " on ", gfx::driver()[..]);
 	gfx::close();
 }

@@ -53,6 +53,24 @@ HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/rt/bvh_check.amni" > "$O/bv
 grep -q "^bvh: ok$" "$O/bvh_check.txt" || { say "gfxtest: FAILED: BVH vs brute-force ray check"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/meshlet_check.amni" > "$O/meshlet_check.txt" 2>&1; cat "$O/meshlet_check.txt"; cat "$O/meshlet_check.txt" >> "$RES"
 grep -q "^meshlet: ok$" "$O/meshlet_check.txt" || { say "gfxtest: FAILED: meshlet builder checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/cloth_check.amni" > "$O/cloth_check.txt" 2>&1; cat "$O/cloth_check.txt"; cat "$O/cloth_check.txt" >> "$RES"
+grep -q "^cloth: ok$" "$O/cloth_check.txt" || { say "gfxtest: FAILED: cloth solver checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/garment_check.amni" > "$O/garment_check.txt" 2>&1; cat "$O/garment_check.txt"; cat "$O/garment_check.txt" >> "$RES"
+grep -q "^garment: ok$" "$O/garment_check.txt" || { say "gfxtest: FAILED: garment bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/garment_follow_check.amni" > "$O/garment_follow_check.txt" 2>&1; cat "$O/garment_follow_check.txt"; cat "$O/garment_follow_check.txt" >> "$RES"
+grep -q "^follow: ok$" "$O/garment_follow_check.txt" || { say "gfxtest: FAILED: garment follow bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/meshopt_check.amni" "$R/hc/test/gfx/fixtures/meshopt_cases.bin" > "$O/meshopt_check.txt" 2>&1; cat "$O/meshopt_check.txt"; cat "$O/meshopt_check.txt" >> "$RES"
+grep -q "^meshopt: ok$" "$O/meshopt_check.txt" || { say "gfxtest: FAILED: meshopt decoder checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/draco_check.amni" "$R/hc/test/gfx/fixtures/draco_cases.bin" > "$O/draco_check.txt" 2>&1; cat "$O/draco_check.txt"; cat "$O/draco_check.txt" >> "$RES"
+grep -q "^draco: ok$" "$O/draco_check.txt" || { say "gfxtest: FAILED: draco decoder checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/webp_check.amni" "$R/hc/test/gfx/fixtures/webp_cases.bin" > "$O/webp_check.txt" 2>&1; cat "$O/webp_check.txt"; cat "$O/webp_check.txt" >> "$RES"
+grep -q "^webp: ok$" "$O/webp_check.txt" || { say "gfxtest: FAILED: webp decoder checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/video_check.amni" "$O" > "$O/video_check.txt" 2>&1; cat "$O/video_check.txt"; cat "$O/video_check.txt" >> "$RES"
+grep -q "^video: ok$" "$O/video_check.txt" || { say "gfxtest: FAILED: video encoder checks"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/soak_check.amni" > "$O/soak_check.txt" 2>&1; cat "$O/soak_check.txt"; cat "$O/soak_check.txt" >> "$RES"
+grep -q "^soak: ok$" "$O/soak_check.txt" || { say "gfxtest: FAILED: wet fabric bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/locks_check.amni" > "$O/locks_check.txt" 2>&1; cat "$O/locks_check.txt"; cat "$O/locks_check.txt" >> "$RES"
+grep -q "^locks: ok$" "$O/locks_check.txt" || { say "gfxtest: FAILED: card lock bars"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" run "$R/hc/test/gfx/gi/cornell_pt.amni" mask > "$T/gi_mask.txt" 2> "$T/gi_mask.err" || { say "gfxtest: FAILED: cornell_pt mask"; tail -n 5 "$T/gi_mask.err"; exit 1; }
 [ "$(wc -l < "$T/gi_mask.txt")" = 16384 ] || { say "gfxtest: FAILED: cornell_pt mask is not 128 x 128"; exit 1; }
 HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gfx_smoke.amni" -o "$T/gs" > "$T/build.txt" 2>&1 || { echo "gfxtest: build failed"; grep -av "W[0-9]" "$T/build.txt" | tail -n 5; exit 1; }
@@ -67,6 +85,29 @@ cp "$T/all.txt" "$O/gfx_smoke.txt" 2>/dev/null; cat "$T/all.txt" >> "$RES" 2>/de
 [ $rc = 0 ] || { echo "gfxtest: run failed"; tail -n 5 "$T/all.txt" "$T/err.txt"; exit 1; }
 grep -av "^gpu:" "$T/all.txt" > "$T/cpu.txt"
 cmp -s "$T/cpu.txt" "$R/hc/test/gfx/gfx_smoke.out" || { echo "gfxtest: CPU output differs"; diff "$T/cpu.txt" "$R/hc/test/gfx/gfx_smoke.out"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/soak_look.amni" -o "$T/sl" > "$T/sl_build.txt" 2>&1 || { echo "gfxtest: soak_look build failed"; grep -av "W[0-9]" "$T/sl_build.txt" | tail -n 5; exit 1; }
+"${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$T/sl" > "$O/soak_look.txt" 2>&1; cat "$O/soak_look.txt"; cat "$O/soak_look.txt" >> "$RES"
+grep -q "^soak look: \(ok\|skipped\)$" "$O/soak_look.txt" || { say "gfxtest: FAILED: wet fabric look (S6)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/locks_look.amni" -o "$T/ll" > "$T/ll_build.txt" 2>&1 || { echo "gfxtest: locks_look build failed"; grep -av "W[0-9]" "$T/ll_build.txt" | tail -n 5; exit 1; }
+"${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$T/ll" > "$O/locks_look.txt" 2>&1; cat "$O/locks_look.txt"; cat "$O/locks_look.txt" >> "$RES"
+grep -q "^locks look: \(ok\|skipped\)$" "$O/locks_look.txt" || { say "gfxtest: FAILED: card lock look (L5, L6)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/rt/rq_check.he" -o "$T/rq" > "$T/rq_build.txt" 2>&1 || { echo "gfxtest: rq_check build failed"; grep -av "W[0-9]" "$T/rq_build.txt" | tail -n 5; exit 1; }
+"${L[@]}" "$T/rq" > "$O/rq_check.txt" 2>&1; cat "$O/rq_check.txt"; cat "$O/rq_check.txt" >> "$RES"
+grep -q "^rq: \(ok\|skipped\)" "$O/rq_check.txt" || { say "gfxtest: FAILED: hardware ray query (R1)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/gi/cornell_hw.he" -o "$T/chw" > "$T/chw_build.txt" 2>&1 || { echo "gfxtest: cornell_hw build failed"; grep -av "W[0-9]" "$T/chw_build.txt" | tail -n 5; exit 1; }
+zcat "$R/hc/test/gfx/gi/cornell_ref.txt.gz" > "$T/cornell_ref.txt"
+"${L[@]}" "$T/chw" "$T/cornell_ref.txt" > "$O/cornell_hw.txt" 2>&1; cat "$O/cornell_hw.txt"; cat "$O/cornell_hw.txt" >> "$RES"
+grep -q "^hwrt cornell: \(ok\|skipped\)" "$O/cornell_hw.txt" || { say "gfxtest: FAILED: hardware ray tracing reference (R2-R5, P3)"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "$H" build "$R/hc/test/gfx/pt/pt_check.he" -o "$T/ptc" > "$T/ptc_build.txt" 2>&1 || { echo "gfxtest: pt_check build failed"; grep -av "W[0-9]" "$T/ptc_build.txt" | tail -n 5; exit 1; }
+"${L[@]}" "$T/ptc" "$R/hc/lib/gfx/shaders/ms_lut.glsl" > "$O/pt_check.txt" 2>&1; cat "$O/pt_check.txt"; cat "$O/pt_check.txt" >> "$RES"
+grep -q "^pathtrace: \(ok\|skipped\)" "$O/pt_check.txt" || { say "gfxtest: FAILED: path tracer (P1, P2, P4-P12)"; exit 1; }
+if [ "${GFX_REQUIRE_GPU:-0}" = 1 ] && grep -q "skipped" "$O/rq_check.txt" "$O/cornell_hw.txt" "$O/pt_check.txt"; then say "gfxtest: FAILED: no ray-query device (GFX_REQUIRE_GPU=1)"; exit 1; fi
+HC_LIB=${HC_LIB:-$R/hc/lib} "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$H" run "$R/hc/test/gfx/local_shadow_check.amni" > "$O/local_shadow_check.txt" 2>&1; grep -av "^WARNING" "$O/local_shadow_check.txt"; cat "$O/local_shadow_check.txt" >> "$RES"
+grep -q "^local: ok$" "$O/local_shadow_check.txt" || { say "gfxtest: FAILED: local shadow atlas bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$H" run "$R/hc/test/gfx/gi_dynamic_check.amni" > "$O/gi_dynamic_check.txt" 2>&1; grep -av "^WARNING" "$O/gi_dynamic_check.txt"; cat "$O/gi_dynamic_check.txt" >> "$RES"
+grep -q "^gi dynamic: ok$" "$O/gi_dynamic_check.txt" || { say "gfxtest: FAILED: dynamic GI bars"; exit 1; }
+HC_LIB=${HC_LIB:-$R/hc/lib} "${L[@]}" env GFX_MS_LUT="$R/hc/lib/gfx/shaders/ms_lut.glsl" "$H" run "$R/hc/test/gfx/impostor_check.amni" "$O" > "$O/impostor_check.txt" 2>&1; grep -av "^WARNING" "$O/impostor_check.txt"; cat "$O/impostor_check.txt" >> "$RES"
+grep -q "^impostor: \(ok\|skipped\)$" "$O/impostor_check.txt" || { say "gfxtest: FAILED: impostor bars (I1-I5)"; exit 1; }
 grep -a "^gpu:" "$T/all.txt"; g=$(grep -a "^gpu: \(ok\|skipped\|FAILED\)" "$T/all.txt")
 case "$g" in
 	"gpu: ok"*) say "gfxtest: ok";;

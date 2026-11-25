@@ -1335,14 +1335,14 @@ find_dup(src const float3[:], i int, cs f32, tol f32, mp dictionary<u64, int>&, 
 	for dx 3:
 		for dy 3:
 			for dz 3:
-				h := dat(mp, ckey(bx + dx - 1, by + dy - 1, bz + dz - 1))
+				h := probe(mp, ckey(bx + dx - 1, by + dy - 1, bz + dz - 1))
 				if h >= 0:
 					n ~= mp.vals[h]
 					while n >= 0:
 						o := src[nv[n]]
 						if fabs(v.x - o.x) <= tol && fabs(v.y - o.y) <= tol && fabs(v.z - o.z) <= tol: return nv[n]
 						n = nn[n]
-	k := ckey(bx, by, bz); h := dat(mp, k)
+	k := ckey(bx, by, bz); h := probe(mp, k)
 	if h >= 0 { nv.push(i); nn.push(mp.vals[h]); mp.vals[h] = nv.len - 1 } else { insert(mp, k, nv.len); nv.push(i); nn.push(-1) }
 	-1
 weld_verts(src const float3[:], ix const int[:], tol f32, dv float3[>..]&, di int[>..]&):
@@ -1416,7 +1416,7 @@ ident_edges(m MeshD&):
 		t := m.t[i]; v1 := m.v[t.i1]; ns.push(nrm(cross(m.v[t.i2] - v1, m.v[t.i3] - v1)))
 		es.push(MEdge{min(t.i1, t.i2), max(t.i1, t.i2), i, -1, 1, 0, 255}); es.push(MEdge{min(t.i2, t.i3), max(t.i2, t.i3), i, -1, 1, 1, 255}); es.push(MEdge{min(t.i3, t.i1), max(t.i3, t.i1), i, -1, 1, 2, 255})
 	for i es.len:
-		e := es[i]; k := ((e.v1 as! u64) << 32) | (e.v2 as! u64); h := dat(mp, k)
+		e := es[i]; k := ((e.v1 as! u64) << 32) | (e.v2 as! u64); h := probe(mp, k)
 		if h < 0 { insert(mp, k, i) } else { o := mp.vals[h]; if es[o].n == 1 { es[o].t2 = e.t1; es[o].e2 = e.e1 } es[o].n += 1 }
 	for e es:
 		if e.n == 2:
@@ -2510,15 +2510,16 @@ solve_sph(w World&, j JointSim&, ub bool):
 		if ln > mx: ni = sv(mx / ln, ni)
 		d := ni - p.mi; p.mi = ni; wa = wa - mv(ia, d); wb = wb + mv(ib, d)
 	if p.tl && !j.fixed:
-		an := twist_angle_q(rq); tj := p.tj; k := lim_coef(an - p.lta, ub, j.cs, w.ctx.inv_h); oi := p.lti
-		di := -k.y * p.twm * (dot(wb - wa, tj) + k.x) - k.z * oi; p.lti = fmax(oi + di, 0.0); d1 := p.lti - oi
+		ca := rot(qa, AX_Z); ta := rot(qb, AX_Z); t2 := fsqrt((rq.x * rq.x + rq.y * rq.y) / (rq.z * rq.z + rq.w * rq.w)); tj := madd(ca, t2, cross(nrm(cross(ca, ta)), ca)); kt := dot(tj, mv(madd3(ia, ib), tj)); twm := if kt > 0.0 { 1.0 / kt } else { 0.0 }; p.tj = tj; p.twm = twm
+		an := twist_angle_q(rq); k := lim_coef(an - p.lta, ub, j.cs, w.ctx.inv_h); oi := p.lti
+		di := -k.y * twm * (dot(wb - wa, tj) + k.x) - k.z * oi; p.lti = fmax(oi + di, 0.0); d1 := p.lti - oi
 		wa = msub(wa, d1, mv(ia, tj)); wb = madd(wb, d1, mv(ib, tj))
 		k2 := lim_coef(p.uta - an, ub, j.cs, w.ctx.inv_h); oi2 := p.uti
-		di2 := -k2.y * p.twm * (dot(wa - wb, tj) + k2.x) - k2.z * oi2; p.uti = fmax(oi2 + di2, 0.0); d2 := p.uti - oi2
+		di2 := -k2.y * twm * (dot(wa - wb, tj) + k2.x) - k2.z * oi2; p.uti = fmax(oi2 + di2, 0.0); d2 := p.uti - oi2
 		wa = madd(wa, d2, mv(ia, tj)); wb = msub(wb, d2, mv(ib, tj))
 	if p.cl && !j.fixed:
-		sa := p.sax; k := lim_coef(p.cone - swing_angle_q(rq), ub, j.cs, w.ctx.inv_h); oi := p.swi
-		di := -k.y * p.swm * (dot(wa - wb, sa) + k.x) - k.z * oi; p.swi = fmax(oi + di, 0.0); d := p.swi - oi
+		sa := nrm(cross(rot(qa, AX_Z), rot(qb, AX_Z))); kk := dot(sa, mv(madd3(ia, ib), sa)); swm := if kk > 0.0 { 1.0 / kk } else { 0.0 }; p.sax = sa; p.swm = swm; k := lim_coef(p.cone - swing_angle_q(rq), ub, j.cs, w.ctx.inv_h); oi := p.swi
+		di := -k.y * swm * (dot(wa - wb, sa) + k.x) - k.z * oi; p.swi = fmax(oi + di, 0.0); d := p.swi - oi
 		wa = madd(wa, d, mv(ia, sa)); wb = msub(wb, d, mv(ib, sa))
 	ra := rot(s1.dq, j.fra.p); rb := rot(s2.dq, j.frb.p); cd := ((vb + cross(wb, rb)) - va) - cross(wa, ra)
 	b := if ub { sv(j.cs.bias, ((s2.dp - s1.dp) + (rb - ra)) + j.dc) } else { V0 }; msc := if ub { j.cs.ms } else { 1.0 }; isc := if ub { j.cs.is } else { 0.0 }

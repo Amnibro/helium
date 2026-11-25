@@ -1,0 +1,59 @@
+=== -3184fca499a15c0
+
+=== -490026def81f4a22
+name_of(c uint) const byte[:]:
+	match c:
+		0 => "sin"
+		1 => "cos"
+		2 => "tan"
+		3 => "asin"
+		4 => "acos"
+		5 => "atan"
+		6 => "log2"
+		7 => "log10"
+		8 => "atan2"
+		9 => "hypot"
+		_ => "pow"
+call_fn(c uint, x real, y real) real:
+	match c:
+		0 => libm::sin(x)
+		1 => libm::cos(x)
+		2 => libm::tan(x)
+		3 => libm::asin(x)
+		4 => libm::acos(x)
+		5 => libm::atan(x)
+		6 => libm::log2(x)
+		7 => libm::log10(x)
+		8 => libm::atan2(x, y)
+		9 => libm::hypot(x, y)
+		_ => libm::pow(x, y)
+hex16(out byte[>..]&, v uint):
+	for k 16:
+		d := ((v >> (60 - k * 4)) & 15) as int
+		if d < 10:
+			out.push(('0' + d) as byte)
+		else:
+			out.push(('a' + d - 10) as byte)
+main():
+	i ~= 0
+	while i < 990:
+		code := SAMPLES[i]
+		xb := SAMPLES[i + 1]
+		yb := SAMPLES[i + 2]
+		x := binary::f64_from_bits(xb)
+		y := binary::f64_from_bits(yb)
+		r := call_fn(code, x, y)
+		out byte[>..] ~= []
+		out.append(name_of(code))
+		out.push(' ')
+		hex16(out, xb)
+		out.push(' ')
+		if code >= 8:
+			hex16(out, yb)
+			out.push(' ')
+		if r != r:
+			out.append("nan")
+		else:
+			hex16(out, binary::f64_bits(r))
+		print(out)
+		i += 3;

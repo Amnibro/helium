@@ -1,0 +1,5 @@
+Q9 handshakes true
+Q9 echo true
+Q9 per-host count true
+Q9 version negotiation true
+Q9 control wrong pin true

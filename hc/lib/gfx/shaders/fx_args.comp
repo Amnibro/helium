@@ -1,0 +1,11 @@
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer Alive { uint alive[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Ev { uint evd[]; };
+layout(std430, set = 1, binding = 0) buffer Args { uint args[]; };
+layout(set = 2, binding = 0) uniform U { vec4 info; vec4 m[9]; };
+void main() {
+	if (gl_GlobalInvocationID.x != 0u) return;
+	for (int k = 0; k < 9; k++) {
+		args[k * 5] = uint(m[k].x); args[k * 5 + 1] = m[k].x > 0.0 ? (k < 8 ? evd[uint(info.x)] : alive[0]) : 0u; args[k * 5 + 2] = uint(m[k].y); args[k * 5 + 3] = 0u; args[k * 5 + 4] = 0u;
+	}
+}

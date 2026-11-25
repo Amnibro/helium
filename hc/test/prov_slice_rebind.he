@@ -1,0 +1,12 @@
+var A byte[>..]
+word(x const byte[:]&) bool:
+	a := A.len
+	A.append("ok")
+	x = A[a..A.len]
+	true
+var L const byte[:][>..]
+main():
+	for i in 0..2:
+		t const byte[:] ~= ""
+		if word(t): L.push(t)
+	print(L.len, " ", L[1])

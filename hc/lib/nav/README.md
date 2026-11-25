@@ -46,3 +46,37 @@ Build 6 ms for a 25 x 25 m field (cs 0.1); 10 us per query. The first run failed
 A* scored routes through portal midpoints. Each node now crosses its portal at the best point
 for the straight line from its parent's crossing to the goal, and remembers which rect it
 entered so it never turns back through the portal it came in by.
+
+## Crowd (`nav.crowd`)
+Many agents walking to goals over the nav mesh without bumping into each other: optimal
+reciprocal collision avoidance (ORCA; van den Berg, Guy, Lin and Manocha, 2011) on top of
+`nav::path` corners, a uniform grid for neighbors, and `nav::locate` to keep every agent on the
+mesh. A small keep-right turn (0.07 rad, plus a per-agent golden-ratio nudge of up to 0.01 rad)
+breaks the perfect symmetry that otherwise freezes a ring of agents; it applies only with
+avoidance on.
+
+### Bars (registered before the first run)
+* **K1 head-on swap.** Two agents (radius 0.3, 1.4 m/s) 10 m apart swap places: closest centers
+  >= 0.59 m and both arrive. Control: avoidance off, closest < 0.1.
+* **K2 circle swap.** 37 agents on a 7 m circle each walk to the opposite point: closest >= 0.58,
+  all arrive within 2400 steps, no agent ever faster than 1.401 m/s, and a second run gives the
+  exact same final positions. Control: avoidance off, closest < 0.3.
+* **K3 around a box.** 7 agents cross a 20 m field with a 2 x 2 x 1 m box in the middle: every
+  agent stays >= 0.15 m from the box and all arrive within 1800 steps. Control: off the mesh
+  (straight lines), clearance < 0.05.
+* **K4 speed.** 400 agents on a 20 x 20 grid swapping through the origin: under 2 ms a step.
+
+### Results (2026-11-25)
+| check | measured | result |
+| --- | --- | --- |
+| K1 head-on swap | closest 0.600, both arrive | PASS |
+| K2 circle swap | closest 0.595, all arrive, fastest 1.400, repeat identical | PASS |
+| K3 around a box | clearance 0.232, all arrive | PASS |
+| K4 speed | 0.69 ms a step | PASS |
+| controls | K1, K2, K3 without avoidance or mesh | fail as required |
+
+
+First run: K1 and K4 passed. K2 froze: all 37 agents stalled at radius 3.5, the symmetric
+deadlock ORCA is known for; the keep-right turn fixed it. Applying the turn without avoidance
+made the K1 control dodge, so it is skipped when avoidance is off. K3's first setup placed
+agents 0.5 m apart, closer than two radii (0.6); the spacing became 0.7 m, bars unchanged.

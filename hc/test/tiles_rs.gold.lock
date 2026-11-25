@@ -1,0 +1,30 @@
+=== -14305faea4f9b49d
+shown(v real) byte[>..]:
+	o byte[>..] ~= []
+	rs::display(o, v)
+	o
+shown_fixed(v real, d int) byte[>..]:
+	o byte[>..] ~= []
+	rs::fixed(o, v, d)
+	o
+main():
+	for t NUMS:
+		v, ok := parse_flt(t)
+		print("num [", t, "] ", shown(v))
+	for t FIXED:
+		sp ~= 0
+		while t[sp] != ' ': sp++
+		v, ok := parse_flt(t[..sp])
+		d, ok2 := parse_int(t[sp + 1..])
+		print("fixed [", t, "] ", shown_fixed(v, d))
+	for t CAST:
+		v, ok := parse_flt(t)
+		print("cast [", t, "] ", rs::to_usize(v), " ", rs::to_u32(v), " ", rs::to_u16(v), " ", rs::to_u8(v), " ", rs::to_i32(v), " ", rs::to_i64(v))
+	for a VALS:
+		for b VALS:
+			x, okx := parse_flt(a)
+			y, oky := parse_flt(b)
+			print("mm [", a, " ", b, "] ", shown(rs::max(x, y)), " ", shown(rs::min(x, y)))
+	for t VALS:
+		v, ok := parse_flt(t)
+		print("sc [", t, "] ", shown(rs::signum(v)), " ", shown(rs::clamp(v, -1.0, 1.0)));

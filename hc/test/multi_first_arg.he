@@ -1,0 +1,14 @@
+two() const byte[:], int[>..]:
+	v int[>..] ~= []
+	v.push(3)
+	return "ab", v
+g3() int[>..], int:
+	v int[>..] ~= []
+	v.push(7)
+	return v, 1
+main():
+	b byte[>..] ~= []
+	b.append(two())
+	w int[>..] ~= []
+	w.append(g3())
+	print(b.len, " ", b[..], " ", w.len, " ", w[0])

@@ -26,6 +26,7 @@ let TT_AW = 2048;
 let TT_AH = 1024;
 var TT ttf::Info;
 var TT_ON = 0;
+var TT_WANT = false;
 var TT_CAP f32 = 1.0;
 var TT_G TtG[>..] = [];
 var TT_KEY int[>..] = [];
@@ -41,8 +42,9 @@ fn tt_on() bool {
 	TT_ON = -1;
 	var path byte[>..] = [];
 	var blob byte[>..] = [];
-	if env("HELIUM_FONT", path) && path == "builtin" { return false; }
-	var ok = path.len > 0 && read_file(path[..], blob);
+	let named = env("HELIUM_FONT", path) && path.len > 0;
+	if (named && path == "builtin") || (!named && !TT_WANT) || SDF_TTF_PIX.len > 0 { return false; }
+	var ok = named && read_file(path[..], blob);
 	var k = 0;
 	while !ok && k < 10 { ok = read_file(tt_path(k), blob); k += 1; }
 	if !ok { return false; }
@@ -56,6 +58,11 @@ fn tt_on() bool {
 	TT_PIX.resize(TT_AW * TT_AH * 4, 0);
 	TT_ON = 1;
 	true
+}
+fn sdf_system_font() bool {
+	TT_WANT = true;
+	TT_ON = if TT_ON < 0 && !SDF_READY { 0 } else { TT_ON };
+	tt_on()
 }
 fn tt_edt(g f32[>..]&, w int, h int) {
 	let n = max(w, h);
@@ -230,6 +237,9 @@ var SDF_COUNT int[95];
 var SDF_ADV f32[95];
 // Pen-relative x shift (font units) that centres each glyph's ink inside its advance.
 var SDF_OFF f32[95];
+var SDF_TTF_PIX byte[>..] = [];
+var SDF_KERN f32[>..] = [];
+fn sdf_kern(t const byte[:], i int) f32 { if SDF_KERN.len == 0 || i + 1 >= t.len { return 0.0; } let a = t[i] as int - 32; let b = t[i + 1] as int - 32; if a < 0 || a >= 95 || b < 0 || b >= 95 { 0.0 } else { SDF_KERN[a * 95 + b] } }
 
 fn sdf_seg(x0 f32, y0 f32, x1 f32, y1 f32) {
 	SDF_STROKES.push(SdfStroke { kind: 0, x0: x0, y0: y0, x1: x1, y1: y1, r: 0.0, a0: 0.0, a1: 0.0 });
@@ -311,7 +321,7 @@ fn sdf_fit_bearings() {
 }
 
 fn sdf_build_glyphs() {
-	if SDF_STROKES.len > 0 { return; }
+	if SDF_STROKES.len > 0 || SDF_TTF_PIX.len > 0 { return; }
 	for i in 95 {
 		SDF_FIRST[i] = 0;
 		SDF_COUNT[i] = 0;
@@ -1145,7 +1155,7 @@ fn sdf_init() {
 	SDF_PIPE = gfx::pipeline(embed_shader("shaders/sdf_text.vert"), embed_shader("shaders/sdf_text.frag"), d);
 	var pix byte[>..] = [];
 	let tt = tt_on();
-	if !tt { sdf_bake(pix); }
+	if !tt { if SDF_TTF_PIX.len > 0 { pix.append(SDF_TTF_PIX[..]); } else { sdf_bake(pix); } }
 	SDF_TEX = if tt { gfx::texture2d(TT_AW, TT_AH, gfx::RGBA8, gfx::SAMPLED) } else { gfx::texture2d(SDF_ATLAS_W, SDF_ATLAS_H, gfx::RGBA8, gfx::SAMPLED) };
 	gfx::update_texture(SDF_TEX, if tt { TT_PIX[..] } else { pix[..] });
 	TT_DIRTY = false;
@@ -1164,7 +1174,7 @@ fn sdf_text_w(t const byte[:], px f32) f32 {
 	for i in t.len {
 		var k = t[i] as int - 32;
 		if k < 0 || k >= 95 { k = 0; }
-		w += SDF_ADV[k] * s;
+		w += (SDF_ADV[k] + sdf_kern(t, i)) * s;
 	}
 	w
 }
@@ -1229,7 +1239,7 @@ fn sdf_text(vs TextVtx[>..]&, x f32, y f32, px f32, t const byte[:], c byte[4], 
 				TextVtx { pos: float2 { qx, qy + qh }, uv: float2 { u0, v1 }, col: col }
 			]);
 
-			cur_x += adv;
+			cur_x += adv + sdf_kern(t, i) * s;
 		}
 	}
 }

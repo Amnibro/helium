@@ -1,0 +1,161 @@
+into quic_wire.he
+lang he
+namespace net
+use std, crypto.hash, crypto.aead, crypto.ecc, net.tls
+
+The wire level of QUIC version 1, given exactly: variable-length integers, packet protection keys, packet headers, packet protection and its removal, the frame codec and the transport parameter codec. Nothing here keeps connection state.
+
+```he
+QF_NV := "0022321022222222121112112100210"
+struct QKeys { alg int = 0, hk int = 0, sec byte[>..] = [], key byte[>..] = [], iv byte[>..] = [], hp byte[>..] = [] }
+struct QOpen { ok bool = false, pn int = 0, first int = 0, data byte[>..] = [] }
+struct QHdr { ok bool = false, lg bool = false, ty int = 0, ver int = 0, dcid byte[>..] = [], scid byte[>..] = [], token byte[>..] = [], pno int = 0, stop int = 0 }
+struct QFrame { ty int = 0, a int = 0, b int = 0, c int = 0, fin bool = false, data byte[>..] = [], tok byte[>..] = [], rg int[>..] = [] }
+struct QRd { o int = 0, bad bool = false }
+struct QParams { v int[>..] = [], has int = 0, odcid byte[>..] = [], iscid byte[>..] = [], rscid byte[>..] = [], srt byte[>..] = [] }
+qv_len(v int) int: if v < 64 { 1 } else if v < 16384 { 2 } else if v < 1073741824 { 4 } else { 8 }
+qv_put(b byte[>..]&, v int):
+	n := qv_len(v); tag := if n == 1 { 0 } else if n == 2 { 64 } else if n == 4 { 128 } else { 192 }
+	for i n: b.push((((v >> (8 * (n - 1 - i))) & 255) | (if i == 0 { tag } else { 0 })) as! byte)
+qv_get(b const byte[:], o int) int, int:
+	if o < 0 || o >= b.len: return -1, o
+	n := 1 << ((b[o] as int) >> 6)
+	if o + n > b.len: return -1, o
+	v ~= (b[o] as int) & 63; m := n - 1
+	for i m: v = (v << 8) | (b[o + 1 + i] as int)
+	return v, o + n
+qr(p const byte[:], r QRd&) int:
+	v, n := qv_get(p, r.o)
+	if v < 0: r.bad = true; return 0
+	r.o = n; v
+qk_from(suite int, sec const byte[:]) QKeys:
+	k ~= QKeys{}; k.hk = if suite == 0x1302 { crypto::SHA384 } else { crypto::SHA256 }; k.alg = if suite == 0x1303 { crypto::CHACHA20_POLY1305 } else { crypto::AES_GCM }; kl := if suite == 0x1301 { 16 } else { 32 }
+	k.sec.append(sec); k.key = label(k.hk, sec, "quic key", "", kl); k.iv = label(k.hk, sec, "quic iv", "", 12); k.hp = label(k.hk, sec, "quic hp", "", kl); k
+qk_initial(dcid const byte[:], server bool) QKeys:
+	s := crypto::hexb("38762cf7f55934b34d179ae6a4c80cadccbb7f0a"); i := crypto::hkdf_extract(crypto::SHA256, s, dcid); c := label(crypto::SHA256, i, if server { "server in" } else { "client in" }, "", 32); qk_from(0x1301, c)
+qk_update(k const QKeys&) QKeys:
+	n ~= QKeys{}; n.hk = k.hk; n.alg = k.alg; n.sec = label(k.hk, k.sec, "quic ku", "", k.sec.len); n.key = label(k.hk, n.sec, "quic key", "", k.key.len); n.iv = label(k.hk, n.sec, "quic iv", "", 12); n.hp = copy(k.hp); n
+qp_mask(k const QKeys&, s const byte[:]) byte[>..]:
+	if k.alg == crypto::CHACHA20_POLY1305: return crypto::chacha20(k.hp, s[4..16], (s[0] as u32) | ((s[1] as u32) << 8) | ((s[2] as u32) << 16) | ((s[3] as u32) << 24), [0 as byte, 0, 0, 0, 0][..])
+	a := crypto::aes_key(k.hp); o byte[16] ~= [0; 16]; crypto::aes_block(a, s[..16], o); m byte[>..] ~= []; m.append(o[..5]); m
+qp_nonce(k const QKeys&, pn int) byte[>..]: n ~= copy(k.iv); for i 8 { n[4 + i] ^= ((pn >> (56 - 8 * i)) & 255) as! byte } n
+qp_pn(largest int, tr int, bits int) int:
+	x := largest + 1; w := 1 << bits; c := x / w * w + tr
+	if c + w / 2 <= x && c + w < 4611686018427387904: return c + w
+	if c > x + w / 2 && c >= w: return c - w
+	c
+qp_seal(k const QKeys&, hdr const byte[:], pnl int, pn int, body const byte[:]) byte[>..]:
+	ct, ok := crypto::aead_seal(k.alg, k.key, qp_nonce(k, pn), hdr, body); o byte[>..] ~= []; o.append(hdr); o.append(ct[..]); s := hdr.len - pnl + 4
+	if !ok || o.len < s + 16: o.clear(); return o
+	m := qp_mask(k, o[s..s + 16]); o[0] ^= m[0] & ((if o[0] >= 128 { 15 } else { 31 }) as! byte)
+	for i pnl: o[hdr.len - pnl + i] ^= m[1 + i]
+	o
+qp_open(k const QKeys&, p const byte[:], pno int, largest int) QOpen:
+	r ~= QOpen{}
+	if p.len < pno + 20: return r
+	m := qp_mask(k, p[pno + 4..pno + 20]); h byte[>..] ~= []; h.append(p[..pno + 4]); h[0] ^= m[0] & ((if h[0] >= 128 { 15 } else { 31 }) as! byte); pnl := ((h[0] as int) & 3) + 1; tr ~= 0
+	for i pnl: h[pno + i] ^= m[1 + i]; tr = (tr << 8) | (h[pno + i] as int)
+	r.pn = qp_pn(largest, tr, 8 * pnl); r.first = h[0] as int; pt, ok := crypto::aead_open(k.alg, k.key, qp_nonce(k, r.pn), h[..pno + pnl], p[pno + pnl..]); r.data = pt; r.ok = ok; r
+qh_pn(h byte[>..]&, pnl int, pn int): for i pnl { h.push(((pn >> (8 * (pnl - 1 - i))) & 255) as! byte) }
+qh_long(ty int, dcid const byte[:], scid const byte[:], token const byte[:], pnl int, pn int, plen int) byte[>..]:
+	h byte[>..] ~= [(192 | (ty << 4) | (pnl - 1)) as! byte, 0, 0, 0, 1, dcid.len as! byte]; h.append(dcid); h.push(scid.len as! byte); h.append(scid); n := pnl + plen + 16
+	if ty == 0: qv_put(h, token.len); h.append(token)
+	h.push((64 | (n >> 8)) as! byte); h.push((n & 255) as! byte); qh_pn(h, pnl, pn); h
+qh_short(dcid const byte[:], phase int, pnl int, pn int) byte[>..]: h byte[>..] ~= [(64 | (phase << 2) | (pnl - 1)) as! byte]; h.append(dcid); qh_pn(h, pnl, pn); h
+qh_parse(p const byte[:], cidl int) QHdr:
+	h ~= QHdr{}
+	if p.len < 1: return h
+	if p[0] < 128:
+		if p.len < 1 + cidl: return h
+		h.dcid.append(p[1..1 + cidl]); h.pno = 1 + cidl; h.stop = p.len; h.ok = p[0] >= 64; return h
+	if p.len < 7: return h
+	h.lg = true; h.ver = (g16(p, 1) << 16) | g16(p, 3); h.ty = ((p[0] as int) >> 4) & 3; o ~= 5; n ~= p[o] as int
+	if o + 2 + n > p.len: return h
+	h.dcid.append(p[o + 1..o + 1 + n]); o += 1 + n; n = p[o] as int
+	if o + 1 + n > p.len: return h
+	h.scid.append(p[o + 1..o + 1 + n]); o += 1 + n; h.stop = p.len
+	if h.ver != 1 || h.ty == 3: h.ok = true; return h
+	if h.dcid.len > 20 || h.scid.len > 20: return h
+	r ~= QRd{}; r.o = o
+	if h.ty == 0:
+		tl := qr(p, r)
+		if r.bad || tl > p.len || r.o + tl > p.len: return h
+		h.token.append(p[r.o..r.o + tl]); r.o += tl
+	ln := qr(p, r)
+	if r.bad || ln > p.len || r.o + ln > p.len: return h
+	h.pno = r.o; h.stop = r.o + ln; h.ok = ((p[0] as int) & 64) != 0; h
+qf_put(b byte[>..]&, f const QFrame&):
+	t := f.ty; nv := (QF_NV[t] as int) - 48
+	b.push((if t == 8 { 14 + (if f.fin { 1 } else { 0 }) } else { t }) as! byte)
+	if t == 0: return
+	if nv > 0: qv_put(b, f.a)
+	if nv > 1: qv_put(b, f.b)
+	if nv > 2: qv_put(b, f.c)
+	if t == 2:
+		qv_put(b, (f.rg.len - 1) / 2)
+		for v f.rg: qv_put(b, v)
+	if t == 24: b.push(f.data.len as! byte)
+	if t == 6 || t == 7 || t == 8 || t == 28 || t == 29: qv_put(b, f.data.len)
+	b.append(f.data[..]); b.append(f.tok[..])
+qf_get(p const byte[:], o0 int) QFrame, int:
+	f ~= QFrame{}; r ~= QRd{}; r.o = o0 + 1
+	if o0 < 0 || o0 >= p.len: return f, -1
+	t := p[o0] as int
+	if t == 0:
+		while r.o < p.len && p[r.o] == 0: r.o += 1
+		f.a = r.o - o0; return f, r.o
+	if t > 30: return f, -1
+	st := t >= 8 && t <= 15; f.ty = if st { 8 } else if t == 3 { 2 } else { t }; nv := if st { 1 } else { (QF_NV[t] as int) - 48 }
+	if nv > 0: f.a = qr(p, r)
+	if nv > 1: f.b = qr(p, r)
+	if nv > 2: f.c = qr(p, r)
+	dl ~= if t == 26 || t == 27 { 8 } else { 0 }
+	if st:
+		f.fin = (t & 1) == 1; dl = -1
+		if (t & 4) != 0: f.b = qr(p, r)
+		if (t & 2) != 0: dl = qr(p, r)
+		if dl < 0: dl = p.len - r.o
+	if t == 2 || t == 3:
+		cnt := qr(p, r); m := 1 + 2 * cnt + (if t == 3 { 3 } else { 0 })
+		if r.bad || cnt > p.len: return f, -1
+		for i m:
+			x := qr(p, r)
+			if i < 1 + 2 * cnt: f.rg.push(x)
+		e := if r.bad { -1 } else { r.o }
+		return f, e
+	if t == 24:
+		if r.o >= p.len: return f, -1
+		dl = p[r.o] as int; r.o += 1
+	if t == 6 || t == 7 || t == 28 || t == 29: dl = qr(p, r)
+	tl := if t == 24 { 16 } else { 0 }
+	if r.bad || dl > p.len || r.o + dl + tl > p.len: return f, -1
+	f.data.append(p[r.o..r.o + dl]); r.o += dl; f.tok.append(p[r.o..r.o + tl]); return f, r.o + tl
+qtp_new() QParams: p ~= QParams{}; p.v.resize(17, 0); p.v[3] = 65527; p.v[10] = 3; p.v[11] = 25; p.v[14] = 2; p
+qtp_bytes(b byte[>..]&, id int, v const byte[:]): qv_put(b, id); qv_put(b, v.len); b.append(v)
+qtp_put(p const QParams&, server bool) byte[>..]:
+	b byte[>..] ~= []
+	for id 17:
+		if id == 1 || id >= 3 && id <= 11 || id == 14: qv_put(b, id); qv_put(b, qv_len(p.v[id])); qv_put(b, p.v[id])
+	if server: qtp_bytes(b, 0, p.odcid[..])
+	qtp_bytes(b, 15, p.iscid[..]); b
+qtp_get(d const byte[:], server bool) QParams, bool:
+	p ~= qtp_new(); r ~= QRd{}
+	while r.o < d.len:
+		id := qr(d, r); n := qr(d, r)
+		if r.bad || n > d.len || r.o + n > d.len: return p, false
+		v := d[r.o..r.o + n]; r.o += n
+		if id <= 16:
+			if ((p.has >> id) & 1) == 1 || !server && (id == 0 || id == 2 || id == 13 || id == 16): return p, false
+			p.has |= 1 << id
+			if id == 1 || id >= 3 && id <= 11 || id == 14:
+				x, m := qv_get(v, 0)
+				if x < 0 || m != n: return p, false
+				p.v[id] = x
+			if id == 0: p.odcid.append(v)
+			if id == 15: p.iscid.append(v)
+			if id == 16: p.rscid.append(v)
+			if id == 2: p.srt.append(v)
+			if id == 12 && n != 0 || id == 2 && n != 16: return p, false
+	ok := p.v[3] >= 1200 && p.v[10] <= 20 && p.v[11] < 16384 && p.v[14] >= 2 && p.v[8] <= 1152921504606846976 && p.v[9] <= 1152921504606846976 && ((p.has >> 15) & 1) == 1 && (!server || (p.has & 1) == 1)
+	return p, ok
+```

@@ -1,0 +1,4 @@
+namespace host;
+fn bonus(r) int { 0 }
+fn total<R>(r R&) int { score(r) + bonus(r) + 1 }
+fn named<R>(r R&) const byte[:] { label(r) }

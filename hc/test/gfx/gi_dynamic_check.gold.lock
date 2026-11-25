@@ -1,0 +1,358 @@
+=== -2b635fd9ebec7240
+import os;
+import gfx;
+import math;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.rt;
+import gfx.scene3d;
+=== 06341442f18f06cd
+var block_item int = 0;
+var tgt gfx::Texture;
+var ref_r f32[>..];
+var n_sum real = 0.0;
+fn setup() bool {
+	if !gfx::open_headless(256, 256) { return false; }
+	s3d::sun.rgb = float3 { 0.0, 0.0, 0.0 };
+	s3d::sky.ambient = 0.2;
+	s3d::sky.draw = false;
+	s3d::look.bloom = 0.0;
+	s3d::view = s3d::Camera { eye: float3 { 0.0, 1.5, 3.5 }, target: float3 { 0.0, 1.0, 0.0 }, up: float3 { 0.0, 1.0, 0.0 }, fov_y: 1.0, near: 0.05, far: 50.0 };
+	if !s3d::init(256, 256) { return false; }
+	tgt = gfx::render_target(256, 256, gfx::RGBA8);
+	s3d::gi_on = true;
+	s3d::gi_dims = [8, 8, 8];
+	s3d::gi_rays = 128;
+	s3d::gi_updates_per_frame = 1;
+	s3d::gi_box = true;
+	s3d::gi_box_lo = float3 { -2.0, 0.0, -2.0 };
+	s3d::gi_box_hi = float3 { 2.0, 2.5, 2.0 };
+	let grey = shapes::material(float3 { 0.7, 0.7, 0.7 }, 0.0, 0.9);
+	let floor = s3d::add(shapes::plane(2.0, grey));
+	s3d::place(floor, gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	let w1 = s3d::add(shapes::cube(float3 { 2.0, 1.25, 0.05 }, grey));
+	s3d::place(w1, gfx::translate(float3 { 0.0, 1.25, -2.0 }));
+	let w2 = s3d::add(shapes::cube(float3 { 2.0, 1.25, 0.05 }, grey));
+	s3d::place(w2, gfx::translate(float3 { 0.0, 1.25, 2.0 }));
+	let w3 = s3d::add(shapes::cube(float3 { 0.05, 1.25, 2.0 }, grey));
+	s3d::place(w3, gfx::translate(float3 { -2.0, 1.25, 0.0 }));
+	let w4 = s3d::add(shapes::cube(float3 { 0.05, 1.25, 2.0 }, grey));
+	s3d::place(w4, gfx::translate(float3 { 2.0, 1.25, 0.0 }));
+	let red = shapes::material(float3 { 0.9, 0.05, 0.05 }, 0.0, 0.8);
+	block_item = s3d::add(shapes::cube(float3 { 0.4, 0.4, 0.4 }, red));
+	s3d::place(block_item, gfx::translate(float3 { -1.0, 0.4, 0.0 }));
+	s3d::lights.push(s3d::Light { pos: float3 { 0.0, 2.0, 0.0 }, range: 6.0, rgb: float3 { 3.0, 3.0, 3.0 }, kind: 0, .. });
+	true
+}
+fn frame() {
+	s3d::render(tgt);
+	gfx::flush();
+}
+fn settle(n int) {
+	for i in n { frame(); }
+}
+fn probes() f32[>..] {
+	var o f32[>..] = [];
+	s3d::gi_read(o);
+	o
+}
+fn err(a const f32[:], b const f32[:]) real {
+	var d = 0.0;
+	var s = 0.0;
+	let n = min(a.len, b.len) / 4;
+	for i in n {
+		for k in 3 {
+			d += abs(a[i * 4 + k] - b[i * 4 + k]);
+			s += b[i * 4 + k];
+		}
+	}
+	if s == 0.0 { 0.0 } else { d / s }
+}
+fn total(a const f32[:]) real {
+	var s = 0.0;
+	let n = a.len / 4;
+	for i in n {
+		for k in 3 { s += a[i * 4 + k]; }
+	}
+	s
+}
+fn fresh(n int) f32[>..] {
+	s3d::gi_rebuild();
+	settle(n);
+	probes()
+}
+fn fx(v real, d int) byte[>..] {
+	var o byte[>..] = [];
+	format_flt(o, v, d);
+	o
+}
+fn report(ok bool, name const byte[:], detail const byte[:]) {
+	if ok { print("PASS ", name, " (", detail, ")"); } else { print("FAIL ", name, " (", detail, ")"); }
+}
+fn show(v bool) {
+	s3d::items[block_item].visible = v;
+}
+fn tr(x real, y real, z real) {
+	s3d::place(block_item, gfx::translate(float3 { x as f32, y as f32, z as f32 }));
+}
+=== -638da98153f8c898
+fn brute(tri const f32[:], n int, ox real, oy real, oz real, dx real, dy real, dz real, tmax real) real, int {
+	var best = tmax;
+	var bi = -1;
+	for t in n {
+		let b = t * 9;
+		let v0x = tri[b] as real;
+		let v0y = tri[b + 1] as real;
+		let v0z = tri[b + 2] as real;
+		let e1x = (tri[b + 3] as real) - v0x;
+		let e1y = (tri[b + 4] as real) - v0y;
+		let e1z = (tri[b + 5] as real) - v0z;
+		let e2x = (tri[b + 6] as real) - v0x;
+		let e2y = (tri[b + 7] as real) - v0y;
+		let e2z = (tri[b + 8] as real) - v0z;
+		let px = dy * e2z - dz * e2y;
+		let py = dz * e2x - dx * e2z;
+		let pz = dx * e2y - dy * e2x;
+		let det = e1x * px + e1y * py + e1z * pz;
+		if abs(det) < 1e-12 { continue; }
+		let inv = 1.0 / det;
+		let sx = ox - v0x;
+		let sy = oy - v0y;
+		let sz = oz - v0z;
+		let u = (sx * px + sy * py + sz * pz) * inv;
+		if u < 0.0 || u > 1.0 { continue; }
+		let qx = sy * e1z - sz * e1y;
+		let qy = sz * e1x - sx * e1z;
+		let qz = sx * e1y - sy * e1x;
+		let v = (dx * qx + dy * qy + dz * qz) * inv;
+		if v < 0.0 || u + v > 1.0 { continue; }
+		let tt = (e2x * qx + e2y * qy + e2z * qz) * inv;
+		if tt > 1e-6 && tt < best {
+			best = tt;
+			bi = t;
+		}
+	}
+	return best, bi;
+}
+fn d1() bool {
+	frame();
+	let b0, f0, m0, m1 = s3d::gi_stats();
+	tr(-1.0, 0.4, 0.5);
+	frame();
+	tr(0.5, 0.4, 0.5);
+	frame();
+	tr(0.5, 0.4, -0.8);
+	frame();
+	let b1, f1, m2, m3 = s3d::gi_stats();
+	let n = rt::count();
+	var st u64 = 12345;
+	var agree = 0;
+	let total_rays = 20000;
+	let tmax = 10.0;
+	fn rnd() real {
+		st = st * 6364136223846793005 + 1442695040888963407;
+		(st >> 40) as real / 16777216.0
+	}
+	for i in total_rays {
+		let ox = -1.9 + 3.8 * rnd();
+		let oy = 0.05 + 2.35 * rnd();
+		let oz = -1.9 + 3.8 * rnd();
+		let z = 2.0 * rnd() - 1.0;
+		let a = TAU * rnd();
+		let r = sqrt(max(0.0, 1.0 - z * z));
+		let dx = r * cos(a);
+		let dy = r * sin(a);
+		let dz = z;
+		let hd, hi = rt::hit(ox as f32, oy as f32, oz as f32, dx as f32, dy as f32, dz as f32, tmax as f32);
+		let bd, bi = brute(rt::tri_in, n, ox, oy, oz, dx, dy, dz, tmax);
+		if hi < 0 && bi < 0 {
+			agree += 1;
+		} else if hi >= 0 && bi >= 0 && abs((hd as real) - bd) <= 1e-4 {
+			agree += 1;
+		}
+	}
+	let share = 100.0 * (agree as real) / (total_rays as real);
+	let ok = b1 == b0 && f1 >= f0 + 3 && agree * 1000 >= total_rays * 999;
+	report(ok, "D1 refit matches brute force", str(fx(share, 2), "% agree, ", f1 - f0, " refits"));
+	ok
+}
+=== 542b5ef3dfd5dcd2
+var noise real = 0.0;
+fn d2() bool {
+	show(true);
+	tr(-1.0, 0.4, 0.0);
+	let a0 = fresh(150);
+	show(false);
+	let r = fresh(150);
+	ref_r = copy(r);
+	show(true);
+	let tmp = fresh(150);
+	show(false);
+	settle(60);
+	let e = probes();
+	show(false);
+	let tmp2 = fresh(150);
+	settle(60);
+	let r2 = probes();
+	noise = err(r2, r);
+	let err_e = err(e, r2);
+	s3d::gi_refit = false;
+	show(true);
+	let tmp3 = fresh(150);
+	show(false);
+	settle(60);
+	let c = probes();
+	let err_c = err(c, r2);
+	s3d::gi_refit = true;
+	let ok1 = err_e <= 0.03;
+	let ok2 = err_c > 0.03 && err_c >= 2.0 * err_e;
+	let change = err(a0, r);
+	report(ok1, "D2 no ghosts", str("E vs R2 ", fx(err_e, 4), ", noise ", fx(noise, 4), ", change ", fx(change, 4)));
+	report(ok2, "D2c stale scene keeps a ghost", str("stale vs R2 ", fx(err_c, 4), ", E vs R2 ", fx(err_e, 4), ", noise ", fx(noise, 4)));
+	ok1 && ok2
+}
+=== 4815382e49c1ee27
+fn settle_frames(adaptive bool) int {
+	s3d::gi_adaptive = adaptive;
+	show(true);
+	let tmp = fresh(150);
+	show(false);
+	for f in 1..301 {
+		frame();
+		let p = probes();
+		if err(p, ref_r) <= 0.05 { return f; }
+	}
+	return 300;
+}
+fn d3() bool {
+	let fast = settle_frames(true);
+	let slow = settle_frames(false);
+	s3d::gi_adaptive = true;
+	show(true);
+	let ok = fast * 2 <= slow;
+	report(ok, "D3 settles faster", str("adaptive ", fast, " frames, plain ", slow, " frames"));
+	ok
+}
+=== 2701dd7489e24d4d
+fn aim_check(name const byte[:], rect bool) bool {
+	s3d::lights.clear();
+	if rect {
+		s3d::lights.push(s3d::Light { pos: float3 { 0.0, 1.0, 0.0 }, range: 6.0, rgb: float3 { 8.0, 8.0, 8.0 }, kind: 0, dir: float3 { 0.0, 1.0, 0.0 }, width: 0.5, height: 0.5, .. });
+	} else {
+		s3d::lights.push(s3d::Light { pos: float3 { 0.0, 1.0, 0.0 }, range: 6.0, rgb: float3 { 8.0, 8.0, 8.0 }, kind: 1, dir: float3 { 0.0, 1.0, 0.0 }, cone: 0.3, .. });
+	}
+	let u = fresh(150);
+	let up_add = total(u) - n_sum;
+	s3d::lights[0].dir = float3 { 0.0, -1.0, 0.0 };
+	let d = fresh(150);
+	let down_add = total(d) - n_sum;
+	let ok = down_add > 0.0 && up_add <= 0.05 * down_add;
+	let us = if n_sum > 0.0 { up_add / n_sum } else { 0.0 };
+	let ds = if n_sum > 0.0 { down_add / n_sum } else { 0.0 };
+	report(ok, name, str("up adds ", fx(up_add, 3), " (", fx(us, 3), " of N), down adds ", fx(down_add, 3), " (", fx(ds, 3), " of N)"));
+	ok
+}
+fn d4() bool {
+	s3d::lights.clear();
+	let n = fresh(150);
+	n_sum = total(n);
+	aim_check("D4 spot cones", false)
+}
+=== -10168c04570bec75
+fn d4b() bool {
+	s3d::lights.clear();
+	s3d::lights.push(s3d::Light { pos: float3 { 0.0, 2.4, 0.0 }, range: 6.0, rgb: float3 { 8.0, 8.0, 8.0 }, kind: 0, dir: float3 { 0.0, 1.0, 0.0 }, width: 0.5, height: 0.5, .. });
+	let u = fresh(150);
+	let up_add = total(u) - n_sum;
+	s3d::lights[0].dir = float3 { 0.0, -1.0, 0.0 };
+	let d = fresh(150);
+	let down_add = total(d) - n_sum;
+	let ok = down_add > 0.0 && up_add <= 0.05 * down_add;
+	let us = if n_sum > 0.0 { up_add / n_sum } else { 0.0 };
+	let ds = if n_sum > 0.0 { down_add / n_sum } else { 0.0 };
+	report(ok, "D4b rect lights shine one way", str("up adds ", fx(up_add, 3), " (", fx(us, 3), " of N), down adds ", fx(down_add, 3), " (", fx(ds, 3), " of N)"));
+	ok
+}
+=== 446fff4c317cf4f8
+fn d5() bool {
+	s3d::lights.clear();
+	for i in 16 {
+		let x = -1.5 + (i % 4);
+		let z = -1.5 + (i / 4);
+		let c = if i < 8 { 0.0 } else { 0.5 };
+		s3d::lights.push(s3d::Light { pos: float3 { x as f32, 2.0, z as f32 }, range: 3.0, rgb: float3 { c as f32, c as f32, c as f32 }, kind: 0, .. });
+	}
+	let s = fresh(150);
+	let ss = total(s);
+	let ratio = if n_sum > 0.0 { ss / n_sum } else { 0.0 };
+	let ok = ss > 1.2 * n_sum;
+	report(ok, "D5 sixteen lights", str("ratio ", fx(ratio, 3)));
+	ok
+}
+=== 3cd87dadb3273034
+fn d6() bool {
+	s3d::lights.clear();
+	s3d::lights.push(s3d::Light { pos: float3 { 0.0, 2.0, 0.0 }, range: 6.0, rgb: float3 { 3.0, 3.0, 3.0 }, kind: 0, .. });
+	let grey = shapes::material(float3 { 0.7, 0.7, 0.7 }, 0.0, 0.9);
+	var first = 0;
+	for i in 10 {
+		let it = s3d::add(shapes::sphere(0.2, 48, 24, grey));
+		s3d::place(it, gfx::translate(float3 { (-1.5 + 0.33 * i) as f32, 1.5, 0.0 }));
+		if i == 0 { first = it; }
+	}
+	s3d::gi_rebuild();
+	frame();
+	var sum = 0.0;
+	var build_ms = 0.0;
+	for f in 1..31 {
+		s3d::place(first, gfx::translate(float3 { -1.5, 1.5, (0.02 * f) as f32 }));
+		frame();
+		let r0, r1, rms, bms = s3d::gi_stats();
+		sum += rms;
+		build_ms = bms;
+	}
+	let mean = sum / 30.0;
+	let ok = mean < 2.0 && mean < 0.25 * build_ms;
+	report(ok, "D6 refit cost", str(rt::count(), " triangles, mean refit ", fx(mean, 3), " ms, build ", fx(build_ms, 3), " ms"));
+	ok
+}
+=== -12e409c947dd6775
+fn d7() bool {
+	let grey = shapes::material(float3 { 0.7, 0.7, 0.7 }, 0.0, 0.9);
+	let sh = s3d::add(shapes::sheet(400, float3 { -1.9, 2.3, -1.9 }, float3 { 3.8, 0.0, 0.0 }, float3 { 0.0, 0.0, 3.8 }, grey));
+	s3d::place(sh, gfx::translate(float3 { 0.0, 0.0, 0.0 }));
+	let first = block_item + 1;
+	s3d::gi_rebuild();
+	frame();
+	var sum = 0.0;
+	var build_ms = 0.0;
+	for f in 1..31 {
+		s3d::place(first, gfx::translate(float3 { -1.5, 1.5, (0.02 * f) as f32 }));
+		frame();
+		let r0, r1, rms, bms = s3d::gi_stats();
+		sum += rms;
+		build_ms = bms;
+	}
+	let mean = sum / 30.0;
+	let ok = mean < 1.0 && mean < 0.05 * build_ms;
+	report(ok, "D7 refit scales with what moved", str(rt::count(), " triangles, mean refit ", fx(mean, 3), " ms, build ", fx(build_ms, 3), " ms"));
+	ok
+}
+=== 7e54f940a6112a08
+fn main() {
+	if !setup() {
+		print("gi dynamic: skipped");
+		return;
+	}
+	var all = true;
+	if !d1() { all = false; }
+	if !d2() { all = false; }
+	if !d3() { all = false; }
+	if !d4() { all = false; }
+	if !d4b() { all = false; }
+	if !d5() { all = false; }
+	if !d6() { all = false; }
+	if !d7() { all = false; }
+	if all { print("gi dynamic: ok"); } else { print("gi dynamic: FAILED"); }
+}

@@ -1,0 +1,4 @@
+// error: this write is lost: m is a by-value parameter
+struct Sim<R> { n int, rules R }
+fn tick(m) { m.n += 1; }
+fn main() { var a = Sim<int> { n: 0, rules: 7 }; tick(a); print(a.n); }
