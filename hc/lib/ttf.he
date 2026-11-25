@@ -171,7 +171,7 @@ fill(s f32[>..]&, s2 f32[>..]&, len int, aa A[>..]&, head int, yt f32):
 		let e .= aa[k]
 		if e.fdx == 0.0:
 			x0 := e.fx
-			if x0 < lf: if x0 >= 0.0 { clip(s, 0, x0 as int, e, x0, yt, x0, yb); clip(s2, 0, x0 as int + 1, e, x0, yt, x0, yb) } else { clip(s2, 0, 0, e, x0, yt, x0, yb) }
+			if x0 < lf: if x0 >= 0.0 { clip(s, 0, x0 as! int, e, x0, yt, x0, yb); clip(s2, 0, x0 as! int + 1, e, x0, yt, x0, yb) } else { clip(s2, 0, 0, e, x0, yt, x0, yb) }
 		else:
 			x0 ~= e.fx; dx ~= e.fdx; xb ~= x0 + dx; dy ~= e.fdy; xt ~= 0.0 as f32; xbo ~= 0.0 as f32; sy0 ~= 0.0 as f32; sy1 ~= 0.0 as f32
 			if e.sy > yt { xt = x0 + dx * (e.sy - yt); sy0 = e.sy } else { xt = x0; sy0 = yt }
@@ -211,7 +211,7 @@ raster_sorted(px byte[>..]&, base int, w int, h int, stride int, e E[>..]&, n in
 			ei += 1
 		if head >= 0: fill(s, s2, w, aa, head, yt)
 		sum ~= 0.0 as f32
-		for i w: sum += s2[i]; kk := abs(s[i] + sum) * 255.0 + 0.5; m := kk as int; px[base + j * stride + i] = (if m > 255 { 255 } else { m }) as byte
+		for i w: sum += s2[i]; kk := abs(s[i] + sum) * 255.0 + 0.5; m := kk as! int; px[base + j * stride + i] = (if m > 255 { 255 } else { m }) as byte
 		k = head
 		while k >= 0: aa[k].fx += aa[k].fdx; k = aa[k].nx
 		y += 1; j += 1

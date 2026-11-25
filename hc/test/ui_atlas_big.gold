@@ -1,0 +1,16 @@
+into ui_atlas_big.he
+lang he
+use ui
+
+```he
+check(h int):
+	a := ui::create_font_atlas(); ui::add_default_font(a, h as f32); ok := ui::bake(a); s := ui::atlas_size(a)
+	print(h, " ok ", ok, " fits ", s.x >= 1 && s.x <= 8192 && s.y >= 1 && s.y <= 8192)
+main():
+	for h [160, 400, 600]: check(h)
+```
+
+expect:
+160 ok true fits true
+400 ok true fits true
+600 ok true fits true
