@@ -1,0 +1,133 @@
+import math;
+import vec;
+import physics;
+namespace mover;
+struct Settings {
+	radius f32,
+	height f32,
+	step_height f32,
+	max_slope f32,
+	max_speed f32,
+	accelerate f32,
+	air_steer f32,
+	friction f32,
+	stop_speed f32,
+	jump_speed f32,
+	gravity f32,
+	rise_speed f32,
+	skin f32,
+	filter physics::QueryFilter,
+}
+fn settings() Settings {
+	Settings { radius: 0.3, height: 1.8, step_height: 0.35, max_slope: 0.87, max_speed: 4.7, accelerate: 10.0, air_steer: 0.2, friction: 7.0, stop_speed: 1.7, jump_speed: 5.2, gravity: 9.8, rise_speed: 4.7, skin: 0.01, filter: physics::default_query_filter() }
+}
+struct Mover {
+	pos float3,
+	vel float3,
+	grounded bool,
+	ground_normal float3,
+	s Settings,
+	hits int,
+	planes physics::CollisionPlane[>..],
+}
+fn new(pos float3, s Settings) Mover {
+	return Mover { pos: pos, vel: float3 { 0.0, 0.0, 0.0 }, grounded: false, ground_normal: float3 { 0.0, 1.0, 0.0 }, s: s, hits: 0, planes: [] };
+}
+fn capsule(m Mover&) physics::Capsule {
+	physics::Capsule { center1: float3 { 0.0, m.s.step_height + m.s.radius, 0.0 }, center2: float3 { 0.0, m.s.height - m.s.radius, 0.0 }, radius: m.s.radius + m.s.skin }
+}
+fn walkable(n float3, s Settings) bool {
+	n.y >= cos(s.max_slope)
+}
+fn gather(w physics::World&, m Mover&, standing bool) {
+	m.planes.clear();
+	let found = physics::collide_mover(w, m.pos, capsule(m), m.s.filter);
+	for h in found {
+		var plane = h.plane;
+		if standing && !walkable(plane.normal, m.s) && plane.normal.y > 0.0 {
+			let nx = plane.normal.x;
+			let nz = plane.normal.z;
+			let len = sqrt(nx * nx + nz * nz) as f32;
+			if len > 0.0001 {
+				plane.normal = float3 { nx / len, 0.0, nz / len };
+				plane.offset = plane.offset / len;
+			}
+		}
+		m.planes.push(physics::CollisionPlane { plane: plane, push_limit: 3.4e38, push: 0.0, clip_velocity: true });
+	}
+}
+fn slide(w physics::World&, m Mover&, delta float3, standing bool) {
+	let target = m.pos + delta;
+	for round in 5 {
+		gather(w, m, standing);
+		let solved, iterations = physics::solve_planes(target - m.pos, m.planes[..]);
+		if !standing { solved.y = min(solved.y, max(0.0, target.y - m.pos.y)); }
+		let f = physics::cast_mover(w, m.pos, capsule(m), solved, m.s.filter);
+		let moved = float3 { solved.x * f, solved.y * f, solved.z * f };
+		m.pos = m.pos + moved;
+		if sqrt(moved.x * moved.x + moved.y * moved.y + moved.z * moved.z) < 0.001 { break; }
+	}
+	m.vel = physics::clip_vector(m.vel, m.planes[..]);
+	m.hits = m.planes.len;
+}
+fn probe(w physics::World&, m Mover&) bool, f32, float3 {
+	let points = [float3 { 0.0, m.s.step_height + m.s.radius, 0.0 }];
+	let reach = m.s.step_height * 3.0 + 0.1 * m.s.radius;
+	let found = physics::cast_shape(w, m.pos, points[..], 0.9 * m.s.radius, float3 { 0.0, 0.0 - reach, 0.0 }, m.s.filter);
+	if found.len == 0 { return false, 0.0, float3 { 0.0, 1.0, 0.0 }; }
+	let n = found[0].normal;
+	let p = found[0].point;
+	let ground = if n.y > 0.1 { p.y - (n.x * (m.pos.x - p.x) + n.z * (m.pos.z - p.z)) / n.y } else { p.y };
+	return true, ground - m.pos.y, n;
+}
+fn step(w physics::World&, m Mover&, wish float3, jump bool, dt f32) {
+	let was = m.grounded;
+	var h = float3 { m.vel.x, 0.0, m.vel.z };
+	if was {
+		let speed = sqrt(h.x * h.x + h.z * h.z) as f32;
+		if speed < 0.01 {
+			h = float3 { 0.0, 0.0, 0.0 };
+		} else {
+			let scale = max(speed - max(speed, m.s.stop_speed) * m.s.friction * dt, 0.0) / speed;
+			h = float3 { h.x * scale, h.y * scale, h.z * scale };
+		}
+	}
+	let wish_len = sqrt(wish.x * wish.x + wish.z * wish.z) as f32;
+	let length = min(wish_len, 1.0);
+	if length > 0.0001 {
+		let dx = wish.x / wish_len;
+		let dz = wish.z / wish_len;
+		let desired = m.s.max_speed * length;
+		let add = desired - (h.x * dx + h.z * dz);
+		if add > 0.0 {
+			let steer f32 = if was { 1.0 } else { m.s.air_steer };
+			let gain = min(add, m.s.accelerate * m.s.max_speed * dt * steer);
+			h.x = h.x + dx * gain;
+			h.z = h.z + dz * gain;
+		}
+	}
+	m.vel.x = h.x;
+	m.vel.z = h.z;
+	if was && jump {
+		m.vel.y = m.s.jump_speed;
+		m.grounded = false;
+	} else if was {
+		m.vel.y = 0.0;
+	} else {
+		m.vel.y = m.vel.y - m.s.gravity * dt;
+	}
+	slide(w, m, float3 { m.vel.x * dt, m.vel.y * dt, m.vel.z * dt }, was && !jump);
+	let hit, dy, n = probe(w, m);
+	let down f32 = if was && !jump { m.s.step_height * 2.0 } else { 0.02 };
+	if hit && walkable(n, m.s) && m.vel.y <= 0.0 && dy >= 0.0 - down && dy <= m.s.step_height + 0.1 * m.s.radius {
+		m.grounded = true;
+		m.ground_normal = n;
+		m.vel.y = 0.0;
+		let lift = if dy > 0.0 && was { min(dy, m.s.rise_speed * dt) } else { dy };
+		let f = physics::cast_mover(w, m.pos, capsule(m), float3 { 0.0, lift, 0.0 }, m.s.filter);
+		m.pos.y = m.pos.y + lift * f;
+	} else {
+		m.grounded = false;
+		m.ground_normal = float3 { 0.0, 1.0, 0.0 };
+	}
+}

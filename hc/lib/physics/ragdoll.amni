@@ -1,0 +1,277 @@
+import math;
+import vec;
+import physics;
+import anim.math;
+import anim.pose;
+namespace ragdoll;
+fn pq(q float4) physics::Quat {
+	physics::Quat { x: q.x, y: q.y, z: q.z, w: q.w }
+}
+fn fq(q physics::Quat) float4 {
+	float4 { x: q.x, y: q.y, z: q.z, w: q.w }
+}
+struct Settings {
+	thickness f32 = 0.2,
+	min_radius f32 = 0.02,
+	max_radius f32 = 0.17,
+	density f32 = 1000.0,
+	friction f32 = 0.7,
+	cone f32 = 0.7,
+	twist f32 = 0.5,
+	linear_damping f32 = 0.07,
+	angular_damping f32 = 0.7,
+	group i32 = -7,
+	self_collide bool = false,
+	mass_ratio f32 = 3.0,
+	inertia_scale f32 = 3.0,
+}
+fn settings() Settings {
+	Settings { .. }
+}
+struct Ragdoll {
+	w physics::World,
+	n int,
+	bodies physics::Body[],
+	joints physics::SphericalJoint[],
+	jointed bool[],
+	fb float4[],
+	cone f32[],
+	lo f32[],
+	hi f32[],
+	lens f32[],
+	radii f32[],
+	limited bool,
+}
+fn raise_mass(body physics::Body, want f32) {
+	var md = physics::mass_data(body);
+	if md.mass < want {
+		let factor f32 = want / md.mass;
+		md.mass = want;
+		md.inertia.cx = md.inertia.cx * factor;
+		md.inertia.cy = md.inertia.cy * factor;
+		md.inertia.cz = md.inertia.cz * factor;
+		physics::set_mass_data(body, md);
+	}
+}
+fn inertia_trace(body physics::Body) f32 {
+	let md = physics::mass_data(body);
+	md.inertia.cx.x + md.inertia.cy.y + md.inertia.cz.z
+}
+fn raise_inertia(body physics::Body, want f32) {
+	var md = physics::mass_data(body);
+	let trace f32 = md.inertia.cx.x + md.inertia.cy.y + md.inertia.cz.z;
+	if trace < want {
+		let factor f32 = want / trace;
+		md.inertia.cx = md.inertia.cx * factor;
+		md.inertia.cy = md.inertia.cy * factor;
+		md.inertia.cz = md.inertia.cz * factor;
+		physics::set_mass_data(body, md);
+	}
+}
+fn build(w physics::World, sk anim::Skeleton&, m anim::Model&, at anim::Xf, s Settings, radii const f32[:]) Ragdoll {
+	let n = sk.n as int;
+	var bodies physics::Body[>..] = [];
+	var joints physics::SphericalJoint[>..] = [];
+	var jointed bool[>..] = [];
+	var fbs float4[>..] = [];
+	var cones f32[>..] = [];
+	var los f32[>..] = [];
+	var his f32[>..] = [];
+	var lens f32[>..] = [];
+	var rads f32[>..] = [];
+	for j in n {
+		let p = sk.parent[j] as int;
+		let wx = anim::xf_mul(at, m.x[j]);
+		var sum = float3 { x: 0.0, y: 0.0, z: 0.0 };
+		var count = 0;
+		for k in n {
+			if sk.parent[k] as int == j {
+				sum = sum + anim::xf_mul(at, m.x[k]).t;
+				count++;
+			}
+		}
+		var axis = float3 { x: 0.0, y: 0.0, z: 0.0 };
+		var len f32 = 0.0;
+		var leaf = true;
+		if count > 0 {
+			axis = sum * (1.0 / (count as f32)) - wx.t;
+			let reach = length(axis) as f32;
+			if reach >= 1e-3 {
+				leaf = false;
+				len = reach;
+			}
+		}
+		if leaf {
+			if p >= 0 {
+				axis = wx.t - anim::xf_mul(at, m.x[p]).t;
+			} else {
+				axis = float3 { x: 0.0, y: 1.0, z: 0.0 };
+			}
+		}
+		let a = normalize(anim::qrot(anim::qconj(wx.r), axis));
+		var radius f32 = s.max_radius;
+		if j < radii.len && radii[j] > 0.0 {
+			radius = radii[j];
+		} else if !leaf {
+			radius = clamp(len * s.thickness, s.min_radius, s.max_radius);
+		} else if p >= 0 {
+			radius = clamp(lens[p] * 0.35, s.min_radius, s.max_radius);
+		}
+		var bd = physics::default_body_def();
+		bd.body_type = physics::DYNAMIC;
+		bd.position = wx.t;
+		bd.rotation = pq(wx.r);
+		bd.linear_damping = s.linear_damping;
+		bd.angular_damping = s.angular_damping;
+		let body = physics::create_body(w, bd);
+		var sd = physics::default_shape_def();
+		sd.density = s.density;
+		sd.material.friction = s.friction;
+		sd.filter.group_index = if s.self_collide { 0 } else { s.group };
+		if !leaf && len > 2.0 * radius {
+			physics::create_capsule_shape(body, sd, physics::Capsule { center1: a * radius, center2: a * (len - radius), radius: radius });
+		} else if !leaf {
+			physics::create_sphere_shape(body, sd, physics::Sphere { center: a * max(len * 0.5, radius), radius: radius });
+		} else {
+			physics::create_sphere_shape(body, sd, physics::Sphere { center: a * radius, radius: radius });
+		}
+		let frame = anim::qfromto(float3 { x: 0.0, y: 0.0, z: 1.0 }, a);
+		bodies.push(body);
+		fbs.push(frame);
+		lens.push(len);
+		rads.push(radius);
+		if p >= 0 {
+			let wp = anim::xf_mul(at, m.x[p]);
+			var jd = physics::default_spherical_joint_def();
+			jd.base.body_a = bodies[p];
+			jd.base.body_b = body;
+			jd.base.collide_connected = false;
+			jd.base.frame_a = physics::Transform { p: anim::qrot(anim::qconj(wp.r), wx.t - wp.t), q: pq(anim::qmul(sk.rest_r[j], frame)) };
+			jd.base.frame_b = physics::Transform { p: float3 { x: 0.0, y: 0.0, z: 0.0 }, q: pq(frame) };
+			jd.enable_cone_limit = true;
+			jd.cone_angle = s.cone;
+			jd.enable_twist_limit = true;
+			jd.lower_twist_angle = -s.twist;
+			jd.upper_twist_angle = s.twist;
+			jd.enable_spring = false;
+			jd.hertz = 0.0;
+			jd.damping_ratio = 1.0;
+			joints.push(physics::create_spherical_joint(w, jd));
+			jointed.push(true);
+			cones.push(s.cone);
+			los.push(-s.twist);
+			his.push(s.twist);
+		} else {
+			joints.push(default<physics::SphericalJoint>());
+			jointed.push(false);
+			cones.push(0.0);
+			los.push(0.0);
+			his.push(0.0);
+		}
+	}
+	for j in n {
+		raise_inertia(bodies[j], inertia_trace(bodies[j]) * s.inertia_scale);
+	}
+	for j in n {
+		if jointed[j] {
+			let p = sk.parent[j] as int;
+			raise_mass(bodies[j], physics::mass_data(bodies[p]).mass / s.mass_ratio);
+			raise_inertia(bodies[j], inertia_trace(bodies[p]) / s.mass_ratio);
+		}
+	}
+	for i in n {
+		let j = n - 1 - i;
+		if jointed[j] {
+			let p = sk.parent[j] as int;
+			raise_mass(bodies[p], physics::mass_data(bodies[j]).mass / s.mass_ratio);
+			raise_inertia(bodies[p], inertia_trace(bodies[j]) / s.mass_ratio);
+		}
+	}
+	Ragdoll { w: w, n: n, bodies: copy(bodies), joints: copy(joints), jointed: copy(jointed), fb: copy(fbs), cone: copy(cones), lo: copy(los), hi: copy(his), lens: copy(lens), radii: copy(rads), limited: true }
+}
+fn limit(rd Ragdoll&, j int, cone f32, lo f32, hi f32) {
+	if rd.jointed[j] {
+		rd.cone[j] = cone;
+		rd.lo[j] = lo;
+		rd.hi[j] = hi;
+		physics::set_cone_limit(rd.joints[j], cone);
+		physics::set_twist_limits(rd.joints[j], lo, hi);
+	}
+}
+fn use_limits(rd Ragdoll&, on bool) {
+	for j in rd.n {
+		if rd.jointed[j] {
+			physics::enable_cone_limit(rd.joints[j], on);
+			physics::enable_twist_limit(rd.joints[j], on);
+		}
+	}
+	rd.limited = on;
+}
+fn start(rd Ragdoll&, sk anim::Skeleton&, m0 anim::Model&, m1 anim::Model&, at0 anim::Xf, at1 anim::Xf, dt f32) {
+	for j in sk.n as int {
+		let w0 = anim::xf_mul(at0, m0.x[j]);
+		let w1 = anim::xf_mul(at1, m1.x[j]);
+		physics::set_transform(rd.bodies[j], w1.t, pq(w1.r));
+		physics::set_linear_velocity(rd.bodies[j], (w1.t - w0.t) * (1.0 / dt));
+		var d = anim::qmul(w1.r, anim::qconj(w0.r));
+		if d.w < 0.0 {
+			d = float4 { x: -d.x, y: -d.y, z: -d.z, w: -d.w };
+		}
+		let c f32 = min(d.w, 1.0);
+		let angle = (2.0 * atan2(sqrt(max(1.0 - c * c, 0.0)), c)) as f32;
+		let v = float3 { x: d.x, y: d.y, z: d.z };
+		var spin = float3 { x: 0.0, y: 0.0, z: 0.0 };
+		if length(v) > 1e-7 {
+			spin = normalize(v) * (angle / dt);
+		}
+		physics::set_angular_velocity(rd.bodies[j], spin);
+	}
+}
+fn read(rd Ragdoll&, sk anim::Skeleton&, at anim::Xf, out anim::Pose&) {
+	out.n = sk.n;
+	let ia = anim::xf_inv(at);
+	var rots float4[>..] = [];
+	var spots float3[>..] = [];
+	for j in sk.n as int {
+		rots.push(anim::qnorm(anim::qmul(ia.r, fq(physics::rotation(rd.bodies[j])))));
+		spots.push(anim::xf_point(ia, physics::position(rd.bodies[j])));
+	}
+	for j in sk.n as int {
+		let p = sk.parent[j] as int;
+		if p < 0 {
+			out.r[j] = rots[j];
+			out.t[j] = spots[j];
+		} else {
+			out.r[j] = anim::qnorm(anim::qmul(anim::qconj(rots[p]), rots[j]));
+			out.t[j] = sk.rest_t[j];
+		}
+		out.s[j] = sk.rest_s[j];
+	}
+}
+fn drive(rd Ragdoll&, sk anim::Skeleton&, target anim::Pose&, hz f32) {
+	for j in rd.n {
+		if rd.jointed[j] {
+			if hz > 0.0 {
+				physics::enable_spring(rd.joints[j], true);
+				physics::set_spring_hertz(rd.joints[j], hz);
+				let base = anim::qmul(sk.rest_r[j], rd.fb[j]);
+				physics::set_target_rotation(rd.joints[j], pq(anim::qmul(anim::qmul(anim::qconj(base), target.r[j]), rd.fb[j])));
+			} else {
+				physics::enable_spring(rd.joints[j], false);
+			}
+		}
+	}
+}
+fn violation(rd Ragdoll&) f32 {
+	var worst f32 = 0.0;
+	for j in rd.n {
+		if rd.jointed[j] {
+			let swing f32 = physics::cone_angle(rd.joints[j]);
+			let turn f32 = physics::twist_angle(rd.joints[j]);
+			worst = max(worst, swing - rd.cone[j]);
+			worst = max(worst, rd.lo[j] - turn);
+			worst = max(worst, turn - rd.hi[j]);
+		}
+	}
+	worst
+}

@@ -1,0 +1,237 @@
+=== 015a3605f5f49e97
+import math;
+import vec;
+import os;
+import physics;
+import anim.math;
+import anim.pose;
+import physics.ragdoll;
+var SK anim::Skeleton;
+var P0 anim::Pose;
+var P1 anim::Pose;
+var OUT anim::Pose;
+var M0 anim::Model;
+var M1 anim::Model;
+var FAILS int = 0;
+let DT f32 = 1.0 / 60.0;
+fn check(ok bool, label const byte[:]) {
+	if ok {
+		print("ok ", label);
+	} else {
+		print("FAIL ", label);
+		FAILS += 1;
+	}
+}
+fn r4(x real) real { round(x * 10000.0) / 10000.0 }
+=== -35e3c027fe1f4b12
+struct Bone { name byte[..16], parent i32, x f32, y f32, z f32, radius f32 }
+=== -2a07c7cf63c3f68e
+var RADII f32[>..];
+fn humanoid() {
+	let bs = bones();
+	SK.n = 17;
+	RADII.clear();
+	for i in bs.len {
+		SK.parent[i] = bs[i].parent;
+		SK.rest_t[i] = float3 { bs[i].x, bs[i].y, bs[i].z };
+		SK.rest_r[i] = anim::QI;
+		SK.rest_s[i] = float3 { 1.0, 1.0, 1.0 };
+		RADII.push(bs[i].radius);
+	}
+}
+fn world() physics::World {
+	var wd = physics::default_world_def();
+	var w = physics::create_world(wd);
+	var bd = physics::default_body_def();
+	var ground = physics::create_body(w, bd);
+	var sd = physics::default_shape_def();
+	physics::create_box_shape(ground, sd, float3 { 50.0, 0.5, 50.0 }, physics::Transform { float3 { 0.0, -0.5, 0.0 }, physics::Quat { 0.0, 0.0, 0.0, 1.0 } });
+	w
+}
+fn ident(t float3, r float4) anim::Xf { anim::Xf { t, r, float3 { 1.0, 1.0, 1.0 } } }
+=== 1b0ddc820dcd3050
+fn r1() {
+	humanoid();
+	anim::rest_pose(SK, P0);
+	anim::fk(SK, P0, M0);
+	var w = world();
+	var rd = ragdoll::build(w, SK, M0, ident(float3 { 0.0, 0.1, 0.0 }, anim::QI), ragdoll::settings(), RADII[..]);
+	var jointed = 0;
+	var cone f32 = 0.0;
+	var twist f32 = 0.0;
+	for j in rd.jointed.len {
+		if rd.jointed[j] {
+			jointed += 1;
+			cone = max(cone, physics::cone_angle(rd.joints[j]));
+			twist = max(twist, abs(physics::twist_angle(rd.joints[j])));
+		}
+	}
+	check(rd.bodies.len == 17 && jointed == 16, "R1 one body per joint");
+	check(cone < 0.0001 && twist < 0.0001, "R1 rest pose is the joints' zero");
+	print("R1 bodies ", rd.bodies.len, " jointed ", jointed, " cone ", r4(cone), " twist ", r4(twist));
+	physics::destroy(w);
+}
+=== -101a718f2b33d0f7
+fn len3(v float3) f32 {
+	let s real = v.x * v.x + v.y * v.y + v.z * v.z;
+	sqrt(s) as f32
+}
+fn posed() {
+	anim::rest_pose(SK, P1);
+	for j in 1..17 {
+		let k = j as real;
+		let a = float3 { sin(k) as f32, cos(2.0 * k) as f32, sin(3.0 * k) as f32 };
+		let l = len3(a);
+		P1.r[j] = anim::qaxis(float3 { a.x / l, a.y / l, a.z / l }, (0.4 * sin(1.7 * k)) as f32);
+	}
+	P1.r[0] = anim::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.7);
+	P1.t[0] = float3 { 0.3, 1.0, -0.2 };
+	anim::fk(SK, P1, M1);
+}
+fn r2() {
+	posed();
+	var w = world();
+	let at = ident(float3 { 1.7, 0.1, -0.7 }, anim::qaxis(float3 { 0.0, 1.0, 0.0 }, 0.37));
+	var rd = ragdoll::build(w, SK, M1, at, ragdoll::settings(), RADII[..]);
+	ragdoll::read(rd, SK, at, OUT);
+	var worst f32 = 0.0;
+	for j in 17 { worst = max(worst, anim::qangle(OUT.r[j], P1.r[j])); }
+	let off = len3(float3 { OUT.t[0].x - P1.t[0].x, OUT.t[0].y - P1.t[0].y, OUT.t[0].z - P1.t[0].z });
+	check(worst < 0.001 && off < 0.0001, "R2 read back equals the pose");
+	print("R2 angle ", r4(worst), " root ", r4(off));
+	anim::rest_pose(SK, P0);
+	var rest f32 = 0.0;
+	for j in 17 { rest = max(rest, anim::qangle(OUT.r[j], P0.r[j])); }
+	check(rest > 0.1, "R2 control: rest pose differs");
+	print("R2 control angle ", r4(rest));
+	physics::destroy(w);
+}
+=== 4f1eeb55d2c9a287
+fn drop(hz f32, limits bool, tilt f32, yaw f32) f32, f32, bool, f32 {
+	anim::rest_pose(SK, P0);
+	anim::fk(SK, P0, M0);
+	var w = world();
+	var rd = ragdoll::build(w, SK, M0, ident(float3 { 0.0, 1.2, 0.0 }, anim::qmul(anim::qaxis(float3 { 0.0, 1.0, 0.0 }, yaw), anim::qaxis(float3 { 1.0, 0.0, 0.0 }, tilt))), ragdoll::settings(), RADII[..]);
+	ragdoll::use_limits(rd, limits);
+	if hz >= 0.0 { ragdoll::drive(rd, SK, P0, hz); }
+	var worst f32 = 0.0;
+	for i in 420 {
+		physics::step(w, DT, 4);
+		worst = max(worst, ragdoll::violation(rd));
+	}
+	ragdoll::read(rd, SK, ident(float3 { 0.0, 0.0, 0.0 }, anim::QI), OUT);
+	var speed f32 = 0.0;
+	var ok = true;
+	for j in rd.bodies.len {
+		speed = max(speed, len3(physics::linear_velocity(rd.bodies[j])));
+		let p = physics::position(rd.bodies[j]);
+		if !(p.x - p.x == 0.0 && p.y - p.y == 0.0 && p.z - p.z == 0.0 && p.y > 0.0) { ok = false; }
+	}
+	var err f32 = 0.0;
+	for j in 1..17 { err += anim::qangle(OUT.r[j], P0.r[j]); }
+	physics::destroy(w);
+	return worst, speed, ok, err / 16.0;
+}
+=== 1675e173361c1274
+fn r3_r4() {
+	let worst, speed, ok, err = drop(-1.0, true, 0.5, 0.0);
+	check(ok && speed < 0.1, "R3 settles on the floor");
+	var most f32 = 0.0;
+	for k in 7 {
+		let tilt = (0.2 + 0.3 * (k as real)) as f32;
+		let yaw = (0.7 * (k as real)) as f32;
+		let fall, fall_speed, fall_ok, fall_err = drop(-1.0, true, tilt, yaw);
+		most = max(most, fall);
+	}
+	check(most < 0.1, "R4 limits hold in all seven falls");
+	print("R3 speed ", r4(speed), " positions ", ok);
+	print("R4 violation ", r4(most));
+	var loose f32 = 0.0;
+	for k in 7 {
+		let tilt = (0.2 + 0.3 * (k as real)) as f32;
+		let yaw = (0.7 * (k as real)) as f32;
+		let fall, fall_speed, fall_ok, fall_err = drop(-1.0, false, tilt, yaw);
+		loose = if k == 0 { fall } else { min(loose, fall) };
+	}
+	check(loose > 0.3, "R4 control: no limits flop in every fall");
+	print("R4 control violation ", r4(loose));
+}
+=== 47107d66782f2378
+fn r5() {
+	anim::rest_pose(SK, P0);
+	anim::fk(SK, P0, M0);
+	anim::fk(SK, P0, M1);
+	var w = world();
+	var rd = ragdoll::build(w, SK, M0, ident(float3 { 0.0, 2.0, 0.0 }, anim::QI), ragdoll::settings(), RADII[..]);
+	ragdoll::start(rd, SK, M0, M1, ident(float3 { 0.0, 2.0, 0.0 }, anim::QI), ident(float3 { 0.05, 2.0, 0.0 }, anim::QI), DT);
+	var x f32 = 0.0;
+	var y f32 = 0.0;
+	var z f32 = 0.0;
+	for j in rd.bodies.len {
+		let v = physics::linear_velocity(rd.bodies[j]);
+		x += v.x;
+		y += v.y;
+		z += v.z;
+	}
+	let n = rd.bodies.len as f32;
+	x = x / n;
+	y = y / n;
+	z = z / n;
+	check(abs(x - 3.0) < 0.03 && abs(y) < 0.03 && abs(z) < 0.03, "R5 hands over 3 m/s");
+	print("R5 velocity ", r4(x), " ", r4(y), " ", r4(z));
+	physics::destroy(w);
+}
+=== 5614adb1caf8282b
+fn r6() {
+	var err f32 = 0.0;
+	for k in 7 {
+		let tilt = (0.2 + 0.3 * (k as real)) as f32;
+		let yaw = (0.7 * (k as real)) as f32;
+		let worst, speed, ok, fall_err = drop(7.0, true, tilt, yaw);
+		err = max(err, fall_err);
+	}
+	check(err < 0.2, "R6 powered ragdoll holds its pose in all seven falls");
+	print("R6 error ", r4(err));
+	var loose f32 = 0.0;
+	for k in 7 {
+		let tilt = (0.2 + 0.3 * (k as real)) as f32;
+		let yaw = (0.7 * (k as real)) as f32;
+		let loose_worst, loose_speed, loose_ok, fall_err = drop(0.0, true, tilt, yaw);
+		loose = if k == 0 { fall_err } else { min(loose, fall_err) };
+	}
+	check(loose > 0.3, "R6 control: unpowered loses the pose in every fall");
+	print("R6 control error ", r4(loose));
+}
+=== 7f2e9dd46e27fd9b
+fn r7() {
+	anim::rest_pose(SK, P0);
+	anim::fk(SK, P0, M0);
+	var w = world();
+	for i in 17 {
+		let at = ident(float3 { (2.3 * ((i % 5) as real) - 4.7) as f32, 1.2, (2.3 * ((i / 5) as real) - 4.7) as f32 }, anim::qaxis(float3 { 1.0, 0.0, 0.0 }, 0.5));
+		let rd = ragdoll::build(w, SK, M0, at, ragdoll::settings(), RADII[..]);
+	}
+	let t0 = time_ns();
+	for i in 300 { physics::step(w, DT, 4); }
+	let t1 = time_ns();
+	let ms = ((t1 - t0) as real) / 300.0 / 1000000.0;
+	print("R7 ms per step ", r4(ms));
+	check(ms < 7.0, "R7 17 ragdolls under 7 ms a step");
+	physics::destroy(w);
+}
+=== -65c3fe12bf71c1f7
+fn main() {
+	humanoid();
+	r1();
+	r2();
+	r3_r4();
+	r5();
+	r6();
+	r7();
+	if FAILS == 0 {
+		print("ragdoll: ok");
+	} else {
+		print("ragdoll: FAILED ", FAILS);
+		exit(1);
+	}
+}

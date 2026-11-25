@@ -1,0 +1,44 @@
+use std
+into ragdoll_test.amni
+
+A test program for `physics.ragdoll`; imports math, vec, os, physics, anim.math, anim.pose and physics.ragdoll. Already provided and never defined here: in namespace ragdoll `Settings`, `Ragdoll` (fields bodies, joints, jointed, n), `settings()`, `build(world, sk, model, at, settings, radii) Ragdoll`, `start(rd, sk, m0, m1, at0, at1, dt)`, `read(rd, sk, at, pose)`, `drive(rd, sk, target, hz)`, `use_limits(rd, on)` and `violation(rd) f32` (rd, sk, models and poses by reference); in namespace anim `Skeleton` (n, parent, rest_t, rest_r, rest_s), `Pose`, `Model`, `Xf` (t, r, s), `QI`, `qaxis(axis, angle)`, `qangle(a, b)`, `qnorm`, `rest_pose(sk, pose)` and `fk(sk, pose, model)`; in namespace physics `World`, `Quat`, `Transform`, `default_world_def()`, `create_world(def)`, `destroy(world)`, `step(world, dt, substeps)`, `default_body_def()`, `create_body(world, def)` (static by default), `default_shape_def()`, `create_box_shape(body, def, half, frame Transform)`, `position(body)`, `linear_velocity(body)` and `time_ns()` from os. Skeletons, poses and models are large: keep them in module variables `SK` (Skeleton), `P0`, `P1`, `OUT` (Pose), `M0`, `M1` (Model) and pass them by reference. Numbers are f32 except times. A counter `FAILS`; `check(ok, label)` prints "ok " or "FAIL " and the label and counts failures. `DT` is 1/60. `r4(x)` rounds to four decimals for printing.
+
+`Bone` holds name (text), parent (i32), x, y, z and radius (f32); `bones()` gives the table below.
+
+```table bones Bone
+hips|-1|0|1.0|0|0.12
+spine|0|0|0.12|0|0.11
+chest|1|0|0.25|0|0.12
+neck|2|0|0.25|0|0.05
+head|3|0|0.1|0|0.1
+l_upper_arm|2|0.2|0.2|0|0.045
+l_lower_arm|5|0.3|0|0|0.04
+l_hand|6|0.25|0|0|0.04
+r_upper_arm|2|-0.2|0.2|0|0.045
+r_lower_arm|8|-0.3|0|0|0.04
+r_hand|9|-0.25|0|0|0.04
+l_thigh|0|0.1|-0.05|0|0.07
+l_shin|11|0|-0.45|0|0.055
+l_foot|12|0|-0.45|0|0.05
+r_thigh|0|-0.1|-0.05|0|0.07
+r_shin|14|0|-0.45|0|0.055
+r_foot|15|0|-0.45|0|0.05
+```
+
+`humanoid()` fills `SK` from the bones table: n 17, each joint's parent, rest_t (x, y, z), rest_r `QI` and rest_s (1, 1, 1). `RADII` is the radius column as an f32 array. `world() physics::World` creates a world from the default def with a static floor: a box of half (50, 0.5, 50) whose frame is at (0, -0.5, 0) with identity rotation. `ident(t, r) anim::Xf` is an Xf with translation t, rotation r and scale (1, 1, 1).
+
+`r1()`: `humanoid()`, `rest_pose(SK, P0)`, `fk(SK, P0, M0)`, build in a fresh world at `ident((0, 0.1, 0), QI)`; check 17 bodies and 16 jointed ("R1 one body per joint"); for every jointed joint record the largest `cone_angle` and largest absolute `twist_angle` of `physics`; check both under 1e-4 ("R1 rest pose is the joints' zero"); print them.
+
+`posed()` sets `P1` to the rest pose, then for joints 1 to 16 rotation `qaxis` of the normalized axis (sin j, cos 2j, sin 3j) by angle 0.4 × sin(1.7 j), and the root rotation `qaxis((0, 1, 0), 0.7)` with root translation (0.3, 1.0, -0.2); then `fk(SK, P1, M1)`. `r2()`: `posed()`, build in a fresh world at `ident((1.7, 0.1, -0.7), qaxis((0, 1, 0), 0.37))`, then at once `read` into `OUT` with the same at; the largest `qangle(OUT.r[j], P1.r[j])` over all joints must be under 1e-3 and the root translation within 1e-4 of P1's ("R2 read back equals the pose"); print. Control: the largest `qangle(OUT.r[j], P0.r[j])` against the rest pose is above 0.1 ("R2 control: rest pose differs").
+
+`drop(hz, limits, tilt, yaw) f32, f32, bool, f32` builds the rest pose in a fresh world at `ident((0, 1.2, 0), qmul(qaxis((0, 1, 0), yaw), qaxis((1, 0, 0), tilt)))`, calls `use_limits(rd, limits)`, and when hz is at least 0 calls `drive(rd, SK, P0, hz)`; then 420 steps of `physics::step(world, DT, 4)`, recording the largest `violation` after each step. Afterwards it reads the pose into `OUT` at the identity Xf and returns: the largest violation; the largest body speed (length of `linear_velocity`); whether every body position is finite with y above 0; and the mean `qangle(OUT.r[j], P0.r[j])` over joints 1 to 16. It destroys the world.
+
+The seven test falls are k from 0 to 6 with tilt 0.2 + 0.3 k and yaw 0.7 k, from nearly upright to upside down. `r3_r4()`: `drop(-1, true, 0.5, 0)`; check positions ok and largest speed under 0.1 ("R3 settles on the floor"); print. Over the seven falls take the worst `drop(-1, true, tilt, yaw)` violation and check it is under 0.1 ("R4 limits hold in all seven falls"); print it. Control: the smallest `drop(-1, false, tilt, yaw)` violation over the seven falls is above 0.3 ("R4 control: no limits flop in every fall"); print.
+
+`r5()`: rest pose model in both `M0` and `M1`; build in a fresh world at `ident((0, 2, 0), QI)`; `start(rd, SK, M0, M1, ident((0, 2, 0), QI), ident((0.05, 2, 0), QI), DT)`; mean of every body's `linear_velocity`; check |mean.x - 3| under 0.03 and |mean.y| and |mean.z| under 0.03 ("R5 hands over 3 m/s"); print.
+
+`r6()`: over the seven falls, the largest mean pose error of powered `drop(7, true, tilt, yaw)` must be under 0.2 ("R6 powered ragdoll holds its pose in all seven falls"); print. Control: the smallest mean error of `drop(0, true, tilt, yaw)` over the seven falls is above 0.3 ("R6 control: unpowered loses the pose in every fall"); print.
+
+`r7()`: one world, 17 ragdolls of the rest pose at `ident((2.3 × (i mod 5) - 4.7, 1.2, 2.3 × (i / 5) - 4.7), qaxis((1, 0, 0), 0.5))`; time 300 `physics::step(world, DT, 4)` with `time_ns`; average milliseconds per step; print; check under 7 ("R7 17 ragdolls under 7 ms a step").
+
+`main()`: `humanoid()`, then r1 to r7; print "ragdoll: ok", or "ragdoll: FAILED " and the count and exit 1.

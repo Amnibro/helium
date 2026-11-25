@@ -2510,15 +2510,16 @@ solve_sph(w World&, j JointSim&, ub bool):
 		if ln > mx: ni = sv(mx / ln, ni)
 		d := ni - p.mi; p.mi = ni; wa = wa - mv(ia, d); wb = wb + mv(ib, d)
 	if p.tl && !j.fixed:
-		an := twist_angle_q(rq); tj := p.tj; k := lim_coef(an - p.lta, ub, j.cs, w.ctx.inv_h); oi := p.lti
-		di := -k.y * p.twm * (dot(wb - wa, tj) + k.x) - k.z * oi; p.lti = fmax(oi + di, 0.0); d1 := p.lti - oi
+		ca := rot(qa, AX_Z); ta := rot(qb, AX_Z); t2 := fsqrt((rq.x * rq.x + rq.y * rq.y) / (rq.z * rq.z + rq.w * rq.w)); tj := madd(ca, t2, cross(nrm(cross(ca, ta)), ca)); kt := dot(tj, mv(madd3(ia, ib), tj)); twm := if kt > 0.0 { 1.0 / kt } else { 0.0 }; p.tj = tj; p.twm = twm
+		an := twist_angle_q(rq); k := lim_coef(an - p.lta, ub, j.cs, w.ctx.inv_h); oi := p.lti
+		di := -k.y * twm * (dot(wb - wa, tj) + k.x) - k.z * oi; p.lti = fmax(oi + di, 0.0); d1 := p.lti - oi
 		wa = msub(wa, d1, mv(ia, tj)); wb = madd(wb, d1, mv(ib, tj))
 		k2 := lim_coef(p.uta - an, ub, j.cs, w.ctx.inv_h); oi2 := p.uti
-		di2 := -k2.y * p.twm * (dot(wa - wb, tj) + k2.x) - k2.z * oi2; p.uti = fmax(oi2 + di2, 0.0); d2 := p.uti - oi2
+		di2 := -k2.y * twm * (dot(wa - wb, tj) + k2.x) - k2.z * oi2; p.uti = fmax(oi2 + di2, 0.0); d2 := p.uti - oi2
 		wa = madd(wa, d2, mv(ia, tj)); wb = msub(wb, d2, mv(ib, tj))
 	if p.cl && !j.fixed:
-		sa := p.sax; k := lim_coef(p.cone - swing_angle_q(rq), ub, j.cs, w.ctx.inv_h); oi := p.swi
-		di := -k.y * p.swm * (dot(wa - wb, sa) + k.x) - k.z * oi; p.swi = fmax(oi + di, 0.0); d := p.swi - oi
+		sa := nrm(cross(rot(qa, AX_Z), rot(qb, AX_Z))); kk := dot(sa, mv(madd3(ia, ib), sa)); swm := if kk > 0.0 { 1.0 / kk } else { 0.0 }; p.sax = sa; p.swm = swm; k := lim_coef(p.cone - swing_angle_q(rq), ub, j.cs, w.ctx.inv_h); oi := p.swi
+		di := -k.y * swm * (dot(wa - wb, sa) + k.x) - k.z * oi; p.swi = fmax(oi + di, 0.0); d := p.swi - oi
 		wa = madd(wa, d, mv(ia, sa)); wb = msub(wb, d, mv(ib, sa))
 	ra := rot(s1.dq, j.fra.p); rb := rot(s2.dq, j.frb.p); cd := ((vb + cross(wb, rb)) - va) - cross(wa, ra)
 	b := if ub { sv(j.cs.bias, ((s2.dp - s1.dp) + (rb - ra)) + j.dc) } else { V0 }; msc := if ub { j.cs.ms } else { 1.0 }; isc := if ub { j.cs.is } else { 0.0 }
