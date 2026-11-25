@@ -107,7 +107,7 @@ const cw = w => { if (!CM) return w; w = sp(w); const cv = new Set(); w = w.repl
   const win = h => g(h)?.cv ? g(h) : null;
   const ev = (t, wid = 1) => { const b = new Uint8Array(128), q = new DataView(b.buffer); q.setUint32(0, t, true); q.setBigUint64(8, BigInt(Math.round(performance.now() * 1e6)), true); q.setUint32(16, wid, true); evq.push(b); return q; };
   const fit = W => {
-    const cv = W.cv, d = W.f & 8192 ? devicePixelRatio || 1 : 1, cw = cv.clientWidth || W.w, ch = cv.clientHeight || W.h, pw = Math.max(1, Math.round(cw * d)), ph = Math.max(1, Math.round(ch * d));
+    const cv = W.cv, d = W.f & 8192 ? Math.min(devicePixelRatio || 1, +cv.dataset?.dprmax || 1e9) : 1, cw = cv.clientWidth || W.w, ch = cv.clientHeight || W.h, hs = cv.dataset?.size === "host", pw = hs ? cv.width : Math.max(1, Math.round(cw * d)), ph = hs ? cv.height : Math.max(1, Math.round(ch * d));
     if (cw !== W.w || ch !== W.h) { W.w = cw; W.h = ch; const q = ev(518); q.setInt32(20, cw, true); q.setInt32(24, ch, true); }
     if (pw !== cv.width || ph !== cv.height) { cv.width = pw; cv.height = ph; const q = ev(519); q.setInt32(20, pw, true); q.setInt32(24, ph, true); }
   };

@@ -385,6 +385,11 @@ create_screen(w0 int, h0 int) bool:
 screen() Texture: need("screen"); SCR
 screen_depth() Texture: need("screen_depth"); SCRD
 screen_size() int2: int2{SW as i32, SH as i32}
+sync_screen() bool:
+	if WIN == 0: return false
+	s_wpsz(WIN, p4(0), p4(1)); w := I4[0] as int; h := I4[1] as int
+	if w > 0 && h > 0 && (w != SW || h != SH): return create_screen(w, h)
+	true
 safe_area() int4:
 	if WIN == 0 || WW <= 0 || WH <= 0 || !s_wsafe(WIN, p4(0)): return int4{0, 0, SW as i32, SH as i32}
 	x0 := (I4[0] as int * WPW) / WW; y0 := (I4[1] as int * WPH) / WH; x1 := ((I4[0] + I4[2]) as int * WPW) / WW; y1 := ((I4[1] + I4[3]) as int * WPH) / WH
