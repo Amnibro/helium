@@ -1,0 +1,16 @@
+use std
+into crowd_test.amni
+
+A test program for `nav.crowd`; imports math, vec, os, nav.mesh and nav.crowd. Already provided and never defined here: in namespace crowd `clear`, `count`, `add(p, radius, speed) int`, `set_goal(i, g)`, `step(dt)`, `pos(i)`, `vel(i)`, `arrived(i)` and the module settings `avoid` and `on_mesh`; in namespace nav `clear()`, `add(a, b, c)` (one triangle of float3 corners), `build() bool` and the module variable `radius`; and `time_ns()` from os. Numbers are f32 except times. A counter `FAILS`; `check(ok, label)` prints "ok " or "FAIL " and the label and counts failures. `DT` is 1/60. `r3(x)` rounds to three decimals for printing.
+
+`min_gap() f32` is the smallest horizontal distance between any two agents' centers (all pairs). `fastest() f32` is the largest horizontal speed of any agent. `all_arrived() bool`.
+
+`swap(avoid) f32, bool` clears nav and the crowd, sets crowd `avoid`, adds agents of radius 0.3 and speed 1.4 at (-5, 0, 0) and (5, 0, 0) aiming at each other's start, steps 900 times recording the smallest `min_gap`, and returns it and whether both arrived. `k1()`: `swap(true)`; check the gap is at least 0.59 and both arrived ("K1 head-on swap passes cleanly"); print. Control: `swap(false)` gap below 0.1 ("K1 control: no avoidance collides").
+
+`circle(avoid) f32, bool, f32, float3` clears nav and the crowd, sets `avoid`, adds 37 agents of radius 0.3 and speed 1.4 on a circle of radius 7 (angle 2π i / 37, at (7 cos, 0, 7 sin)) each aiming at the opposite point, and steps 2400 times recording the smallest `min_gap` and the largest `fastest`; it returns those, whether all arrived, and the sum of all final positions. `k2()`: `circle(true)`; check the gap is at least 0.58, every agent arrived and the fastest never above 1.401 ("K2 37-agent circle swap"); print. Run `circle(true)` again; check the position sum is exactly equal ("K2 same run, same result"). Control: `circle(false)` gap below 0.3 ("K2 control: no avoidance collides").
+
+`quad(a, b, c, d)` adds triangles a b c and a c d to nav. `field()` clears nav, sets nav `radius` 0.3, adds the ground quad from (-10, 0, -10) to (10, 0, 10) and a 2 by 2 by 1 box at the center: its top at y 1 and its four sides, then `build()`. `clearance(p) f32` is the horizontal distance from p to the square from (-1, -1) to (1, 1) in x and z (0 inside). `around(mesh) f32, bool`: `field()`, clears the crowd, sets `avoid` true and `on_mesh` to mesh, adds 7 agents of radius 0.3 and speed 1.4 at (-7, 0, -2.1 + 0.7 i) aiming at (7, 0, 2.1 - 0.7 i), steps 1800 times recording the smallest `clearance` of any agent, returns it and whether all arrived; afterwards `on_mesh` is true again. `k3()`: `around(true)`; check the clearance is at least 0.15 and all arrived ("K3 routes around a box on the mesh"); print. Control: `around(false)`; check its clearance is below 0.05 ("K3 control: straight lines cut through the box").
+
+`k4()`: clears nav and the crowd, `avoid` true; 400 agents of radius 0.3 and speed 1.4 on a 20 by 20 grid with 2 m spacing centered on the origin (x and z = -19 + 2 × column or row), each aiming at its point mirrored through the origin; time 300 steps with `time_ns`; print milliseconds per step; check under 2 ("K4 400 agents under 2 ms a step").
+
+`main()`: k1 to k4; print "crowd: ok", or "crowd: FAILED " and the count and exit 1.

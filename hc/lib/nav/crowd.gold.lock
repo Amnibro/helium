@@ -1,0 +1,321 @@
+=== 06c102ef76725e81
+import math;
+import vec;
+import dictionary;
+import nav.mesh;
+namespace crowd;
+fn flat2(v float3) float2 {
+	float2 { v.x, v.z }
+}
+fn dot2(a float2, b float2) f32 {
+	a.x * b.x + a.y * b.y
+}
+fn len2(a float2) f32 {
+	sqrt(dot2(a, a))
+}
+fn scale2(a float2, s f32) float2 {
+	float2 { a.x * s, a.y * s }
+}
+fn unit2(a float2) float2 {
+	let l = len2(a);
+	if l > 0.0 { scale2(a, 1.0 / l) } else { float2 { 0.0, 0.0 } }
+}
+=== -64fe27bfe89f83ac
+var POS float3[>..];
+var VEL float3[>..];
+var NEXT float2[>..];
+var RAD f32[>..];
+var SPEED f32[>..];
+var GOAL float3[>..];
+var MOVING bool[>..];
+var CORNERS float3[..256][>..];
+var AT int[>..];
+var neighbor_dist f32 = 3.0;
+var max_neighbors int = 10;
+var time_horizon f32 = 2.0;
+var avoid bool = true;
+var arrive f32 = 0.1;
+var on_mesh bool = true;
+var keep_right f32 = 0.07;
+var nudge f32 = 0.02;
+=== -5f7090c31b426dc2
+fn clear() {
+	POS.clear();
+	VEL.clear();
+	NEXT.clear();
+	RAD.clear();
+	SPEED.clear();
+	GOAL.clear();
+	MOVING.clear();
+	CORNERS.clear();
+	AT.clear();
+	empty_grid();
+}
+fn count() int {
+	POS.len
+}
+fn add(p float3, radius f32, speed f32) int {
+	POS.push(p);
+	VEL.push(float3 { 0.0, 0.0, 0.0 });
+	NEXT.push(float2 { 0.0, 0.0 });
+	RAD.push(radius);
+	SPEED.push(speed);
+	GOAL.push(p);
+	MOVING.push(false);
+	CORNERS.push([]);
+	AT.push(0);
+	POS.len - 1
+}
+fn pos(i int) float3 {
+	POS[i]
+}
+fn vel(i int) float3 {
+	VEL[i]
+}
+fn arrived(i int) bool {
+	!MOVING[i]
+}
+=== 09f65a71f667b0d0
+fn set_goal(i int, g float3) {
+	GOAL[i] = g;
+	MOVING[i] = true;
+	AT[i] = 0;
+	CORNERS[i].clear();
+	var found float3[>..] = [];
+	if on_mesh && nav::path(POS[i], g, found) && found.len > 0 {
+		var first = 0;
+		if found.len > 1 && len2(flat2(found[0] - POS[i])) <= 0.01 { first = 1; }
+		for k in first..found.len {
+			if CORNERS[i].len < 255 || k == found.len - 1 { CORNERS[i].push(found[k]); }
+		}
+	} else {
+		CORNERS[i].push(g);
+	}
+}
+=== 77b41b85df386768
+fn prefer(i int, dt f32) float2 {
+	let zero = float2 { 0.0, 0.0 };
+	if !MOVING[i] { return zero; }
+	let last = CORNERS[i].len - 1;
+	while AT[i] < last && len2(flat2(CORNERS[i][AT[i]] - POS[i])) < RAD[i] {
+		AT[i] += 1;
+	}
+	let d = flat2(CORNERS[i][AT[i]] - POS[i]);
+	let l = len2(d);
+	var speed f32 = SPEED[i];
+	if AT[i] == last {
+		if l < arrive {
+			MOVING[i] = false;
+			return zero;
+		}
+		speed = min(speed, l / dt);
+	}
+	if l <= 0.0 { return zero; }
+	scale2(d, speed / l)
+}
+=== -58fd763d440a8ac1
+fn det(a float2, b float2) f32 {
+	a.x * b.y - a.y * b.x
+}
+struct Line { point float2, direction float2 }
+=== -7f43f2fa2c2bb184
+fn lp1(lines Line[:], k int, radius f32, opt float2, dir_opt bool, result float2&) bool {
+	let p = lines[k].point;
+	let d = lines[k].direction;
+	let dp = dot2(p, d);
+	let disc = dp * dp + radius * radius - dot2(p, p);
+	if disc < 0.0 { return false; }
+	let root = sqrt(disc);
+	var t_left f32 = -dp - root;
+	var t_right f32 = -dp + root;
+	for i in k {
+		let p_i = lines[i].point;
+		let d_i = lines[i].direction;
+		let den = det(d, d_i);
+		let num = det(d_i, p - p_i);
+		if abs(den) <= 0.00001 {
+			if num < 0.0 { return false; }
+			continue;
+		}
+		let t = num / den;
+		if den >= 0.0 { t_right = min(t_right, t); } else { t_left = max(t_left, t); }
+		if t_left > t_right { return false; }
+	}
+	if dir_opt {
+		if dot2(opt, d) > 0.0 { result = p + scale2(d, t_right); } else { result = p + scale2(d, t_left); }
+	} else {
+		let t = dot2(d, opt - p);
+		result = p + scale2(d, clamp(t, t_left, t_right));
+	}
+	true
+}
+=== -a90860fa84f7b87
+fn lp2(lines Line[:], radius f32, opt float2, dir_opt bool, result float2&) int {
+	if dir_opt {
+		result = scale2(opt, radius);
+	} else if len2(opt) > radius {
+		result = scale2(unit2(opt), radius);
+	} else {
+		result = opt;
+	}
+	for i in lines.len {
+		if det(lines[i].direction, lines[i].point - result) > 0.0 {
+			let saved float2 = result;
+			if !lp1(lines, i, radius, opt, dir_opt, result) {
+				result = saved;
+				return i;
+			}
+		}
+	}
+	lines.len
+}
+=== -34cd0b4feac698cf
+fn lp3(lines Line[:], begin int, radius f32, result float2&) {
+	var distance f32 = 0.0;
+	for i in begin..lines.len {
+		let p_i = lines[i].point;
+		let d_i = lines[i].direction;
+		if det(d_i, p_i - result) > distance {
+			var proj Line[>..] = [];
+			for j in i {
+				let p_j = lines[j].point;
+				let d_j = lines[j].direction;
+				let dd = det(d_i, d_j);
+				var point float2 = float2 { 0.0, 0.0 };
+				if abs(dd) <= 0.00001 {
+					if dot2(d_i, d_j) > 0.0 { continue; }
+					point = scale2(p_i + p_j, 0.5);
+				} else {
+					point = p_i + scale2(d_i, det(d_j, p_i - p_j) / dd);
+				}
+				proj.push(Line { point, unit2(d_j - d_i) });
+			}
+			let saved float2 = result;
+			if lp2(proj, radius, float2 { -d_i.y, d_i.x }, true, result) < proj.len {
+				result = saved;
+			}
+			distance = det(d_i, p_i - result);
+		}
+	}
+}
+=== -1afe9e76c618a315
+var GRID = dictionary<int, int[..128]> {};
+var CELLS int[>..];
+fn cell_of(v f32) int {
+	floor(v / neighbor_dist) as int
+}
+fn cell_key(cx int, cz int) int {
+	(cx * 73856093) ^ (cz * 19349663)
+}
+fn empty_grid() {
+	for key in CELLS {
+		let slot = GRID.get(key);
+		if slot { slot.clear(); }
+	}
+}
+fn bucket() {
+	empty_grid();
+	let none int[..128] = [];
+	for i in POS.len {
+		let key = cell_key(cell_of(POS[i].x), cell_of(POS[i].z));
+		if !GRID.contains(key) { CELLS.push(key); }
+		let slot .= GRID.get_or_insert(key, none);
+		if slot.len < slot.cap { slot.push(i); }
+	}
+}
+fn apart(i int, j int) f32 {
+	len2(flat2(POS[j] - POS[i]))
+}
+fn neighbors(i int) int[>..] {
+	var out int[>..] = [];
+	var seen int[..9] = [];
+	let cx = cell_of(POS[i].x);
+	let cz = cell_of(POS[i].z);
+	for ox in 3 {
+		for oz in 3 {
+			let key = cell_key(cx + ox - 1, cz + oz - 1);
+			if seen.contains(key) { continue; }
+			seen.push(key);
+			let slot = GRID.get(key);
+			if slot {
+				for j in slot {
+					if j != i && apart(i, j) < neighbor_dist { out.push(j); }
+				}
+			}
+		}
+	}
+	sort(out) { a, b => apart(i, a) < apart(i, b) };
+	if out.len > max_neighbors { out.resize(max_neighbors, 0); }
+	out
+}
+=== -3ecee4d2933c8ce4
+fn velocity(i int, dt f32) float2 {
+	var pref = prefer(i, dt);
+	if !avoid { return pref; }
+	let spread f32 = (i as f32) * 0.618034;
+	let h f32 = spread - floor(spread);
+	let angle f32 = -(keep_right + nudge * (h - 0.5));
+	let c f32 = cos(angle);
+	let s f32 = sin(angle);
+	let wanted float2 = pref;
+	pref = float2 { wanted.x * c - wanted.y * s, wanted.x * s + wanted.y * c };
+	var lines Line[>..] = [];
+	let inv_th f32 = 1.0 / time_horizon;
+	let near = neighbors(i);
+	for j in near {
+		let rel_pos = flat2(POS[j] - POS[i]);
+		let rel_vel = flat2(VEL[i] - VEL[j]);
+		let dist_sq = dot2(rel_pos, rel_pos);
+		let comb = RAD[i] + RAD[j];
+		var direction float2 = float2 { 0.0, 0.0 };
+		var u float2 = float2 { 0.0, 0.0 };
+		if dist_sq > comb * comb {
+			let w = rel_vel - scale2(rel_pos, inv_th);
+			let wl_sq = dot2(w, w);
+			let d1 = dot2(w, rel_pos);
+			if d1 < 0.0 && d1 * d1 > comb * comb * wl_sq {
+				let wl = sqrt(wl_sq);
+				let unit = scale2(w, 1.0 / wl);
+				direction = float2 { unit.y, -unit.x };
+				u = scale2(unit, comb * inv_th - wl);
+			} else {
+				let leg = sqrt(dist_sq - comb * comb);
+				if det(rel_pos, w) > 0.0 {
+					direction = scale2(float2 { rel_pos.x * leg - rel_pos.y * comb, rel_pos.x * comb + rel_pos.y * leg }, 1.0 / dist_sq);
+				} else {
+					direction = scale2(float2 { rel_pos.x * leg + rel_pos.y * comb, -rel_pos.x * comb + rel_pos.y * leg }, -1.0 / dist_sq);
+				}
+				u = scale2(direction, dot2(rel_vel, direction)) - rel_vel;
+			}
+		} else {
+			let inv_dt f32 = 1.0 / dt;
+			let w = rel_vel - scale2(rel_pos, inv_dt);
+			let wl = len2(w);
+			var unit float2 = float2 { 1.0, 0.0 };
+			if wl >= 0.000000001 { unit = scale2(w, 1.0 / wl); }
+			direction = float2 { unit.y, -unit.x };
+			u = scale2(unit, comb * inv_dt - wl);
+		}
+		lines.push(Line { flat2(VEL[i]) + scale2(u, 0.5), direction });
+	}
+	var result float2 = float2 { 0.0, 0.0 };
+	let fail = lp2(lines, SPEED[i], pref, false, result);
+	if fail < lines.len { lp3(lines, fail, SPEED[i], result); }
+	result
+}
+=== -6c95a9be4513762e
+fn step(dt f32) {
+	bucket();
+	for i in POS.len {
+		NEXT[i] = velocity(i, dt);
+	}
+	for i in POS.len {
+		VEL[i] = float3 { NEXT[i].x, 0.0, NEXT[i].y };
+		var p float3 = float3 { POS[i].x + VEL[i].x * dt, POS[i].y + VEL[i].y * dt, POS[i].z + VEL[i].z * dt };
+		if on_mesh {
+			let cell, q = nav::locate(p);
+			if cell >= 0 { p = q; }
+		}
+		POS[i] = p;
+	}
+}
