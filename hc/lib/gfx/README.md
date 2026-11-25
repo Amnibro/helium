@@ -47,6 +47,8 @@ s3d::init(w, h);
 s3d::render(target);                 // RGBA8 target; s3d::hdr_target() is the linear HDR image
 ```
 
+`gfx::open(title, w, h, flags)` takes `WINDOW_RESIZABLE`, `WINDOW_HIDDEN`, `WINDOW_FULLSCREEN`, `NO_VSYNC` (mailbox, else immediate, presenting), `DEBUG` and `PRESENT_ON_WORK`. With `PRESENT_ON_WORK`, `frame()` shows the screen only when the frame recorded GPU work (a pass, upload or blit) and otherwise just polls input. Together with `NO_VSYNC` it suits programs that redraw only when their content changes, such as a browser that polls its engine every millisecond.
+
 The scene is plain data (`view`, `sun`, `sky`, `look`, `lights`, `items`) that the
 caller edits between frames. After `gltf::reset()` call `s3d::forget()`.
 
