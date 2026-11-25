@@ -1,0 +1,111 @@
+=== 06253b65ab553b72
+import math;
+import os;
+import gfx;
+import gfx.linalg;
+import gfx.gltf;
+import gfx.shapes;
+import gfx.scene3d;
+import grow.grow;
+import grow.forms;
+=== 330ff1c362d7a96e
+fn grown(kind const byte[:], s int, size real) int {
+	grow::make(kind, s, size);
+	var data byte[>..] = [];
+	grow::glb_bytes(data);
+	gltf::load_bytes(data, "")
+}
+=== -6f013ae720fac10e
+fn put(asset int, x real, z real, turn real) {
+	let item = s3d::add(asset);
+	s3d::place(item, linalg::compose(float3 { x as f32, 0.0, z as f32 }, linalg::qaxis(float3 { 0.0, 1.0, 0.0 }, turn as f32), float3 { 1.0, 1.0, 1.0 }));
+}
+=== -982538c2f295f8d
+var out_dir byte[>..];
+var picture gfx::Texture;
+fn shoot(name const byte[:]) {
+	for i in 2 {
+		s3d::render(picture);
+		gfx::flush();
+	}
+	var path byte[>..] = [];
+	format(path, out_dir, "/", name, ".png");
+	gfx::save_png(picture, path);
+}
+=== 413da704408b81be
+fn main() {
+	let argv = args();
+	for a, i in argv {
+		if i == 1 {
+			out_dir.append(a);
+			break;
+		}
+	}
+	if out_dir.len == 0 {
+		print("grow_look: needs an output folder");
+		return;
+	}
+	if !gfx::open_headless(1280, 720) {
+		print("grow_look: skipped");
+		return;
+	}
+	picture = gfx::render_target(1280, 720, gfx::RGBA8);
+	s3d::init(1280, 720);
+	s3d::temporal = 0;
+	s3d::ssr_on = false;
+	s3d::ssgi_on = false;
+	s3d::gi_on = false;
+	s3d::look.bloom = 0.0;
+	s3d::sun.shadows = true;
+	s3d::sun.shadow_far = 60.0;
+	let e = 40.0 * PI / 180.0;
+	s3d::atmosphere(float3 { (0.6 * cos(e)) as f32, sin(e) as f32, (0.8 * cos(e)) as f32 }, 3.5, 1.0, 0.3);
+	let soil = shapes::material(float3 { 0.30, 0.24, 0.17 }, 0.0, 0.95);
+	put(shapes::plane(200.0, soil), 0.0, 0.0, 0.0);
+	for kind, i in grow::KINDS {
+		let asset = grown(kind, 7177, 1.0);
+		let x = -5.1 + 1.7 * ((i % 7) as real);
+		let z = -1.7 * ((i / 7) as real);
+		put(asset, x, z, 0.0);
+		print(kind, " ", asset);
+	}
+	s3d::view.eye = float3 { 0.0, 2.7, 7.0 };
+	s3d::view.target = float3 { 0.0, 0.4, -0.8 };
+	s3d::view.up = float3 { 0.0, 1.0, 0.0 };
+	s3d::view.fov_y = 0.77;
+	s3d::view.near = 0.05;
+	s3d::view.far = 300.0;
+	shoot("lineup");
+	put(grown("tree", 1, 4.7), 100.0, -3.0, 0.0);
+	put(grown("pine", 2, 3.7), 97.0, -7.0, 0.0);
+	put(grown("pine", 3, 3.7), 104.0, -6.0, 0.0);
+	put(grown("bush", 4, 1.2), 102.0, -1.0, 0.0);
+	let spread = ["rock", "fern", "flower", "mushroom", "tuft", "moss"];
+	let counts = [3, 5, 7, 5, 17, 2];
+	let sizes = [0.7, 0.7, 0.47, 0.17, 0.27, 0.7];
+	var xs real[>..] = [];
+	var zs real[>..] = [];
+	var turns real[>..] = [];
+	grow::seed(7177);
+	for k in counts.len {
+		for i in counts[k] {
+			let r = 4.0 * sqrt(grow::range(0.0, 1.0));
+			let a = grow::range(0.0, 2.0 * PI);
+			xs.push(100.0 + r * cos(a));
+			zs.push(r * sin(a));
+			turns.push(grow::range(0.0, 2.0 * PI));
+		}
+	}
+	var n = 0;
+	for kind, k in spread {
+		for i in counts[k] {
+			let size = if k == 0 { 0.7 + 0.2 * (i as real) } else { sizes[k] };
+			put(grown(kind, 1 + i % 7, size), xs[n], zs[n], turns[n]);
+			n++;
+		}
+	}
+	s3d::view.eye = float3 { 100.0, 1.7, 5.7 };
+	s3d::view.target = float3 { 100.0, 1.1, -2.0 };
+	shoot("glade");
+	print("grow_look: ok");
+}

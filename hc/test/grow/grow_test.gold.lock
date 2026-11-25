@@ -1,0 +1,324 @@
+=== 66ddec9f5ce5d100
+import math;
+import vec;
+import os;
+import grow.grow;
+import grow.forms;
+import gfx.gltf;
+var FAILS int = 0;
+let SEEDS = [1, 7, 7177];
+fn check(ok bool, label const byte[:]) {
+	if ok {
+		print("ok ", label);
+	} else {
+		print("FAIL ", label);
+		FAILS++;
+	}
+}
+fn r3(x real) real {
+	round(x * 1000.0) / 1000.0
+}
+=== -1a387a2527fb0319
+fn g1() {
+	var same = true;
+	for kind in grow::KINDS {
+		for s in SEEDS {
+			grow::make(kind, s, 1.0);
+			let first = grow::digest();
+			grow::make(kind, s, 1.0);
+			if grow::digest() != first { same = false; }
+		}
+	}
+	check(same, "G1 same seed, same mesh");
+	var differ = true;
+	for kind in grow::KINDS {
+		grow::make(kind, 7, 1.0);
+		let first = grow::digest();
+		grow::make(kind, 7177, 1.0);
+		if grow::digest() == first { differ = false; }
+	}
+	check(differ, "G1 control: seed 7 vs 7177 differ");
+}
+=== 76f6faac46ce75dd
+fn closed_tube(caps bool) {
+	grow::clear();
+	grow::tube([vec3<f64> { 0.0, 0.0, 0.0 }, vec3<f64> { 0.0, 0.3, 0.07 }, vec3<f64> { 0.1, 0.7, 0.1 }, vec3<f64> { 0.3, 1.0, 0.1 }, vec3<f64> { 0.7, 1.2, 0.0 }], [0.1, 0.09, 0.08, 0.07, 0.05], [vec3<f64> { 1.0, 1.0, 1.0 }, vec3<f64> { 1.0, 1.0, 1.0 }, vec3<f64> { 1.0, 1.0, 1.0 }, vec3<f64> { 1.0, 1.0, 1.0 }, vec3<f64> { 1.0, 1.0, 1.0 }], 11, caps);
+}
+=== 55ff22b6898cd8b2
+fn g2_g3() {
+	var worst_open = 0;
+	var least_vol = 1.0e30;
+	var worst_bad = 0;
+	for kind in ["rock", "shell", "mushroom", "cactus", "brain_coral"] {
+		for s in SEEDS {
+			grow::make(kind, s, 1.0);
+			worst_open = max(worst_open, grow::open_edges(0));
+			least_vol = min(least_vol, grow::volume(0));
+			worst_bad = max(worst_bad, grow::bad_normals(0));
+		}
+	}
+	closed_tube(true);
+	worst_open = max(worst_open, grow::open_edges(0));
+	least_vol = min(least_vol, grow::volume(0));
+	worst_bad = max(worst_bad, grow::bad_normals(0));
+	print("open edges ", worst_open);
+	check(worst_open == 0, "G2 closed solids");
+	closed_tube(false);
+	let uncapped = grow::open_edges(0);
+	print("uncapped open edges ", uncapped);
+	check(uncapped > 0, "G2 control: uncapped tube is open");
+	print("smallest volume ", least_vol, " bad normals ", worst_bad);
+	check(least_vol > 0.0 && worst_bad == 0, "G3 facing out, unit normals");
+	var form_bad = 0;
+	for kind in grow::KINDS {
+		for s in SEEDS {
+			grow::make(kind, s, 1.0);
+			form_bad = max(form_bad, grow::bad_normals(0));
+		}
+	}
+	print("bad normals on every form ", form_bad);
+	check(form_bad == 0, "G3 unit normals on every form");
+	grow::make("rock", 7177, 1.0);
+	for t in grow::I.len / 3 {
+		let second = grow::I[t * 3 + 1];
+		grow::I[t * 3 + 1] = grow::I[t * 3 + 2];
+		grow::I[t * 3 + 2] = second;
+	}
+	let flipped = grow::volume(0);
+	print("flipped rock volume ", flipped);
+	check(flipped < 0.0, "G3 control: flipped rock is negative");
+}
+=== 64156aa83207aef8
+fn g4() {
+	var inside = true;
+	for kind in ["rock", "tree", "pine", "fern", "shell", "mushroom", "cactus", "coral", "flower"] {
+		var worst = 1.0;
+		for s in SEEDS {
+			grow::make(kind, s, 1.7);
+			let low, high = grow::bounds(0);
+			let side real = max(max(high.x - low.x, high.y - low.y), high.z - low.z);
+			let ratio = side / 1.7;
+			if abs(ratio - 1.0) > abs(worst - 1.0) { worst = ratio; }
+			if ratio < 0.85 || ratio > 1.15 { inside = false; }
+		}
+		print(kind, " ", r3(worst));
+	}
+	check(inside, "G4 asked size");
+}
+=== 34251f14213c6af7
+fn wrap_turn(a real) real {
+	a - floor(a / grow::PI2) * grow::PI2
+}
+fn even_ratio(p real[:]) real {
+	let n = p.len / 2;
+	var least = 1.0e30;
+	var most = 0.0;
+	for i in n {
+		var near = 1.0e30;
+		for j in n {
+			if i != j {
+				let dx = p[i * 2] - p[j * 2];
+				let dz = p[i * 2 + 1] - p[j * 2 + 1];
+				near = min(near, sqrt(dx * dx + dz * dz));
+			}
+		}
+		least = min(least, near);
+		most = max(most, near);
+	}
+	least / most
+}
+fn g5() {
+	grow::phyllo(377, 1.0);
+	let n = grow::S.len / 2;
+	var steps = n == 377;
+	let want = wrap_turn(grow::GOLDEN);
+	for i in n - 1 {
+		let a = atan2(grow::S[i * 2 + 1], grow::S[i * 2]);
+		let b = atan2(grow::S[i * 2 + 3], grow::S[i * 2 + 2]);
+		if abs(wrap_turn(b - a) - want) > 1.0e-9 { steps = false; }
+	}
+	check(steps, "G5 phyllo steps 137.5078 degrees");
+	let packed = even_ratio(grow::S[..]);
+	print("nearest neighbor ratio ", r3(packed));
+	check(packed >= 0.47, "G5 even packing");
+	var square real[>..] = [];
+	for i in 377 {
+		let k real = i;
+		let radius = sqrt(k + 0.5);
+		let angle = k * PI / 2.0;
+		square.push(radius * cos(angle));
+		square.push(radius * sin(angle));
+	}
+	let clumped = even_ratio(square[..]);
+	print("90 degree ratio ", r3(clumped));
+	check(clumped < 0.47, "G5 control: 90 degree step clumps");
+}
+=== -e129c75d6fe4a84
+fn min_pair(p real[:]) real {
+	let n = p.len / 2;
+	var least = 1.0e30;
+	for i in n {
+		for j in i + 1..n {
+			let dx = p[i * 2] - p[j * 2];
+			let dz = p[i * 2 + 1] - p[j * 2 + 1];
+			least = min(least, sqrt(dx * dx + dz * dz));
+		}
+	}
+	least
+}
+fn g6() {
+	grow::seed(7177);
+	grow::scatter(0.0, 0.0, 1.0, 37, 0.2);
+	let count = grow::S.len / 2;
+	let least = min_pair(grow::S[..]);
+	print("scatter count ", count, " smallest distance ", least);
+	check(least >= 0.2 - 1.0e-12 && count >= 26, "G6 scatter spacing");
+	var loose real[>..] = [];
+	for i in 37 {
+		let radius = sqrt(grow::rnd());
+		let angle = grow::PI2 * grow::rnd();
+		loose.push(radius * cos(angle));
+		loose.push(radius * sin(angle));
+	}
+	check(min_pair(loose[..]) < 0.2, "G6 control: uniform random breaks spacing");
+}
+=== -4d6f90e312b82da3
+fn g7() {
+	var forks = 0;
+	var worst = 0.0;
+	for kind in ["tree", "bush", "coral"] {
+		for s in SEEDS {
+			grow::make(kind, s, 1.0);
+			for i in grow::FORKS.len / 2 {
+				let r real = grow::FORKS[i * 2];
+				let q real = grow::FORKS[i * 2 + 1];
+				worst = max(worst, abs(q - r * r) / (r * r));
+				forks++;
+			}
+		}
+	}
+	print("forks ", forks, " worst ", worst);
+	check(forks > 0 && worst <= 0.02, "G7 Leonardo's rule at every fork");
+}
+=== -74cc45a2442f172
+fn round_trip(a int) bool {
+	guard a >= 0 else { return false; }
+	guard gltf::meshes.len == 1 && gltf::prims.len == 1 else { return false; }
+	let low, high = grow::bounds(0);
+	let nv int = gltf::prims[0].vcount;
+	let ni int = gltf::prims[0].icount;
+	let lo = gltf::prims[0].lo;
+	let hi = gltf::prims[0].hi;
+	nv == grow::vcount() && ni == 3 * grow::tcount() && lo.x == low.x as f32 && lo.y == low.y as f32 && lo.z == low.z as f32 && hi.x == high.x as f32 && hi.y == high.y as f32 && hi.z == high.z as f32
+}
+fn keep_wanted() bool {
+	var env byte[>..] = [];
+	var wanted = false;
+	read_file("/proc/self/environ", env);
+	for i in env.len {
+		if (i == 0 || env[i - 1] == 0) && starts_with(env[i..env.len], "GROW_KEEP=") { wanted = true; }
+	}
+	wanted
+}
+fn g8() {
+	var out byte[>..] = [];
+	var all_pass = true;
+	for kind in grow::KINDS {
+		grow::make(kind, 7177, 1.0);
+		out.clear();
+		grow::glb_bytes(out);
+		gltf::reset();
+		let a = gltf::load_bytes(out[..], "");
+		if !round_trip(a) { all_pass = false; }
+	}
+	check(all_pass, "G8 GLB round trip");
+	gltf::reset();
+	let broken = gltf::load_bytes(out[..out.len / 2], "");
+	check(broken < 0, "G8 control: half a file fails");
+	if keep_wanted() {
+		grow::make("fern", 7177, 1.0);
+		grow::glb("/tmp/grow_fern.glb");
+	}
+}
+=== 59827539fb0363e4
+struct Budget { kind const byte[:], tris int }
+let BUDGET = [Budget { "rock", 2700 }, Budget { "shell", 7000 }, Budget { "mushroom", 4700 }, Budget { "cactus", 7000 }, Budget { "succulent", 4700 }, Budget { "flower", 4700 }, Budget { "tuft", 700 }, Budget { "tree", 27000 }, Budget { "pine", 27000 }, Budget { "bush", 17000 }, Budget { "fern", 7700 }, Budget { "coral", 17000 }, Budget { "brain_coral", 7000 }, Budget { "moss", 7000 }];
+fn limit_of(kind const byte[:]) int {
+	for b in BUDGET {
+		if b.kind == kind { return b.tris; }
+	}
+	0
+}
+fn g9_g10() {
+	var within = true;
+	var quick = true;
+	for kind in grow::KINDS {
+		let limit = limit_of(kind);
+		var best = 1.0e30;
+		for turn in 3 {
+			let start = time_ns();
+			grow::make(kind, 7177, 1.0);
+			let spent real = time_ns() - start;
+			best = min(best, spent / 1000000.0);
+		}
+		var ms byte[>..] = [];
+		format_flt(ms, best, 2);
+		print(kind, " vertices ", grow::vcount(), " triangles ", grow::tcount(), " ms ", ms, " budget ", limit);
+		if best >= 20.0 { quick = false; }
+		for s in SEEDS {
+			grow::make(kind, s, 1.0);
+			if grow::tcount() > limit { within = false; }
+		}
+	}
+	check(within, "G9 phone budget");
+	check(quick, "G10 speed");
+}
+=== -275f1a11d62a501a
+fn main() {
+	let argv = args();
+	var at = -1;
+	var kind byte[>..] = [];
+	var seed_text byte[>..] = [];
+	var size_text byte[>..] = [];
+	var path byte[>..] = [];
+	for a in argv {
+		if at < 0 {
+			if a == "--glb" { at = 0; }
+		} else {
+			if at == 0 { kind.append(a); }
+			if at == 1 { seed_text.append(a); }
+			if at == 2 { size_text.append(a); }
+			if at == 3 { path.append(a); }
+			at++;
+		}
+	}
+	if at == 4 {
+		let s, s_ok = parse_int(seed_text[..]);
+		let size, size_ok = parse_flt(size_text[..]);
+		guard s_ok && size_ok else {
+			print("bad seed or size");
+			exit(2);
+		}
+		if !grow::make(kind[..], s, size) {
+			print("unknown kind ", kind);
+			exit(2);
+		}
+		grow::glb(path[..]);
+		print("vertices ", grow::vcount(), " triangles ", grow::tcount());
+	} else {
+		g1();
+		g2_g3();
+		g4();
+		g5();
+		g6();
+		g7();
+		g8();
+		g9_g10();
+		if FAILS == 0 {
+			print("grow: ok");
+		} else {
+			print("grow: FAILED ", FAILS);
+			exit(1);
+		}
+	}
+}

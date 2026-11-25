@@ -1,0 +1,659 @@
+import math;
+import vec;
+import grow.grow;
+namespace grow;
+fn ground(v0 int, b double3, size real) {
+	let lo, hi = bounds(v0);
+	fit(v0, double3 { b.x, lo.y, b.z }, size);
+	let low, high = bounds(v0);
+	move(v0, double3 { 0.0, b.y - low.y, 0.0 });
+}
+fn phyllo(n int, spacing real) {
+	S.clear();
+	for i in n {
+		let r = spacing * sqrt(i + 0.5);
+		let a = i * GOLDEN;
+		S.push(r * cos(a));
+		S.push(r * sin(a));
+	}
+}
+fn scatter(cx real, cz real, radius real, count int, gap real) {
+	S.clear();
+	for attempt in count * 37 {
+		if S.len >= count * 2 { break; }
+		let r = radius * sqrt(rnd());
+		let a = PI2 * rnd();
+		let x = cx + r * cos(a);
+		let z = cz + r * sin(a);
+		var free = true;
+		for k in S.len / 2 {
+			let dx = S[k * 2] - x;
+			let dz = S[k * 2 + 1] - z;
+			if dx * dx + dz * dz < gap * gap {
+				free = false;
+				break;
+			}
+		}
+		if free {
+			S.push(x);
+			S.push(z);
+		}
+	}
+}
+fn on_surface(t0 int, count int, min_up real) {
+	S.clear();
+	var sums real[>..] = [];
+	var ids int[>..] = [];
+	var total = 0.0;
+	for t in t0..tcount() {
+		let a = pos(I[t * 3] as int);
+		let e = pos(I[t * 3 + 1] as int) - a;
+		let f = pos(I[t * 3 + 2] as int) - a;
+		let cr = cross(e, f);
+		let l = length(cr);
+		if l > 0.0 && cr.y / l >= min_up {
+			total += 0.5 * l;
+			sums.push(total);
+			ids.push(t);
+		}
+	}
+	if ids.len == 0 { return; }
+	for k in count {
+		let want = rnd() * total;
+		var lo = 0;
+		var hi = ids.len - 1;
+		while lo < hi {
+			let mid = (lo + hi) / 2;
+			if sums[mid] < want { lo = mid + 1; } else { hi = mid; }
+		}
+		let t = ids[lo];
+		let a = pos(I[t * 3] as int);
+		let e = pos(I[t * 3 + 1] as int) - a;
+		let f = pos(I[t * 3 + 2] as int) - a;
+		var u = rnd();
+		var v = rnd();
+		if u + v > 1.0 {
+			u = 1.0 - u;
+			v = 1.0 - v;
+		}
+		let p = a + e * u + f * v;
+		S.push(p.x);
+		S.push(p.y);
+		S.push(p.z);
+	}
+}
+fn leaf(b double3, dir double3, up double3, len real, width real, curl real, fold real, segs int, c double3) int {
+	let v0 = vcount();
+	let t0 = tcount();
+	let d = unit(dir);
+	let side = unit(cross(d, up));
+	let n = cross(side, d);
+	let mid_col = c * 0.82;
+	let edge_col = tint(c, 0.07);
+	for r in segs + 1 {
+		let u = (r as real) / (segs as real);
+		var mid = b + d * (len * u);
+		var ln = n;
+		if curl >= 0.0001 || curl <= -0.0001 {
+			mid = b + (d * (sin(curl * u) / curl) - n * ((1.0 - cos(curl * u)) / curl)) * len;
+			ln = rot(n, side, -curl * u);
+		}
+		let hw = 0.5 * width * pow(max(sin(PI * pow(u, 0.7)), 0.0), 0.8);
+		let light = 1.0 + 0.15 * u;
+		for k in 3 {
+			let across = (k - 1) as real;
+			let p = mid + side * (across * hw) + ln * (fold * abs(across) * hw);
+			let shade = if k == 1 { mid_col } else { edge_col };
+			vert(p, ln, shade * light);
+		}
+	}
+	for r in segs {
+		for k in 2 {
+			let a = v0 + r * 3 + k;
+			quad(a, a + 1, a + 4, a + 3);
+		}
+	}
+	normals(v0, t0);
+	return v0;
+}
+fn blade(b double3, lean double3, h real, w real, c double3) int {
+	let v0 = vcount();
+	let t0 = tcount();
+	let up = double3 { 0.0, 1.0, 0.0 };
+	let lean_side = unit(cross(lean, up));
+	let face = cross(lean_side, up);
+	let base_col = c * 0.55;
+	let tip_col = tint(c, 0.1);
+	for k in 4 {
+		let t = k * 0.25;
+		let p = b + up * (h * t) + lean * (h * t * t);
+		let half = lean_side * (0.5 * w * (1.0 - t));
+		let shade = mixc(base_col, tip_col, t);
+		vert(p - half, face, shade);
+		vert(p + half, face, shade);
+	}
+	vert(b + up * h + lean * h, face, tip_col);
+	for k in 3 {
+		let a = v0 + k * 2;
+		quad(a, a + 1, a + 3, a + 2);
+	}
+	tri(v0 + 6, v0 + 7, v0 + 8);
+	normals(v0, t0);
+	return v0;
+}
+fn tuft(b double3, size real, c double3) {
+	let count = 17 + pick(11);
+	for k in count {
+		let r = 0.35 * size * sqrt(rnd());
+		let a = PI2 * rnd();
+		let base = b + double3 { r * cos(a), 0.0, r * sin(a) };
+		let h = vary(size, 0.3);
+		let la = PI2 * rnd();
+		let lean = double3 { cos(la), 0.0, sin(la) } * range(0.15, 0.55);
+		blade(base, lean, h, 0.035 * size, c);
+	}
+}
+fn rock(b double3, size real) {
+	let v0 = vcount();
+	let t0 = tcount();
+	ico(b, 1.0, 3);
+	let ox = range(0.0, 100.0);
+	let oy = range(0.0, 100.0);
+	let oz = range(0.0, 100.0);
+	let o = double3 { ox, oy, oz };
+	let squash = vary(0.72, 0.15);
+	var dirs double3[>..] = [];
+	var radii real[>..] = [];
+	for i in v0..vcount() {
+		let u = unit(pos(i) - b);
+		let r = 1.0 + 0.35 * fbm(u * 1.7 + o, 5) + 0.15 * (ridged(u * 3.1 + o, 3) - 0.5);
+		let q = u * r;
+		set_pos(i, b + double3 { q.x, max(q.y * squash, -0.55), q.z });
+		dirs.push(u);
+		radii.push(r);
+	}
+	normals(v0, t0);
+	let grey = double3 { 0.42, 0.40, 0.37 };
+	let brown = double3 { 0.45, 0.36, 0.27 };
+	for i in v0..vcount() {
+		let u = dirs[i - v0];
+		var c = mixc(grey, brown, 0.5 + 0.5 * fbm(u * 2.3 + o, 3));
+		if radii[i - v0] < 1.0 { c = c * 0.7; }
+		if nrm(i).y > 0.6 { c = c * 1.12; }
+		set_col(i, tint(c, 0.04));
+	}
+	ground(v0, b, size);
+}
+fn shell(b double3, size real) {
+	let v0 = vcount();
+	let turns = range(4.5, 7.0);
+	let w = vary(1.8, 0.12);
+	let k = log(w) / PI2;
+	let h = range(0.9, 2.7);
+	let q = range(0.38, 0.5);
+	let steps = (turns * 27.0) as int;
+	let cream = double3 { 0.86, 0.78, 0.64 };
+	let brown = double3 { 0.45, 0.25, 0.13 };
+	var path double3[>..] = [];
+	var radii real[>..] = [];
+	var cols double3[>..] = [];
+	for i in steps + 1 {
+		let theta = PI2 * turns * i / (steps as real);
+		let R = exp(k * theta);
+		let p = b + double3 { R * cos(theta), -h * R, R * sin(theta) };
+		path.push(p);
+		radii.push(q * R);
+		let band = 0.5 + 0.5 * sin(theta * 3.0 + 2.0 * noise(double3 { theta, h, q }));
+		cols.push(tint(mixc(cream, brown, band), 0.04));
+	}
+	tube(path, radii, cols, 17, true);
+	ground(v0, b, size);
+}
+fn mushroom(b double3, size real) {
+	let v0 = vcount();
+	let bx = range(-0.06, 0.06) * size;
+	let bz = range(-0.06, 0.06) * size;
+	let stem_col = tint(double3 { 0.88, 0.85, 0.78 }, 0.04);
+	var path double3[5] = [double3 { 0.0, 0.0, 0.0 }; 5];
+	var radii real[5] = [0.0; 5];
+	var cols double3[5] = [double3 { 0.0, 0.0, 0.0 }; 5];
+	for k in 5 {
+		let t = k * 0.25;
+		path[k] = b + double3 { bx * t * t, 0.62 * size * t, bz * t * t };
+		radii[k] = lerp(0.11 * size, 0.075 * size, t);
+		cols[k] = stem_col;
+	}
+	tube(path, radii, cols, 13, true);
+	let top = path[4];
+	let R = vary(0.42, 0.15) * size;
+	let profile real[18] = [
+		0.0, 0.2 * size,
+		0.35 * R, 0.185 * size,
+		0.62 * R, 0.152 * size,
+		0.82 * R, 0.108 * size,
+		0.96 * R, 0.05 * size,
+		R, 0.0,
+		0.3 * R, 0.025 * size,
+		0.12 * R, 0.022 * size,
+		0.0, -0.01 * size
+	];
+	let red = rnd() < 0.5;
+	let cap_col = if red { double3 { 0.62, 0.07, 0.05 } } else { double3 { 0.42, 0.28, 0.16 } };
+	let gills = double3 { 0.83, 0.76, 0.66 };
+	var cap_cols double3[9] = [double3 { 0.0, 0.0, 0.0 }; 9];
+	for k in 9 { cap_cols[k] = if k < 6 { cap_col } else { gills }; }
+	let cap0 = vcount();
+	revolve(top, profile[..], 27, 0, 0.0, 0.04, cap_cols[..]);
+	let white = double3 { 0.92, 0.90, 0.86 };
+	for i in cap0..vcount() {
+		let p = pos(i);
+		let dx = p.x - top.x;
+		let dz = p.z - top.z;
+		if p.y - top.y < 0.035 * size && sqrt(dx * dx + dz * dz) < 0.93 * R {
+			set_col(i, gills);
+		} else if red && noise(p * (7.0 / size)) > 0.35 {
+			set_col(i, white);
+		} else {
+			set_col(i, cap_col);
+		}
+	}
+	ground(v0, b, size);
+}
+fn cactus(b double3, size real) {
+	let green = tint(double3 { 0.20, 0.42, 0.18 }, 0.06);
+	let R = 0.16 * size;
+	let profile real[12] = [
+		0.0, size,
+		0.5 * R, 0.975 * size,
+		0.85 * R, 0.93 * size,
+		R, 0.87 * size,
+		0.17 * size, 0.0,
+		0.0, 0.0
+	];
+	let ribs = 9 + 2 * pick(3);
+	var body_cols double3[6] = [double3 { 0.0, 0.0, 0.0 }; 6];
+	for k in 6 { body_cols[k] = green; }
+	let c0 = vcount();
+	revolve(b, profile[..], 37, ribs, 0.3, 0.02, body_cols[..]);
+	for i in c0..vcount() { set_col(i, green); }
+	let arms = pick(3);
+	let first = PI2 * rnd();
+	for arm in arms {
+		let a = first + arm * PI + range(-0.5, 0.5);
+		let out = double3 { cos(a), 0.0, sin(a) };
+		let h0 = range(0.3, 0.6) * size;
+		let p0 = b + double3 { 0.0, h0, 0.0 };
+		let p1 = p0 + out * (0.36 * size);
+		let p2 = double3 { p1.x, b.y + 0.75 * size, p1.z };
+		var path double3[7] = [double3 { 0.0, 0.0, 0.0 }; 7];
+		var radii real[7] = [0.0; 7];
+		var cols double3[7] = [double3 { 0.0, 0.0, 0.0 }; 7];
+		for k in 7 {
+			let t = k / 6.0;
+			let s = 1.0 - t;
+			path[k] = p0 * (s * s) + p1 * (2.0 * s * t) + p2 * (t * t);
+			radii[k] = 0.1 * size;
+			cols[k] = green;
+		}
+		tube(path, radii, cols, 13, true);
+	}
+}
+fn succulent(b double3, size real) {
+	phyllo(37, 0.06 * size);
+	let teal = double3 { 0.36, 0.55, 0.47 };
+	let pink = double3 { 0.72, 0.47, 0.50 };
+	let up = double3 { 0.0, 1.0, 0.0 };
+	for i in 37 {
+		let out = unit(double3 { S[i * 2], 0.0, S[i * 2 + 1] });
+		let pitch = (75.0 - 60.0 * i / 36.0) * PI / 180.0;
+		let d = out * cos(pitch) + up * sin(pitch);
+		let l = vary(0.5 * size * (0.45 + 0.55 * i / 37.0), 0.1);
+		let v0 = leaf(b, d, up, l, 0.45 * l, -0.6, 0.45, 5, teal);
+		for v in v0..vcount() {
+			let u = ((v - v0) / 3) / 5.0;
+			set_col(v, mixc(col(v), pink, u * u * u));
+		}
+	}
+}
+fn flower(b double3, size real) {
+	let green = double3 { 0.18, 0.40, 0.10 };
+	let up = double3 { 0.0, 1.0, 0.0 };
+	let bx = range(-0.08, 0.08) * size;
+	let bz = range(-0.08, 0.08) * size;
+	var path double3[7] = [double3 { 0.0, 0.0, 0.0 }; 7];
+	var radii real[7] = [0.0; 7];
+	var cols double3[7] = [double3 { 0.0, 0.0, 0.0 }; 7];
+	for k in 7 {
+		let t = k / 6.0;
+		path[k] = b + double3 { bx * t * t, size * t, bz * t * t };
+		radii[k] = 0.018 * size;
+		cols[k] = green;
+	}
+	tube(path, radii, cols, 7, true);
+	let la = PI2 * rnd();
+	for k in 2 {
+		let t = 0.25 + 0.2 * k;
+		let a = la + k * PI;
+		let base = b + double3 { bx * t * t, size * t, bz * t * t };
+		leaf(base, double3 { cos(a), 0.4, sin(a) }, up, 0.3 * size, 0.1 * size, 0.5, 0.2, 7, green);
+	}
+	let top = path[6];
+	let ta = PI2 * rnd();
+	let axis = unit(double3 { 0.25 * cos(ta), 1.0, 0.25 * sin(ta) });
+	let e1, unused = basis(axis);
+	let e2 = cross(axis, e1);
+	let counts = [5, 8, 13, 21];
+	let petals = counts[pick(4)];
+	let colors = [double3 { 0.95, 0.80, 0.12 }, double3 { 0.93, 0.92, 0.88 }, double3 { 0.45, 0.25, 0.70 }, double3 { 0.80, 0.12, 0.15 }];
+	let petal_col = colors[pick(4)];
+	for k in petals {
+		let a = PI2 * k / (petals as real);
+		let d = e1 * cos(a) + e2 * sin(a) + axis * 0.2;
+		leaf(top, d, axis, 0.22 * size, 0.09 * size, 0.5, 0.15, 7, petal_col);
+	}
+	let R = 0.07 * size;
+	let H = 0.03 * size;
+	let profile real[10] = [
+		0.0, H,
+		0.5 * R, 0.866 * H,
+		0.866 * R, 0.5 * H,
+		R, 0.0,
+		0.0, 0.0
+	];
+	let disc_col = double3 { 0.30, 0.18, 0.05 };
+	var disc_cols double3[5] = [double3 { 0.0, 0.0, 0.0 }; 5];
+	for k in 5 { disc_cols[k] = disc_col; }
+	let d0 = vcount();
+	let dt = tcount();
+	revolve(top, profile[..], 17, 0, 0.0, 0.0, disc_cols[..]);
+	for v in d0..vcount() { set_col(v, disc_col); }
+	let hinge = cross(up, axis);
+	if length(hinge) > 0.000001 {
+		let k = unit(hinge);
+		let angle = atan2(length(hinge), axis.y);
+		for v in d0..vcount() { set_pos(v, top + rot(pos(v) - top, k, angle)); }
+		normals(d0, dt);
+	}
+	phyllo(89, 0.0065 * size);
+	let gold = double3 { 0.55, 0.40, 0.05 };
+	let f0 = vcount();
+	let ft = tcount();
+	let half = 0.003 * size;
+	for i in 89 {
+		let x = S[i * 2];
+		let z = S[i * 2 + 1];
+		let y = H * sqrt(max(1.0 - (x * x + z * z) / (R * R), 0.0));
+		let c = top + e1 * x + e2 * z + axis * y;
+		let v = vcount();
+		vert(c + e1 * half, axis, gold);
+		vert(c + e2 * half, axis, gold);
+		vert(c - e1 * half, axis, gold);
+		vert(c - e2 * half, axis, gold);
+		vert(c + axis * (0.008 * size), axis, gold);
+		for k in 4 { tri(v + k, v + (k + 1) % 4, v + 4); }
+	}
+	normals(f0, ft);
+}
+var TREE_SIZE real = 1.0;
+recursive fn branch(p double3, d double3, len real, r0 real, r1 real, depth int, maxd int, kind int) {
+	let up = double3 { 0.0, 1.0, 0.0 };
+	let dn = unit(d);
+	let s1, s2 = basis(dn);
+	let shade = if kind == 2 { tint(double3 { 0.95, 0.45, 0.35 }, 0.06) } else { double3 { 0.30, 0.22, 0.15 } };
+	let ox = range(0.0, 100.0);
+	let oy = range(0.0, 100.0);
+	let oz = range(0.0, 100.0);
+	let o = double3 { ox, oy, oz };
+	var path double3[5] = [double3 { 0.0, 0.0, 0.0 }; 5];
+	var radii real[5] = [0.0; 5];
+	var cols double3[5] = [double3 { 0.0, 0.0, 0.0 }; 5];
+	for k in 5 {
+		let t = k * 0.25;
+		var q = p + dn * (len * t);
+		if k > 0 {
+			let at = o + double3 { t * 1.7, t * 2.3, t * 1.1 };
+			q = q + s1 * (0.12 * len * fbm(at, 3)) + s2 * (0.12 * len * fbm(at + double3 { 31.7, 11.3, 5.9 }, 3));
+			if kind != 2 { q = q + up * (0.08 * len * t * t); }
+		}
+		path[k] = q;
+		radii[k] = lerp(r0, r1, t);
+		cols[k] = shade;
+	}
+	let sides = if depth >= 3 { 5 } else { 7 };
+	tube(path, radii, cols, sides, true);
+	let tip = path[4];
+	let td = unit(path[4] - path[3]);
+	if depth < maxd {
+		let count = if rnd() < 0.4 { 3 } else { 2 };
+		var weights real[3] = [0.0; 3];
+		var total = 0.0;
+		for i in count {
+			weights[i] = range(0.6, 1.0);
+			total += weights[i];
+		}
+		var starts real[3] = [0.0; 3];
+		var squares = 0.0;
+		for i in count {
+			starts[i] = r1 * sqrt(weights[i] / total);
+			squares += starts[i] * starts[i];
+		}
+		FORKS.push(r1);
+		FORKS.push(squares);
+		let turn = PI2 * rnd();
+		for i in count {
+			let around = turn + i * GOLDEN;
+			let axis = rot(s1, dn, around);
+			let degrees = if kind == 2 { range(15.0, 30.0) } else { range(25.0, 45.0) };
+			var cd = rot(dn, axis, degrees * PI / 180.0);
+			if kind != 2 { cd = unit(cd * 0.8 + up * 0.2); }
+			let child_len = len * vary(if kind == 2 { 0.8 } else { 0.72 }, 0.1);
+			let end = starts[i] * (if kind == 2 { 0.8 } else { 0.62 });
+			branch(tip, cd, child_len, starts[i], end, depth + 1, maxd, kind);
+		}
+	} else if kind != 2 {
+		let count = if kind == 0 { 7 } else { 11 };
+		let leaf_len = (if kind == 0 { 0.11 } else { 0.08 }) * TREE_SIZE;
+		let a1, a2 = basis(td);
+		for i in count {
+			let a = i * GOLDEN;
+			let ld = unit(td * 0.5 + a1 * cos(a) + a2 * sin(a));
+			leaf(tip, ld, up, leaf_len, 0.55 * leaf_len, 0.4, 0.15, 4, tint(double3 { 0.20, 0.42, 0.12 }, 0.12));
+		}
+	}
+}
+fn tree(b double3, size real) {
+	TREE_SIZE = size;
+	let v0 = vcount();
+	branch(b, double3 { 0.0, 1.0, 0.0 }, 0.34 * size, 0.045 * size, 0.033 * size, 0, 5, 0);
+	ground(v0, b, size);
+}
+fn bush(b double3, size real) {
+	TREE_SIZE = size;
+	let v0 = vcount();
+	let turn = PI2 * rnd();
+	let tilt = 25.0 * PI / 180.0;
+	for k in 3 {
+		let a = turn + PI2 * k / 3.0;
+		let d = double3 { sin(tilt) * cos(a), cos(tilt), sin(tilt) * sin(a) };
+		branch(b, d, 0.3 * size, 0.025 * size, 0.018 * size, 0, 3, 1);
+	}
+	ground(v0, b, size);
+}
+fn coral(b double3, size real) {
+	TREE_SIZE = size;
+	let v0 = vcount();
+	let turn = PI2 * rnd();
+	let tilt = 30.0 * PI / 180.0;
+	for k in 5 {
+		let a = turn + PI2 * k / 5.0;
+		let d = double3 { sin(tilt) * cos(a), cos(tilt), sin(tilt) * sin(a) };
+		branch(b, d, 0.25 * size, 0.05 * size, 0.04 * size, 0, 4, 2);
+	}
+	ground(v0, b, size);
+}
+fn pine(b double3, size real) {
+	let bark = double3 { 0.30, 0.22, 0.15 };
+	let dark = double3 { 0.08, 0.22, 0.10 };
+	var path double3[7] = [double3 { 0.0, 0.0, 0.0 }; 7];
+	var radii real[7] = [0.0; 7];
+	var cols double3[7] = [double3 { 0.0, 0.0, 0.0 }; 7];
+	for k in 7 {
+		let t = k / 6.0;
+		path[k] = b + double3 { 0.0, size * t, 0.0 };
+		radii[k] = lerp(0.035 * size, 0.003 * size, t);
+		cols[k] = bark;
+	}
+	tube(path, radii, cols, 7, true);
+	var f = 0.22;
+	var whorl = 0;
+	while f <= 0.95 {
+		let base = b + double3 { 0.0, f * size, 0.0 };
+		for j in 5 {
+			let a = whorl * GOLDEN + PI2 * j / 5.0;
+			let l = 0.38 * size * (1.0 - f) + 0.04 * size;
+			let droop = range(12.0, 25.0) * PI / 180.0;
+			let d = double3 { cos(droop) * cos(a), -sin(droop), cos(droop) * sin(a) };
+			var limb double3[3] = [double3 { 0.0, 0.0, 0.0 }; 3];
+			var thick real[3] = [0.0; 3];
+			var shades double3[3] = [double3 { 0.0, 0.0, 0.0 }; 3];
+			for k in 3 {
+				limb[k] = base + d * (l * k * 0.5);
+				thick[k] = 0.006 * size;
+				shades[k] = bark;
+			}
+			tube(limb, thick, shades, 5, true);
+			let s1, s2 = basis(d);
+			for m in 7 {
+				let at = base + d * (l * (m + 1) / 7.0);
+				for n in 5 {
+					let fan = PI2 * n / 5.0 + m * GOLDEN;
+					let nd = unit(d * 0.7 + s1 * cos(fan) + s2 * sin(fan));
+					leaf(at, nd, d, 0.06 * size, 0.008 * size, 0.0, 0.0, 2, tint(dark, 0.1));
+				}
+			}
+		}
+		f += 0.07;
+		whorl += 1;
+	}
+}
+fn fern(b double3, size real) {
+	let green = double3 { 0.15, 0.40, 0.10 };
+	let up = double3 { 0.0, 1.0, 0.0 };
+	let turn = PI2 * rnd();
+	for frond in 7 {
+		let a = turn + PI2 * frond / 7.0 + range(-0.25, 0.25);
+		let out = double3 { cos(a), 0.0, sin(a) };
+		let elev = range(55.0, 70.0) * PI / 180.0;
+		let curl = range(0.9, 1.3);
+		let l = vary(size, 0.1);
+		var path double3[9] = [double3 { 0.0, 0.0, 0.0 }; 9];
+		var radii real[9] = [0.0; 9];
+		var cols double3[9] = [double3 { 0.0, 0.0, 0.0 }; 9];
+		var p = b;
+		for k in 9 {
+			path[k] = p;
+			radii[k] = 0.006 * size;
+			cols[k] = green;
+			let e = elev - curl * (k + 0.5) / 8.0;
+			p = p + (out * cos(e) + up * sin(e)) * (l / 8.0);
+		}
+		tube(path, radii, cols, 5, true);
+		for j in 17 {
+			let t = 0.12 + 0.85 * j / 16.0;
+			let along = t * 8.0;
+			let i = min(along as int, 7);
+			let at = path[i] + (path[i + 1] - path[i]) * (along - i);
+			let ahead = unit(path[i + 1] - path[i]);
+			let side = unit(cross(ahead, up));
+			let face = cross(side, ahead);
+			let pl = 0.26 * l * sin(PI * pow(t, 0.8));
+			for s in 2 {
+				let hand = if s == 0 { -1.0 } else { 1.0 };
+				let pd = unit(side * hand + ahead * 0.35);
+				leaf(at, pd, face, pl, 0.22 * pl, 0.3, 0.2, 4, tint(green * (1.0 + 0.6 * t), 0.08));
+			}
+		}
+	}
+}
+fn brain_coral(b double3, size real) {
+	let v0 = vcount();
+	let t0 = tcount();
+	ico(b, 1.0, 4);
+	let ox = range(0.0, 100.0);
+	let oy = range(0.0, 100.0);
+	let oz = range(0.0, 100.0);
+	let o = double3 { ox, oy, oz };
+	let deep = double3 { 0.55, 0.42, 0.20 };
+	let light = double3 { 0.85, 0.75, 0.48 };
+	for i in v0..vcount() {
+		let u = unit(pos(i) - b);
+		let wave = sin(23.0 * noise(u * 1.3 + o));
+		let q = u * (1.0 + 0.07 * wave);
+		set_pos(i, b + double3 { q.x, max(q.y, -0.35), q.z });
+		set_col(i, mixc(deep, light, 0.5 + 0.5 * wave));
+	}
+	normals(v0, t0);
+	ground(v0, b, size);
+}
+fn moss(b double3, size real) {
+	let t0 = tcount();
+	let v0 = vcount();
+	rock(b, size);
+	let cover = double3 { 0.20, 0.38, 0.08 };
+	for i in v0..vcount() {
+		let ny = nrm(i).y;
+		if ny > 0.3 {
+			let e = clamp((ny - 0.3) / 0.4, 0.0, 1.0);
+			let amount = e * e * (3.0 - 2.0 * e) * (0.6 + 0.4 * fbm(pos(i) * (4.0 / size), 3));
+			set_col(i, mixc(col(i), cover, amount));
+		}
+	}
+	on_surface(t0, 700, 0.45);
+	let green = double3 { 0.25, 0.45, 0.10 };
+	for k in S.len / 3 {
+		let base = double3 { S[k * 3], S[k * 3 + 1], S[k * 3 + 2] };
+		let h = vary(0.05, 0.4) * size;
+		let a = PI2 * rnd();
+		let lean = double3 { cos(a), 0.0, sin(a) } * range(0.1, 0.4);
+		blade(base, lean, h, 0.008 * size, tint(green, 0.15));
+	}
+}
+let KINDS = ["rock", "shell", "mushroom", "cactus", "succulent", "flower", "tuft", "tree", "pine", "bush", "fern", "coral", "brain_coral", "moss"];
+fn make(kind const byte[:], s int, size real) bool {
+	clear();
+	seed(s);
+	let origin = double3 { 0.0, 0.0, 0.0 };
+	if kind == "rock" {
+		rock(origin, size);
+	} else if kind == "shell" {
+		shell(origin, size);
+	} else if kind == "mushroom" {
+		mushroom(origin, size);
+	} else if kind == "cactus" {
+		cactus(origin, size);
+	} else if kind == "succulent" {
+		succulent(origin, size);
+	} else if kind == "flower" {
+		flower(origin, size);
+	} else if kind == "tuft" {
+		tuft(origin, size, double3 { 0.25, 0.45, 0.12 });
+	} else if kind == "tree" {
+		tree(origin, size);
+	} else if kind == "pine" {
+		pine(origin, size);
+	} else if kind == "bush" {
+		bush(origin, size);
+	} else if kind == "fern" {
+		fern(origin, size);
+	} else if kind == "coral" {
+		coral(origin, size);
+	} else if kind == "brain_coral" {
+		brain_coral(origin, size);
+	} else if kind == "moss" {
+		moss(origin, size);
+	} else {
+		return false;
+	}
+	fit(0, origin, size);
+	return true;
+}
