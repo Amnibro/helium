@@ -44,7 +44,7 @@ var HRG byte[>..]
 var HRS byte[>..]
 var HRL byte[>..]
 var TW byte[>..]
-var TWD i8[>..]
+var TWD i8[>..]; var CBD i8[>..]
 var QTY i32[>..]
 qid(t int) int:
 	for q, i QTY { if q == t { return i } } QTY.push(t); QTY.len - 1
@@ -1280,9 +1280,7 @@ recursive gen_tw(inst int):
 	ow("); }\n")
 	TW.append(O[sv..]); O.resize(sv);
 recursive gspawn(n int, contained bool):
-	inst ~= -1
-	i ~= 0
-	while i < TSP.len: if TSP[i] == n && TSP[i + 1] == AOWN { inst = TSP[i + 2] } i += 3
+	inst := trip(TSP, n)
 	if inst < 0: gerr(n, "unresolved thread_spawn"); return
 	np := ND[FI_[inst].node].n
 	gen_tw(inst)
@@ -1377,6 +1375,8 @@ recursive gbuiltin0(n int):
 	if b == B_EMBED: gembed(n, arg(0)); return
 	if b == B_EMBEDSH: bl := shader_blob(n); ow("hr_str("); cstr_lit(bl); format(O, ", ", bl.len, ")"); return
 	if b == B_SPAWN || b == B_SPAWNC: gspawn(n, b == B_SPAWNC); return
+	if b == B_CCALL: rt := at(n); ow("(("); if rt == T_VOID { ow("void") } else { ct(rt) } ow(" (*)("); for j 1..total { if j > 1 { ow(", ") } ct(at(arg(j))) } if total == 1 { ow("void") } ow("))(uintptr_t)("); gx(arg(0)); ow("))("); for j 1..total { if j > 1 { ow(", ") } gx(arg(j)) } ow(")"); return
+	if b == B_CCB: i := trip(CCB, n); if i < 0 { gerr(n, "unresolved c_callback"); return } while CBD.len < FI_.len { CBD.push(0) } if CBD[i] == 0 { CBD[i] = 1; gexp(i, true) } format(O, "((uint64_t)(uintptr_t)hr_cb", i, ")"); return
 	if b == B_TWAIT: ow("hr_thread_wait("); gx(arg(0)); ow(", "); if total > 1 { m := arg(1); if TY[at(m)].k == TY_REF { gx0(m); } else { gaddr(m); } } else { ow("0"); } ow(", "); wloc(n); ow(")"); return
 	if b == B_HWT: ow("hr_hardware_threads()"); return
 	if b == B_QPUT: c := arg(0); t := deref(fin(c)); ow("({ "); ct(t); format(O, " _q", p, " = "); gx(c); ow("; "); if pneeds(t) { gen_pq(t); format(O, "hrv _t", p, " = {0}; pq", t, "(&_t", p, ", &_q", p, "); bool _r", p, " = hr_qput(", qid(t), ", _t", p, ".b, _t", p, ".n); hr_rfree(&_t", p, ", 1); _r", p, "; })"); } else { format(O, "hr_qput(", qid(t), ", &_q", p, ", sizeof _q", p, "); })"); } return
@@ -2030,15 +2030,15 @@ fb_idx(n int) int:
 	ta := kid(c, 0); if ND[ta].k as int != N_TARR { return -1 }
 	ix := tidx_node(ND[ta].a as int, ns_of(n)); if ix < 0 { return -1 }
 	lookup_q(ND[ix].s, TIXNS, D_GLOBAL) * 2 + (if ND[ix].fl == 1 { 1 } else { 0 })
-gexp(i int):
-	rt := FI_[i].ret; node := FI_[i].node; np := ND[node].n
-	if rt < 0 || rt == T_VOID { ow("void") } else { ct(rt) }
-	ow(" "); ow(exp_sym(node)); ow("(")
+gexp(i int, cb bool):
+	rt := FI_[i].ret; node := FI_[i].node; np := ND[node].n; sv := O.len; vr := rt >= 0 && rt != T_VOID
+	if cb { ow("static ") } if vr { ct(rt) } else { ow("void") }
+	ow(" "); if cb { format(O, "hr_cb", i) } else { ow(exp_sym(node)) } ow("(")
 	for j np { if j > 0 { ow(", ") }; ct(ptype_of(i, j)); format(O, " a", j) }
 	if np == 0: ow("void")
-	ow(") { "); if rt >= 0 && rt != T_VOID { ow("return ") }; fn_cname(i); ow("(")
+	ow(") { "); if vr { if cb { ct(rt); ow(" r = ") } else { ow("return ") } } fn_cname(i); ow("(")
 	for j np { if j > 0 { ow(", ") }; format(O, "a", j) }
-	ow("); }\n")
+	ow(");"); if cb { ow(" if (hr_ob.n) hr_flush();"); if vr { ow(" return r;") } } ow(" }\n"); if cb { TW.append(O[sv..]); O.resize(sv) }
 gen_fn(i int):
 	node := FI_[i].node
 	AOWN = i; GCF = i
@@ -2103,7 +2103,7 @@ gen_program(out byte[>..]&) bool:
 		if f.par < 0 && nm(f.name as int) == "main": mi = i
 		gen_fn(i)
 		if GERR.len > 0: return false
-		if ND[node].fl & F_EXPORT != 0 && f.par < 0: gexp(i)
+		if ND[node].fl & F_EXPORT != 0 && f.par < 0: gexp(i, false)
 	if GDLF.len > 0 && !STC: out.append("#include <dlfcn.h>\n")
 	out.append("#include \"hrt.h\"\n")
 	out.append(TF)

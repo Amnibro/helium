@@ -2,7 +2,7 @@ use check
 use pkg
 B_PRINT := 1; B_STR := 2; B_FORMAT := 3; B_ASSERT := 4; B_ABORT := 5; B_EXIT := 6; B_COPY := 7; B_DEFAULT := 8; B_LEN := 9
 B_PUSH := 20; B_APPEND := 21; B_POP := 22; B_POPN := 23; B_RESIZE := 24; B_CLEAR := 25; B_INDEXOF := 26; B_CAP := 27; B_RESERVE := 28
-B_TOBYTES := 30; B_BYTESOF := 31; B_FROMBYTES := 32; B_EMBED := 33; B_EMBEDSH := 48
+B_TOBYTES := 30; B_BYTESOF := 31; B_FROMBYTES := 32; B_EMBED := 33; B_EMBEDSH := 48; B_CCB := 49; B_CCALL := 50
 B_SPAWN := 40; B_SPAWNC := 41; B_TWAIT := 42; B_HWT := 43; B_QPUT := 44; B_QGET := 45; B_QPOLL := 46; B_QLIMIT := 47
 B_ALLOCI := 34; B_ALLOCR := 35; B_FREE := 36; B_ALLOCS := 37; B_FREES := 38; B_REALLOCS := 39
 struct NF { name i32, node i32, inst i32, own i32 }
@@ -28,7 +28,7 @@ builtin_of(name const byte[:]) int:
 	if name == "abort" { return B_ABORT } if name == "exit" { return B_EXIT } if name == "copy" { return B_COPY } if name == "default": return B_DEFAULT
 	if name == "to_bytes" { return B_TOBYTES } if name == "bytes_of" { return B_BYTESOF } if name == "from_bytes" { return B_FROMBYTES } if name == "embed_file" { return B_EMBED } if name == "embed_shader": return B_EMBEDSH
 	if name == "len": return B_LEN
-	if name == "thread_spawn" { return B_SPAWN } if name == "thread_spawn_contained" { return B_SPAWNC } if name == "thread_wait" { return B_TWAIT } if name == "hardware_threads": return B_HWT
+	if name == "thread_spawn" { return B_SPAWN } if name == "thread_spawn_contained" { return B_SPAWNC } if name == "thread_wait" { return B_TWAIT } if name == "hardware_threads" { return B_HWT } if name == "c_callback" { return B_CCB } if name == "c_call": return B_CCALL
 	if name == "qput" { return B_QPUT } if name == "qget" { return B_QGET } if name == "qpoll" { return B_QPOLL } if name == "qlimit": return B_QLIMIT
 	-1
 member_of(name const byte[:]) int:
@@ -753,6 +753,22 @@ recursive ck_spawn(n int, ctd bool) int:
 	note_edge(inst)
 	TSP.push(n); TSP.push(AOWN); TSP.push(inst)
 	set_t(n, T_I64)
+trip(l i32[>..<]&, n int) int:
+	r ~= -1; i ~= 0; while i < l.len { if l[i] == n && l[i + 1] == AOWN { r = l[i + 2] } i += 3 } r
+in3(l i32[>..<]&, f int) bool:
+	for k l.len / 3 { if l[3 * k + 2] as int == f { return true } } false
+var CCB i32[>..<]
+recursive ck_ccb(n int) int:
+	c := if ND[n].n == 1 { kid(n, 0) } else { -1 }; d := if c >= 0 && ND[c].k as int == N_ID { lookup_q(ND[c].s, ns_of(n), D_FN) } else { -1 }; f := if d >= 0 { DC[d].node as int } else { -1 }
+	e ~= if d >= 0 { DC[d].next } else { -1 }; while e >= 0 && f >= 0 { if DC[e].k as int == D_FN && DC[e].node as int != f { f = -1 } e = DC[e].next }
+	if f < 0 || ND[f].k as int != N_FN || ND[f].fl & (F_EXTERN | F_THREAD | F_NESTED) != 0 || gen_list(f) >= 0 || untyped_any(f): cerr(n, "c_callback needs the name of one plain function (not generic, overloaded, extern or a thread_fn)"); return set_t(n, T_ERRT)
+	inst := get_inst(f, BINDS.len, 0, -1, -1); sa := AOWN; check_inst(inst); AOWN = sa
+	ni ~= 0; nx ~= 0; bad ~= false; for j ND[f].n as int { k := TY[ptype_of(inst, j)].k; if k == TY_FLT { nx++ } else { if k == TY_INT || k == TY_BOOL { ni++ } else { bad = true } } }
+	rt := FI_[inst].ret; rk := if rt >= 0 && rt != T_VOID { TY[rt].k as int } else { TY_INT }
+	if bad || rk != TY_INT && rk != TY_BOOL && rk != TY_FLT: cerr(n, "c_callback functions take and return only integers, bools and floats (pass addresses as uint)"); return set_t(n, T_ERRT)
+	if nx > 8 || nx > 0 && ni > 6: cerr(n, "a c_callback function with float parameters takes at most 6 integer and 8 float parameters"); return set_t(n, T_ERRT)
+	note_edge(inst); CCB.push(n as i32); CCB.push(AOWN as i32); CCB.push(inst as i32)
+	set_t(n, T_U64)
 var CFEL i8[>..]
 recursive cf_try(n int, fnode int, s int, an int, b0 int, bn int, blk int, want int, name int) int, int, int:
 	r := ND[fnode].b; gl := gen_list(fnode); ty := ND[n].c
@@ -906,6 +922,13 @@ recursive ck_builtin(n int, b int, recv int, want int) int:
 	if b == B_EMBED: ck(arg(0), TT_STR); default_t(arg(0)); return set_t(n, TT_STR)
 	if b == B_EMBEDSH: return ck_shader(n, total, recv)
 	if b == B_SPAWN || b == B_SPAWNC: return ck_spawn(n, b == B_SPAWNC)
+	if b == B_CCB: return ck_ccb(n)
+	if b == B_CCALL:
+		ta := x.c; rt := if ta >= 0 { rtype(kid(ta, 0), ns_of(n)) } else { T_VOID }; rk := if rt == T_VOID { TY_INT } else { TY[rt].k as int }; bad ~= rk != TY_INT && rk != TY_BOOL && rk != TY_FLT
+		ck(arg(0), T_U64); conv(arg(0), T_U64)
+		for i 1..total { c := arg(i); t ~= ck(c, -1); if is_pending(t) { t = default_t(c) } k := TY[t].k as int; if k != TY_INT && k != TY_BOOL && k != TY_FLT { bad = true } }
+		if bad: cerr(n, "c_call passes and returns only integers, bools and floats (pass addresses as uint)"); return set_t(n, T_ERRT)
+		return set_t(n, rt)
 	if b == B_TWAIT: ck(arg(0), T_I64); conv(arg(0), T_I64); if total > 1 { ck(arg(1), -1) } return set_t(n, T_BOOL)
 	if b == B_HWT: return set_t(n, T_I64)
 	if b == B_QPUT: c := arg(0); t ~= ck(c, -1); if is_pending(t) { t = default_t(c) } d := deref(t); if d != t { set_cv(c, d) } return set_t(n, T_BOOL)

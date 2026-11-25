@@ -1023,7 +1023,7 @@ pbmask(i int) int:
 	if fd < 0 || is_ext(i) || (ND[fd].fl as int) & F_SIMD != 0: return 0
 	for c CAPS: if c.inst as int == i { return 0 }
 	for f FI_: if f.par as int == i { return 0 }
-	k ~= 0; while k < TSP.len: if TSP[k + 2] as int == i { return 0 } k += 3
+	if in3(TSP, i) || in3(CCB, i): return 0
 	np := ND[fd].n as int
 	for j np: t := ptype_of(i, j); if mut_param(kid(fd, j)) && !pro(i, j) || TY[t].k == TY_FNV || TY[t].k == TY_TP { return 0 }
 	if !pcalls(ND[fd].c): return 0
@@ -1106,19 +1106,22 @@ ccls(t int) int:
 lccall(n int, i int, args i32[>..<]&) int:
 	l ~= -1; for k DYN.len { if dl_lib(DYN[k] as int) == dl_lib(i) { l = k } } if l < 0: l = DYN.len; DYN.push(i as i32)
 	b ~= -1; for k DBF.len { if DBF[k] as int == i { b = k } } if b < 0: b = DBF.len; DBL.push(l as i32); DBF.push(i as i32); DBS.push(bss(8, 8) as i32)
-	rt := FI_[i].ret as int; vr := rt >= 0 && rt != T_VOID && TY[rt].k != TY_VOID; ra := vr && is_agg(rt); rp := vr && is_pair(rt); rc := if ra { ccls(rt) } else { if rp { 4 } else { 0 } }
+	pts i32[>..<] ~= []; for j ND[FI_[i].node].n as int { pts.push(ptype_of(i, j)) }
+	lcptr(n, FI_[i].ret as int, pts, args, DBS[b] as int, -1)
+lcptr(n int, rt int, pts i32[>..<]&, args i32[>..<]&, gs int, fp int) int:
+	vr := rt >= 0 && rt != T_VOID && TY[rt].k != TY_VOID; ra := vr && is_agg(rt); rp := vr && is_pair(rt); rc := if ra { ccls(rt) } else { if rp { 4 } else { 0 } }
 	x0 := CCK.len; CCK.push(0); CCK.push(rc as i32)
 	ca i32[>..<] ~= []; q ~= if ra { 1 } else { 0 }; sd := if ra { args[0] as int } else { -1 }
 	tmp := if (ra || rp) && rc != 8 { t := nv(); ir(I_SLOT, 8, t, -1, -1, slot(16, 8)); t } else { -1 }
 	if ra && rc == 8: ca.push(sd as i32); CCK.push(0)
-	for j ND[FI_[i].node].n as int:
-		pt := ptype_of(i, j); if q >= args.len: break
+	for j pts.len:
+		pt := pts[j] as int; if q >= args.len: break
 		if is_pair(pt): ca.push(args[q]); ca.push(args[q + 1]); CCK.push(3); CCK.push(4); q += 2; continue
 		ca.push(args[q]); q++; CCK.push((if isf(pt) { 1 } else { if is_scal(pt) || TY[pt].k == TY_REF { 0 } else { 2 | ccls(pt) << 4 | tsz(pt) << 8 } }) as i32)
 	if q != args.len: lerr(n, "this C call's arguments natively"); return imm(0)
 	if tmp >= 0: ca.push(tmp as i32); CCK.push(0)
 	CCK[x0] = (if ra || rp { if rc == 8 { 4 } else { 3 } } else { if vr && isf(rt) { if wof(rt) == 10 { 1 } else { 2 } } else { 0 } }) as i32
-	g := nv(); ir(I_GADDR, 8, g, -1, -1, DBS[b] as int); p := ldw(g, 0, 3)
+	p := if gs >= 0 { g := nv(); ir(I_GADDR, 8, g, -1, -1, gs); ldw(g, 0, 3) } else { fp }
 	s0 := ARGL.len; ARGL.append(ca[..]); d := nv()
 	irl(I_CALLR, 3, d, s0, ca.len, p, -2 - (1 << 30 | x0))
 	if rp: PAIR2 = ldw(tmp, 8, 3); return ldw(tmp, 0, 3)
@@ -1359,13 +1362,21 @@ recursive lbuiltin1(n int, b int, dst int, total int) int:
 		return imm(0)
 	if b == B_LEN: p, q := lsl(barg(n, 0)); return q
 	if b == B_SPAWN || b == B_SPAWNC:
-		inst ~= -1; i ~= 0; while i < TSP.len: if TSP[i] == n && TSP[i + 1] == AOWN { inst = TSP[i + 2] } i += 3
+		inst := trip(TSP, n)
 		if inst < 0: lerr(n, "unresolved thread_spawn"); return imm(0)
 		args i32[>..<] ~= []; for j ND[FI_[inst].node].n as int: largs(args, kid(n, j + 1), ptype_of(inst, j))
 		pk := nv(); ir(I_SLOT, 8, pk, -1, -1, slot(max(8 * args.len, 8), 8)); for q, j args: stw(pk, 8 * j, q, 3)
 		fa := nv(); ir(I_FADDR, 8, fa, -1, -1, tw_fn(inst)); ta := nv(); ir(I_FADDR, 8, ta, -1, -1, rt_fn("rt_tmain"))
 		nb := rtcall("rt_tblk", [])
 		return rtcall("rt_spawn", [fa as i32, ta as i32, pk as i32, nb as i32, imm(if b == B_SPAWNC { 1 } else { 0 }) as i32])
+	if b == B_CCB:
+		inst := trip(CCB, n)
+		if inst < 0 || WEB: lerr(n, if WEB { "c_callback is not available in WebAssembly builds" } else { "unresolved c_callback" }); return imm(0)
+		fa := nv(); ir(I_FADDR, 8, fa, -1, -1, syn_of(CBT, CBN, inst)); return fa
+	if b == B_CCALL:
+		if WEB: lerr(n, "c_call is not available in WebAssembly builds"); return imm(0)
+		fp := lx(barg(n, 0)); pts i32[>..<] ~= []; args i32[>..<] ~= []; for j 1..total { c := barg(n, j); pts.push(at(c)); args.push(lx(c)) }
+		return lcptr(n, at(n), pts, args, -1, fp)
 	if b == B_TWAIT: id := lx(barg(n, 0)); mv := if total > 1 { m := barg(n, 1); if TY[at(m)].k == TY_REF { lx(m) } else { laddr(m) } } else { imm(0) }; lp, ln := locsl(n); return rtcall("rt_twait", [id as i32, mv as i32, lp as i32, ln as i32])
 	if b == B_HWT: return rtcall("rt_hwt", [])
 	if b == B_QLIMIT: t := rtype(kid(ND[n].c, 0), ns_of(n)); lp, ln := locsl(n); rtcall("rt_qlimit", [imm(qid(t)) as i32, lx(barg(n, 0)) as i32, lp as i32, ln as i32]); return imm(0)
@@ -1410,10 +1421,21 @@ hdef(k const byte[:]) int:
 rtsetp(g const byte[:], k int): d := lookup(intern(g), -1, D_GLOBAL); if d < 0 { return } lea_rip(RCX, 3, gslot(d)); lea_rip(RAX, k, 0); st(RAX, RCX, 0, 8);
 rtset(g const byte[:], v int): if v < 0 { return } d := lookup(intern(g), -1, D_GLOBAL); if d < 0 { return } lea_rip(RCX, 3, gslot(d)); mov_ri(RAX, v); st(RAX, RCX, 0, 8);
 var TWT i32[>..<]; var TWN i32[>..<]; TDONE ~= 0; TGN ~= -1
+var CBT i32[>..<]; var CBN i32[>..<]; CDONE ~= 0
+syn_of(ks i32[>..<]&, ns i32[>..<]&, k int) int:
+	for i ks.len { if ks[i] == k { return ns[i] } } nf := NFS.len; NFS.push(NFn{0, 0, 0, 0, -1}); FOFF.push(0); ks.push(k); ns.push(nf); nf
 tw_fn(inst int) int:
-	for i TWT.len { if TWT[i] == inst { return TWN[i] } } nf := NFS.len; NFS.push(NFn{0, 0, 0, 0, -1}); FOFF.push(0); TWT.push(inst); TWN.push(nf); if TGN < 0 { TGN = NFS.len; NFS.push(NFn{0, 0, 0, 0, -1}); FOFF.push(0) } nf
+	nf := syn_of(TWT, TWN, inst); if TGN < 0 { TGN = NFS.len; NFS.push(NFn{0, 0, 0, 0, -1}); FOFF.push(0) } nf
+pkrec(nf int, i0 int): while PKO.len <= nf { PKO.push(-1); PKC.push(0) } PKO[nf] = PKW.len as i32; for k i0..IR.len { if IR[k].op as int == I_PARAM { PKW.push(IR[k].w as i8) } } PKC[nf] = PKW.len as i32 - PKO[nf]
+recursive lower_cb(k int):
+	inst := CBT[k]; i0 := lsyn_begin(); ps i32[>..<] ~= []; args i32[>..<] ~= []
+	for j ND[FI_[inst].node].n as int: pt := ptype_of(inst, j); r := nv(); ir(I_PARAM, if isf(pt) { wof(pt) } else { 3 }, r, -1, -1, j); ps.push(r)
+	for r, j ps: w := wof(ptype_of(inst, j)); v ~= r as int; if w < 8 && w & 3 != 3 { v = nv(); ir(I_EXT, w, v, r, -1, 0) } args.push(v)
+	pkrec(CBN[k], i0); s := ARGL.len; ARGL.append(args[..]); d := nv(); ir(I_CALL, 3, d, s, args.len, nf_of(inst)); rt := FI_[inst].ret
+	if rt >= 0 && rt != T_VOID: ir(I_MOV, 3, RETV, d, -1, 0)
+	lsyn_end(CBN[k], i0);
 drain() bool:
-	while WDONE < WORK.len || FDONE < FMTT.len || EDONE < EQT.len || TDONE < TWT.len { if WDONE < WORK.len { lower_fn(WORK[WDONE]); WDONE++ } else { if FDONE < FMTT.len { lower_fmt(FDONE); FDONE++ } else { if EDONE < EQT.len { lower_eq(EDONE); EDONE++ } else { lower_tw(TDONE); TDONE++ } } } if LERR.len > 0 { return false } } true
+	while WDONE < WORK.len || FDONE < FMTT.len || EDONE < EQT.len || TDONE < TWT.len || CDONE < CBT.len { if WDONE < WORK.len { lower_fn(WORK[WDONE]); WDONE++ } else { if FDONE < FMTT.len { lower_fmt(FDONE); FDONE++ } else { if EDONE < EQT.len { lower_eq(EDONE); EDONE++ } else { if TDONE < TWT.len { lower_tw(TDONE); TDONE++ } else { lower_cb(CDONE); CDONE++ } } } } if LERR.len > 0 { return false } } true
 lsyn_begin() int:
 	CUR = GLOBI; CURI = -1; AOWN = GLOBI; NV = 0; SB = 0; LSLOT.clear(); LIR0 = IR.len; i0 := IR.len; FSTM = STMP.len; RETV = nv(); RETV2 = nv(); RETL = nlbl(); RETK = RETL; ir(I_IMM, 3, RETV, -1, -1, 0); i0
 lsyn_end(nf int, i0 int): ir(I_LBL, 3, -1, -1, -1, RETL); ir(I_RET, 3, -1, RETV, -1, 0); NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB; slz(NFS[nf].i0 as int)
@@ -1429,7 +1451,7 @@ recursive lower_tw(k int):
 	lsyn_end(TWN[k], i0);
 lower_tglob(): if TGN < 0 { return } i0 := lsyn_begin(); for o, d GOFF { t := GLT[d]; if o >= 0 && is_res(t) { a := nv(); ir(I_GADDR, 8, a, -1, -1, o); rtcall("rt_rdupg", [a as i32, imm(if nseq(t) { 0 } else { tsz(TY[t].a) }) as i32]) } } lsyn_end(TGN, i0);
 eq_fn(t int) int:
-	for i EQT.len { if EQT[i] == t { return EQN[i] } } nf := NFS.len; NFS.push(NFn{0, 0, 0, 0, -1}); FOFF.push(0); EQT.push(t); EQN.push(nf); nf
+	syn_of(EQT, EQN, t)
 plain_bytes(t int) bool:
 	k := TY[t].k; if k == TY_INT || k == TY_BOOL { return true } if k == TY_ARR && is_fix(t) { return plain_bytes(TY[t].a) } if k == TY_STRUCT && !lvst(t) { si := TY[t].a; o ~= 0; for j STI[si].fnum { ft := SFI[STI[si].f0 as int + j].ty; if ft < 0 { continue } if !plain_bytes(ft) || foff(si, j) != o { return false } o += tsz(ft) } return o == tsz(t) } false
 recursive leq_a(pa int, pb int, t int) int:
@@ -1463,7 +1485,7 @@ lower_eq(fi int):
 	NFS[nf].i0 = i0; NFS[nf].i1 = IR.len; NFS[nf].nv = NV; NFS[nf].sb = SB; slz(NFS[nf].i0 as int)
 	while PBR.len > 0: t := PBR.pop(); v := PBR.pop(); LVS[v].ty = t
 fmt_fn(t int) int:
-	for i FMTT.len { if FMTT[i] == t { return FMTN[i] } } nf := NFS.len; NFS.push(NFn{0, 0, 0, 0, -1}); FOFF.push(0); FMTT.push(t); FMTN.push(nf); nf
+	syn_of(FMTT, FMTN, t)
 VTOP ~= false
 recursive lfmt_a(a int, t int):
 	d := deref(t); k := TY[d].k
@@ -1789,7 +1811,7 @@ lower_fn(i int):
 	CAPSL.clear(); while CAPSL.len < LVS.len { CAPSL.push(-1) } cq i32[>..<] ~= []
 	for cp CAPS:
 		if cp.inst == i: r := nv(); ir(I_PARAM, 3, r, -1, -1, pi); pi++; cq.push(r); cq.push(cp.lv)
-	while PKO.len <= nf { PKO.push(-1); PKC.push(0) } PKO[nf] = PKW.len as i32; for k i0..IR.len { if IR[k].op as int == I_PARAM { PKW.push(IR[k].w as i8) } } PKC[nf] = PKW.len as i32 - PKO[nf]
+	pkrec(nf, i0)
 	ci ~= 0; while ci < cq.len: so := slot(8, 8); CAPSL[cq[ci + 1]] = so; sa := nv(); ir(I_SLOT, 8, sa, -1, -1, so); stw(sa, 0, cq[ci], 3); ci += 2
 	qi ~= 0
 	for j ND[node].n:

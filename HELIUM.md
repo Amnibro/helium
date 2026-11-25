@@ -205,7 +205,7 @@ fn main() {
 ```
 
 - Overloading by parameter types. Defaults on trailing parameters. Generics are monomorphized with no trait bounds.
-- Function values are compile-time only (no closures stored, no function pointers). A trailing block `{ it ... }` or `{ a, b => ... }` is the last argument; one per call. `return` inside a block returns from the enclosing named function.
+- Function values are compile-time only (no closures stored). C function pointers are plain `uint` addresses (see `c_callback` and `c_call` below). A trailing block `{ it ... }` or `{ a, b => ... }` is the last argument; one per call. `return` inside a block returns from the enclosing named function.
 - Nested functions read and write the enclosing locals.
 - Recursion must be marked: `recursive fn` on the cycle's entry, all signatures explicit, and no growable local in scope at a recursive call (pass storage in by reference).
 - `return value from f` returns from the innermost active call of `f`, any depth up (checked statically). No exceptions or Result type; use trailing `bool` results or optionals.
@@ -235,6 +235,7 @@ fn main() { print(fast_steps(27), " ", fast_steps(27)); }
 - Threads share nothing: `thread_fn worker() { let j = qget<Job>(); qput(Result { ... }); }`, `thread_spawn(worker)`, `thread_wait(id)`. Only flat (reference-free) values cross queues.
 - `assert(c)`, `abort(msg)`, `exit(code)`. `copy(x)`, `default<T>()`, `to_bytes(a)`, `from_bytes<T[>..]>(b)`, `bytes_of(a)`, `embed_file("path")`.
 - `extern fn hypot(x real, y real) real;` binds C; `extern "SDL2" { fn SDL_Quit(); }` binds a shared library; `extern "vulkan?" { ... }` is optional: if the library or a symbol is missing, those functions return -1.
+- C function pointers (native and C builds; not WebAssembly): `c_callback(f)` gives the `uint` address of a plain function `f` that C code can call, such as a `qsort` comparator, a `pthread_create` start routine or a CEF handler. `c_call<T>(fp, args...)` calls the C function at address `fp` and returns `T` (no type argument means no result), for example a function pointer stored in a C struct. Both use the platform C calling convention. Parameters, arguments and results are integers, bools and floats only; pass addresses as `uint` and read memory with `ffi`. A callback with float parameters takes at most 6 integer and 8 float parameters. Float literals passed to `c_call` are `f64`; write `x as f32` where the C side takes a `float`. A callback that only computes on its arguments is safe on any thread. One that allocates, prints or uses globals must run on a Helium thread, or on a thread C created while no other Helium code runs and the program does not use `thread_spawn`.
 
 ## Standard library (std is implicit)
 

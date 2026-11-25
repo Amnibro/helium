@@ -359,7 +359,9 @@ rcp2(v int, w int) int:
 	sg := w & 3 == 2; mb := if sg { 23 } else { 52 }; em := if sg { 0xFF } else { 0x7FF }; e := v >> mb & em; if v & (1 << mb) - 1 != 0 || e < 1 || e > em - 2 { return -1 } v & ~((1 << mb) - 1 | em << mb) | em - 1 - e << mb
 cvt_u2f(w int): l1 := nlbl(); l2 := nlbl(); sse(0, false, 0x57, 0, 0); test_rr(RAX, RAX); jcc_l(8, l1); sse(fpx(w), true, 0x2A, 0, RAX); jmp_l(l2); bind(l1); mov_rr(RCX, RAX); xrex(true, 0, 0, RCX); xb(0xD1); xb(0xE8 | 1); xb(0x48); xb(0x83); xb(0xE0); xb(1); alu(0x09, RCX, RAX); sse(fpx(w), true, 0x2A, 0, RCX); sse(fpx(w), false, 0x58, 0, 0); bind(l2); rx(RAX, 0, w);
 xabi_prep():
-	XAB.clear(); XAB.resize(NFS.len, 0); XRF.clear(); XRF.resize(NFS.len, 0); nz byte[>..] ~= []; if env("HC_NOXA", nz): return
+	XAB.clear(); XAB.resize(NFS.len, 0); XRF.clear(); XRF.resize(NFS.len, 0)
+	for nf, k CBN { rt := FI_[CBT[k]].ret; rf := if rt >= 0 && isf(rt) { wof(rt) } else { 0 }; nx ~= 0; for j PKC[nf] { nx += (PKW[PKO[nf] + j] as int) >> 3 & 1 } if nx + rf > 0 { XAB[nf] = 2; XRF[nf] = rf as i8 } }
+	nz byte[>..] ~= []; if env("HC_NOXA", nz): return
 	if env("HC_XA3", nz): XAN = 3
 	ok i8[>..<] ~= []; ok.resize(NFS.len, 1); for x IR { o := x.op as int; if o == I_FADDR && x.c >= 0 && x.c < NFS.len as i64 { ok[x.c] = 0 } if o == I_CALL && x.c >= 0 && x.c < NFS.len as i64 { k := x.c as int; if k >= PKC.len || x.b as int != PKC[k] as int { ok[k] = 0 } } }
 	for f, fi NFS:
@@ -397,7 +399,7 @@ pin(c int, d int):
 	if c < 6 { stv(ARGR[c], d) } else { if FAL { ld(RAX, RBP, 0, 8, false) } ld(RAX, if FAL { RAX } else { RBP }, 16 + 8 * (c - 6), 8, false); stv(RAX, d) }
 pmr(f int, c int) int:
 	if f >= XAB.len || XAB[f] == 0: return c
-	xi ~= 0; gi ~= 0; for k (c + 1) { fl := (PKW[PKO[f] + k] as int) & 8 != 0 && xi < XAN; if k == c { return if fl { XMB + xi } else { gi } } if fl { xi++ } else { gi++ } } c
+	xn := if XAB[f] == 2 { 8 } else { XAN }; xi ~= 0; gi ~= 0; for k (c + 1) { fl := (PKW[PKO[f] + k] as int) & 8 != 0 && xi < xn; if k == c { return if fl { XMB + xi } else { gi } } if fl { xi++ } else { gi++ } } c
 fsel(x Ir):
 	d := x.d as int; a := x.a as int; T := x.b as int; E := x.c as int; w := if XW[d] != 0 { XW[d] as int } else { 11 }; R := xg(d); cc ~= FUSEC; FUSEC = -1
 	if cc < 0: A := srcr(a, RDX); test_rr(A, A); cc = CC_NE

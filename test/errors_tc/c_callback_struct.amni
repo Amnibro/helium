@@ -1,0 +1,4 @@
+// error: c_callback functions take and return only integers, bools and floats
+struct P { x int }
+fn f(p P) int { return p.x; }
+fn main() { print(c_callback(f)); }
