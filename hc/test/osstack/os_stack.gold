@@ -1,0 +1,20 @@
+into os_stack.he
+lang he
+use std, os, ffi
+
+```he
+main():
+	m byte[8] ~= [0; 8]
+	m[0] = 7
+	a := ffi::ptr(m[..])
+	maps byte[>..] ~= []
+	read_file("/proc/self/maps", maps)
+	on ~= false
+	for l split(maps[..], '\n'):
+		if contains(l, "[stack]"):
+			r := split(split(l, ' ')[0], '-')
+			lo, _ := parse_int(r[0], 16)
+			hi, _ := parse_int(r[1], 16)
+			on = m[0] == 7 && a >= lo as uint && a < hi as uint
+	print(if on { "main runs on the OS stack" } else { "main runs on the runtime stack" })
+```
