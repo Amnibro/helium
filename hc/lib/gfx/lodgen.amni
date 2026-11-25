@@ -1,0 +1,241 @@
+import math;
+import gfx.gltf;
+import gfx.linalg;
+namespace lodgen;
+fn mix(k int) int {
+	let factor uint = 0x9E3779B97F4A7C15;
+	let x = (k as! uint) * factor;
+	let mask uint = 0x7FFFFFFFFFFFFFFF;
+	((x ^ (x >> 29)) & mask) as! int
+}
+fn grid_pass(tris const u32[:], pos const f32[:], stride int, at int, nv int, grid int, out u32[>..]&) int {
+	out.clear();
+	let ntri = tris.len / 3;
+	if nv == 0 || ntri == 0 { return 0; }
+	var used bool[>..] = [];
+	used.resize(nv, false);
+	for i in ntri * 3 { used[tris[i] as int] = true; }
+	var lo real[3] = [0.0; 3];
+	var hi real[3] = [0.0; 3];
+	var any_used = false;
+	for v in nv {
+		if used[v] {
+			let b = v * stride + at;
+			for k in 3 {
+				let c real = pos[b + k];
+				if !any_used || c < lo[k] { lo[k] = c; }
+				if !any_used || c > hi[k] { hi[k] = c; }
+			}
+			any_used = true;
+		}
+	}
+	var side = 0.0;
+	for k in 3 { side = max(side, hi[k] - lo[k]); }
+	let cube = max(side, 0.000000000001) / (grid as real);
+	var cells int[3] = [1; 3];
+	for k in 3 { cells[k] = max(min(floor((hi[k] - lo[k]) / cube) as int + 1, grid), 1); }
+	var size = 16;
+	while size < 2 * nv + 16 { size *= 2; }
+	var keys int[>..] = [];
+	keys.resize(size, -1);
+	var slots int[>..] = [];
+	slots.resize(size, 0);
+	var slot_of int[>..] = [];
+	slot_of.resize(nv, -1);
+	var nslots = 0;
+	for v in nv {
+		if used[v] {
+			let b = v * stride + at;
+			var cell int[3] = [0; 3];
+			for k in 3 {
+				let c real = pos[b + k];
+				cell[k] = clamp(floor((c - lo[k]) / cube) as int, 0, cells[k] - 1);
+			}
+			let key = (cell[0] * cells[1] + cell[1]) * cells[2] + cell[2];
+			var h = mix(key) & (size - 1);
+			while keys[h] != -1 && keys[h] != key { h = (h + 1) & (size - 1); }
+			if keys[h] == -1 {
+				keys[h] = key;
+				slots[h] = nslots;
+				nslots++;
+			}
+			slot_of[v] = slots[h];
+		}
+	}
+	var quad real[>..] = [];
+	quad.resize(nslots * 10, 0.0);
+	for t in ntri {
+		let i0 = tris[t * 3] as int;
+		let i1 = tris[t * 3 + 1] as int;
+		let i2 = tris[t * 3 + 2] as int;
+		let b0 = i0 * stride + at;
+		let b1 = i1 * stride + at;
+		let b2 = i2 * stride + at;
+		let x0 real = pos[b0];
+		let y0 real = pos[b0 + 1];
+		let z0 real = pos[b0 + 2];
+		let ux = (pos[b1] as real) - x0;
+		let uy = (pos[b1 + 1] as real) - y0;
+		let uz = (pos[b1 + 2] as real) - z0;
+		let vx = (pos[b2] as real) - x0;
+		let vy = (pos[b2 + 1] as real) - y0;
+		let vz = (pos[b2 + 2] as real) - z0;
+		let nx = uy * vz - uz * vy;
+		let ny = uz * vx - ux * vz;
+		let nz = ux * vy - uy * vx;
+		let w = sqrt(nx * nx + ny * ny + nz * nz);
+		if w > 0.000000000000000000000000000001 {
+			let a = nx / w;
+			let b = ny / w;
+			let c = nz / w;
+			let d = -(a * x0 + b * y0 + c * z0);
+			let q real[10] = [a * a, a * b, a * c, a * d, b * b, b * c, b * d, c * c, c * d, d * d];
+			let s0 = slot_of[i0];
+			let s1 = slot_of[i1];
+			let s2 = slot_of[i2];
+			for k in 10 { quad[s0 * 10 + k] += w * q[k]; }
+			if s1 != s0 {
+				for k in 10 { quad[s1 * 10 + k] += w * q[k]; }
+			}
+			if s2 != s0 && s2 != s1 {
+				for k in 10 { quad[s2 * 10 + k] += w * q[k]; }
+			}
+		}
+	}
+	var best real[>..] = [];
+	best.resize(nslots, 0.0);
+	var chosen int[>..] = [];
+	chosen.resize(nslots, -1);
+	for v in nv {
+		if used[v] {
+			let b = v * stride + at;
+			let x real = pos[b];
+			let y real = pos[b + 1];
+			let z real = pos[b + 2];
+			let s = slot_of[v];
+			let m = s * 10;
+			let err = quad[m] * x * x + 2.0 * quad[m + 1] * x * y + 2.0 * quad[m + 2] * x * z + 2.0 * quad[m + 3] * x + quad[m + 4] * y * y + 2.0 * quad[m + 5] * y * z + 2.0 * quad[m + 6] * y + quad[m + 7] * z * z + 2.0 * quad[m + 8] * z + quad[m + 9];
+			if chosen[s] < 0 || err < best[s] {
+				chosen[s] = v;
+				best[s] = err;
+			}
+		}
+	}
+	var set_size = 16;
+	while set_size < 2 * ntri + 16 { set_size *= 2; }
+	var seen int[>..] = [];
+	seen.resize(set_size, -1);
+	for t in ntri {
+		let a = chosen[slot_of[tris[t * 3] as int]];
+		let b = chosen[slot_of[tris[t * 3 + 1] as int]];
+		let c = chosen[slot_of[tris[t * 3 + 2] as int]];
+		if a == b || b == c || a == c { continue; }
+		var first = a;
+		var second = b;
+		var third = c;
+		if b < a && b < c {
+			first = b;
+			second = c;
+			third = a;
+		} else if c < a && c < b {
+			first = c;
+			second = a;
+			third = b;
+		}
+		let key = (first * nv + second) * nv + third;
+		var h = mix(key) & (set_size - 1);
+		while seen[h] != -1 && seen[h] != key { h = (h + 1) & (set_size - 1); }
+		if seen[h] == key { continue; }
+		seen[h] = key;
+		out.push(first as u32);
+		out.push(second as u32);
+		out.push(third as u32);
+	}
+	out.len / 3
+}
+fn reduce(tris const u32[:], pos const f32[:], stride int, at int, nv int, target int, out u32[>..]&) int {
+	out.clear();
+	let ntri = tris.len / 3;
+	if ntri <= target || target < 1 {
+		out.append(tris);
+		return ntri;
+	}
+	var lo = 1;
+	var hi = 1024;
+	var rounds = 0;
+	while lo < hi && rounds < 11 {
+		let mid = (lo + hi + 1) / 2;
+		if grid_pass(tris, pos, stride, at, nv, mid, out) <= target { lo = mid; } else { hi = mid - 1; }
+		rounds++;
+	}
+	let made = grid_pass(tris, pos, stride, at, nv, lo, out);
+	if made == 0 {
+		out.clear();
+		out.append(tris);
+		return ntri;
+	}
+	made
+}
+fn tris(asset int) int {
+	let span = gltf::assets[asset].meshes;
+	var total = 0;
+	for i in span.count {
+		let prims = gltf::meshes[span.first + i].prims;
+		for j in prims.count { total += (gltf::prims[prims.first + j].icount as int) / 3; }
+	}
+	total
+}
+fn make(asset int, keep f32) int {
+	if keep >= 1.0 { return asset; }
+	let source = gltf::assets[asset];
+	var copied = gltf::assets[asset];
+	let mesh_first = gltf::meshes.len;
+	for i in source.meshes.count {
+		var mesh = gltf::meshes[source.meshes.first + i];
+		let old_prims = mesh.prims;
+		mesh.prims.first = gltf::prims.len;
+		for j in old_prims.count {
+			var prim = gltf::prims[old_prims.first + j];
+			let index_count = prim.icount as int;
+			let count = index_count / 3;
+			let target = max(12, round((count as real) * (keep as real)) as int);
+			if !(prim.skinned || prim.targets > 0 || count <= target) {
+				var low u32[>..] = [];
+				let first_index = prim.ifirst as int;
+				let vertex_count = prim.vcount as int;
+				let vf = gltf::VERTEX_FLOATS as int;
+				let first_float = (prim.vfirst as int) * vf;
+				reduce(gltf::indices[first_index..first_index + index_count], gltf::verts[first_float..first_float + vertex_count * vf], vf, gltf::AT_POS, vertex_count, target, low);
+				prim.ifirst = gltf::indices.len;
+				prim.icount = low.len;
+				gltf::indices.append(low);
+			}
+			gltf::prims.push(prim);
+		}
+		gltf::meshes.push(mesh);
+	}
+	let node_first = gltf::nodes.len;
+	let node_shift = node_first - source.nodes.first;
+	for i in source.nodes.count {
+		var node = gltf::nodes[source.nodes.first + i];
+		if node.mesh != -1 { node.mesh = node.mesh - source.meshes.first + mesh_first; }
+		if node.parent != -1 { node.parent = node.parent + node_shift; }
+		let children = node.children;
+		node.children.first = gltf::ints.len;
+		for j in children.count {
+			let child = gltf::ints[children.first + j];
+			gltf::ints.push(child + node_shift);
+		}
+		gltf::nodes.push(node);
+	}
+	copied.roots.first = gltf::ints.len;
+	for i in source.roots.count {
+		let root = gltf::ints[source.roots.first + i];
+		gltf::ints.push(root + node_shift);
+	}
+	copied.meshes.first = mesh_first;
+	copied.nodes.first = node_first;
+	copied.ok = true;
+	gltf::assets.push(copied);
+	gltf::assets.len - 1
+}

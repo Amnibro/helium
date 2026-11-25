@@ -1,0 +1,32 @@
+=== 7bf24a519ae850e3
+import math;
+import gfx.linalg;
+namespace sizecull;
+=== -3ee2a64d486ae97
+fn factor(px f32, fov_y f32, screen_h f32) f32 {
+	if px <= 0.0 || screen_h <= 0.0 { return 0.0; }
+	let half_tan = tan(fov_y * 0.5) as f32;
+	px * half_tan / screen_h
+}
+=== -7782a2217014ab36
+fn scale_of(m gfx::mat4) f32 {
+	let a = m.c0.x * m.c0.x + m.c0.y * m.c0.y + m.c0.z * m.c0.z;
+	let b = m.c1.x * m.c1.x + m.c1.y * m.c1.y + m.c1.z * m.c1.z;
+	let c = m.c2.x * m.c2.x + m.c2.y * m.c2.y + m.c2.z * m.c2.z;
+	sqrt(max(a, max(b, c))) as f32
+}
+=== -57c9b7229da2710e
+fn too_small(c float3, r f32, eye float3, k f32) bool {
+	if k <= 0.0 { return false; }
+	let dx = c.x - eye.x;
+	let dy = c.y - eye.y;
+	let dz = c.z - eye.z;
+	r * r < k * k * (dx * dx + dy * dy + dz * dz)
+}
+=== 068310056beb84c1
+fn split(c int, n int, near f32, far f32) f32 {
+	let t = min((c + 1) as f32 / n as f32, 1.0 as f32);
+	let curved = near * (pow(far / near, t) as f32);
+	let even = near + (far - near) * t;
+	0.75 * curved + 0.25 * even
+}

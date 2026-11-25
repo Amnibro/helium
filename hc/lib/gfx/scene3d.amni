@@ -40,6 +40,7 @@ import gfx.bc;
 import gfx.ktx2;
 import gfx.meshlet;
 import gfx.cloth;
+import gfx.sizecull;
 import os;
 
 let CASCADES = 3;
@@ -627,6 +628,9 @@ var old_w f32[>..] = [];
 var cascade_end f32[>..] = [0.0, 0.0, 0.0];
 var cascade_vp gfx::mat4[>..] = [];
 var cascade_live = 3;
+var cascades = 3;
+var cull_px f32 = 0.0;
+var cull_k f32 = 0.0;
 var frames int = 0;
 var motion_fresh = true;            // no previous frame to measure motion against
 
@@ -1812,6 +1816,7 @@ fn gather_instances() {
 		let far2 = s.lod_distance * s.lod_distance;
 		for k in s.count {
 			let c = inst_c[s.first + k];
+			if sizecull::too_small(linalg::v3(c.x, c.y, c.z), c.w, view.eye, cull_k) { continue; }
 			let dx = c.x - view.eye.x; let dy = c.y - view.eye.y; let dz = c.z - view.eye.z;
 			let far = s.lod_asset >= 0 && dx * dx + dy * dy + dz * dz >= far2;
 			var see = true;
@@ -1854,6 +1859,7 @@ fn gather_instances() {
 }
 fn gather() {
 	batch.clear();
+	cull_k = if capturing { 0.0 } else { sizecull::factor(cull_px, view.fov_y, max(out_height, height) as f32) };
 	ml_draws.clear();
 	ml_bases.clear();
 	joints.clear();
@@ -1903,6 +1909,7 @@ fn gather() {
 				let pr = gltf::prims[pi];
 				let model = if joint_base >= 0 { gfx::mat4_identity } else { motion::world[ni] };
 				let c = linalg::point(model, linalg::mix3(pr.lo, pr.hi, 0.5));
+				if joint_base < 0 && sizecull::too_small(c, linalg::length3(pr.hi - pr.lo) * 0.5 * sizecull::scale_of(model), view.eye, cull_k) { continue; }
 				let d = linalg::dot3(linalg::v3(c.x - view.eye.x, c.y - view.eye.y, c.z - view.eye.z), forward());
 				let im = item_mat(ii, pi);
 				if im == -2 { continue; }
@@ -2320,12 +2327,11 @@ fn setup_cascades() {
 	}
 	let sc = linalg::mix3(slo, shi, 0.5);
 	let sr = if slo.x < shi.x { linalg::f(sqrt(linalg::dot3(shi - slo, shi - slo) as real)) * 0.625 + 0.1 } else { 1.0e30 };
-	cascade_live = CASCADES;
+	let nc = clamp(cascades, 1, CASCADES);
+	cascade_live = nc;
 	for c in CASCADES {
-		let t = (c + 1) as f32 / CASCADES as f32;
-		let log_split = n * linalg::f(pow((fz / n) as real, t as real));
-		let lin_split = n + (fz - n) * t;
-		let b = 0.75 * log_split + 0.25 * lin_split;
+		if c >= nc { cascade_end[c] = fz; cascade_vp.push(cascade_vp[c - 1]); continue; }
+		let b = sizecull::split(c, nc, n, fz);
 		cascade_end[c] = b;
 		// sphere through the slice: centre on the view axis, equidistant from the
 		// near and far corner rings
@@ -2335,7 +2341,7 @@ fn setup_cascades() {
 		z = clamp(z, a, b);
 		let r0 = sqrt(((b - z) * (b - z) + b * b * (tx * tx + ty * ty)) as real);
 		var r = linalg::f(r0);
-		let fitted = cascade_live < CASCADES || sr < r;
+		let fitted = cascade_live < nc || sr < r;
 		r = linalg::f(ceil(((if fitted { sr } else { r }) * 16.0) as real)) / 16.0;
 		let centre = if fitted { sc } else { linalg::v3(view.eye.x + fwd.x * z, view.eye.y + fwd.y * z, view.eye.z + fwd.z * z) };
 		if fitted { cascade_end[c] = fz; cascade_live = min(cascade_live, c + 1); }

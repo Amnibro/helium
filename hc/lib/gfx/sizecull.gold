@@ -1,0 +1,12 @@
+use std
+into sizecull.amni
+
+Imports: math and gfx.linalg. Namespace sizecull. Size culling for the 3D renderer: things that would cover only a few pixels of screen height get skipped, and so do their shadows. A cull factor turns a pixel threshold into a ratio of an object's bounding radius to its distance from the eye: something is too small when its radius is below the factor times its distance. Use linalg's float3, mat4 and f32 helpers; f32 values throughout.
+
+`factor(px, fov_y, screen_h)` gives the cull factor for a threshold of px pixels on a screen screen_h pixels tall with vertical field of view fov_y in radians: px times the tangent of half of fov_y, divided by screen_h. It is zero when px or screen_h is zero or below, which turns size culling off.
+
+`scale_of(m)` gives the largest axis scale of a transform: the longest of the lengths of its first three columns' x, y and z parts.
+
+`too_small(c, r, eye, k)` says whether a bounding sphere at point c with radius r is too small to draw with cull factor k: false when k is zero or below; otherwise true when r squared is below k squared times the squared distance from eye to c.
+
+`split(c, n, near, far)` gives where cascade c of n sun shadow cascades ends along the view: with t the fraction c plus one over n, capped at one, it is three quarters of near times far over near raised to the power t, plus one quarter of near plus far minus near times t.
