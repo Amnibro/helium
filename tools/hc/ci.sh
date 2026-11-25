@@ -22,6 +22,7 @@ step nav sh -c 'HC_LIB=hc/lib "$0" build hc/test/nav/nav_test.amni -o "$1/nt" 2>
 step grow sh -c 'HC_LIB=hc/lib "$0" build hc/test/grow/grow_test.amni -o "$1/gt" 2>/dev/null && "$1/gt"' "$HN" "$W"
 step physkit sh -c 'for t in mover_test ragdoll_test; do HC_LIB=hc/lib "$0" build hc/test/physics/$t.amni -o "$1/$t" 2>/dev/null && "$1/$t" || exit 1; done' "$HN" "$W"
 step crowd sh -c 'HC_LIB=hc/lib "$0" build hc/test/nav/crowd_test.amni -o "$1/ct" 2>/dev/null && "$1/ct"' "$HN" "$W"
+step meshpack sh -c 'HC_LIB=hc/lib "$0" build hc/test/gfx/meshpack_test.amni -o "$1/mp" 2>/dev/null && "$1/mp"' "$HN" "$W"
 step net sh -c 'HC_LIB=hc/lib "$0" build hc/test/net/net_test.amni -o "$1/net" 2>/dev/null && "$1/net"' "$HN" "$W"
 step stream sh -c 'HC_LIB=hc/lib "$0" build hc/test/stream/stream_test.amni -o "$1/st" 2>/dev/null && STREAM_DIR="$1/stream" "$1/st"' "$HN" "$W"
 step audio3d sh -c 'HC_LIB=hc/lib "$0" build hc/test/audio3d/audio3d_test.amni -o "$1/a3" 2>/dev/null && "$1/a3"' "$HN" "$W"

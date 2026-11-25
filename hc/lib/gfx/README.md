@@ -22,6 +22,7 @@ and in NOTICE). It sits on top of `hc/lib/gfx.he` (SDL3 GPU).
 | `clusters` | clustered forward light grid, 16 x 9 x 24 cells, with the light and cell records the surface shader reads |
 | `gltf` | `.glb` / `.gltf` loader built on `json.he`: buffers (GLB, data URI, files), accessors incl. sparse and normalized ints, meshes and morph targets, materials (metal-rough, emissive strength, alpha modes, texture transforms), samplers, images, nodes, skins, animations |
 | `meshopt` | decoder for glTF buffer views compressed with `EXT_meshopt_compression` or `KHR_meshopt_compression`: vertex streams (versions 0 and 1), triangle and index streams, and the octahedral, quaternion, exponential and color filters; `gltf` calls it while loading, so compressed files need no extra step |
+| `meshpack` | the encoder side of `meshopt`: vertex cache and fetch ordering, and triangle, index and attribute (version 0) streams that `meshopt` and the meshoptimizer reference decoder read back |
 | `draco` | decoder for Draco 2.2 meshes (`KHR_draco_mesh_compression`): sequential and edgebreaker (standard and valence) connectivity, every prediction scheme and transform the 2.2 encoders write, quantized and integer attributes; `gltf` calls it while loading |
 | `codec_webp` | WebP decoder: lossy VP8 (with `ALPH` alpha) and lossless VP8L stills, simple and extended containers, output equal to libwebp's RGBA; `gltf` calls it for `.webp` images and `EXT_texture_webp` |
 | `video` | H.264 Constrained Baseline encoder and MP4 writer for exporting animations on the CPU: intra 16x16, P with whole-pixel motion search, skip; output decodes identically in ffmpeg |
@@ -5043,6 +5044,55 @@ group and across blocks, smooth, random and all-zero data, both vertex stream ve
 
 The meshopt reference decoder and the encoder both treat a triangle's corner order as free; nothing in the
 renderer depends on which corner comes first.
+
+### Packing meshes (meshpack)
+
+`meshpack` is the other half of `meshopt`: it orders triangles for the vertex cache (meshoptimizer's greedy
+optimizer and tuned score table, after Tom Forsyth's 2006 method, for a 16-entry cache), renumbers vertices in
+first-use order, and writes triangle (mode 1), index (mode 2) and attribute (mode 0, version 0) streams for `EXT_meshopt_compression`
+and `KHR_meshopt_compression`. `meshpack_test` (built from `meshpack_test.gold`, CPU only, run by `ci.sh`)
+reads `hc/test/gfx/fixtures/meshpack_cases.bin`, made by `make_meshpack.mjs` with the meshoptimizer 1.3.0
+encoder: shuffled grids, a random triangle soup, a lone triangle, an empty mesh, a hand-made list that
+restarts at vertex 0 and indices above 65535, index lists, and attribute streams at every stride from 4 to
+256 with smooth and random data. Bars, registered before the first run:
+
+- P1 round trip: every record that `meshpack` encodes decodes with `meshopt::decode` back to its input
+  (triangles may start at another corner, same winding).
+- P2 reference parity: attribute and index streams equal meshoptimizer's byte for byte; every triangle
+  stream is no longer than meshoptimizer's for the same triangle order.
+- P3 reference decoder (`make_meshpack.mjs check`, run by hand): meshoptimizer's own decoder reads every
+  stream `meshpack_test` writes back to its input.
+- P4 vertex cache: on every shuffled mesh of 1,000 triangles or more, misses per triangle (16-entry FIFO)
+  after `optimize` are at most 1.07 times those of meshoptimizer's order. Control: the shuffled input is
+  above 1.5.
+- P5 fetch order: after `optimize` vertices are first used in the order 0, 1, 2 and so on, the used count is
+  the number of distinct vertices, and every corner's bytes after `remap_bytes` equal the original corner's.
+  Control: the shuffled input is not in first-use order.
+- P6 size: the optimized grids take under 2 bytes a triangle. Control: their shuffled order takes over 4.
+- P7 damage: with the second byte flipped, no stream crashes the decoder and every non-empty one fails to
+  round-trip (must-fail control on P1).
+- P8 speed: a shuffled 1,000,000-triangle grid with 12-byte vertices is optimized, its triangles encoded and
+  its vertices encoded in under 700 ms in all.
+
+Results (2026-11-25):
+
+| check | measured | result |
+| --- | --- | --- |
+| P1 round trip | 145 of 145 | PASS |
+| P2 reference parity | 145 of 145; triangles 68,589 bytes vs meshoptimizer's 68,952 | PASS |
+| P3 reference decoder | 145 of 145 | PASS |
+| P4 vertex cache | 0.658, 0.660, 0.139 vs meshoptimizer's 0.645, 0.666, 0.140; shuffled 3.00 | PASS |
+| P5 fetch order | 3 of 3 meshes; shuffled inputs not in order | PASS |
+| P6 size | 1.17 bytes a triangle on both grids; shuffled 8.07 and 8.04 | PASS |
+| P7 damage | 141 of 141 non-empty streams fail | PASS |
+| P8 speed | 467 ms (optimize 423, triangles 27, vertices 13); 1.16 bytes a triangle, 1.06 a vertex | PASS |
+
+The first run passed P1, P3, P5 and P7. P2 failed on 15 attribute streams: where two widths cost the same,
+meshoptimizer keeps the width of the group before and `meshpack` took the narrower one; it now follows the
+same rule. P4 (0.724 vs 0.645) and P8 (884 ms) failed with Forsyth's score formula and a fresh list per
+step; the order now follows meshoptimizer's optimizer loop and its tuned score table (MIT, see `NOTICE`)
+with two fixed cache arrays. P6 also tripped on the random soup, which its bar (grids only) never covered:
+the test now reads a grid flag from the fixture. No bar changed.
 
 ### Compressed meshes (Draco)
 

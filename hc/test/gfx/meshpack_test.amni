@@ -1,0 +1,481 @@
+import os;
+import math;
+import gfx.meshopt;
+import gfx.meshpack;
+var FAILS int = 0;
+fn check(ok bool, label const byte[:], detail const byte[:]) {
+	if ok {
+		print("ok ", label, " ", detail);
+	} else {
+		print("FAIL ", label, " ", detail);
+		FAILS += 1;
+	}
+}
+fn r3(x real) real {
+	round(x * 1000.0) / 1000.0
+}
+fn u32at(b const byte[:], at int) int {
+	(b[at] as int) | ((b[at + 1] as int) << 8) | ((b[at + 2] as int) << 16) | ((b[at + 3] as int) << 24)
+}
+fn ints(b const byte[:], size int) int[>..] {
+	var out int[>..] = [];
+	for i in b.len / size {
+		var v = 0;
+		for k in size {
+			v = v | ((b[i * size + k] as int) << (8 * k));
+		}
+		out.push(v);
+	}
+	out
+}
+fn put(b byte[>..]&, v int, size int) {
+	for k in size {
+		b.push(((v >> (8 * k)) & 255) as byte);
+	}
+}
+fn bytes_of(idx const int[:], size int) byte[>..] {
+	var out byte[>..] = [];
+	for v in idx {
+		put(out, v, size);
+	}
+	out
+}
+fn canon(idx const int[:], t int, out int[>..]&) {
+	let a = idx[t * 3];
+	let b = idx[t * 3 + 1];
+	let c = idx[t * 3 + 2];
+	if a <= b && a <= c {
+		out.push(a);
+		out.push(b);
+		out.push(c);
+	} else if b <= c {
+		out.push(b);
+		out.push(c);
+		out.push(a);
+	} else {
+		out.push(c);
+		out.push(a);
+		out.push(b);
+	}
+}
+fn same_tris(a const int[:], b const int[:]) bool {
+	if a.len != b.len {
+		return false;
+	}
+	for t in a.len / 3 {
+		var x int[>..] = [];
+		var y int[>..] = [];
+		canon(a, t, x);
+		canon(b, t, y);
+		for k in 3 {
+			if x[k] != y[k] {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+fn tri_keys(idx const int[:], nv int) int[>..] {
+	var keys int[>..] = [];
+	for t in idx.len / 3 {
+		var c int[>..] = [];
+		canon(idx, t, c);
+		keys.push(c[0] * nv * nv + c[1] * nv + c[2]);
+	}
+	sort(keys) { a, b => a < b };
+	keys
+}
+struct Rec { kind int, count int, size int, flag int, input byte[], extra byte[], refb byte[] }
+fn load(path const byte[:]) Rec[>..] {
+	var recs Rec[>..] = [];
+	var data byte[>..] = [];
+	read_file(path, data);
+	var at = 0;
+	while at < data.len {
+		var whole = at + 16 <= data.len;
+		var starts int[3] = [0; 3];
+		var lens int[3] = [0; 3];
+		var p = at + 16;
+		for k in 3 {
+			if whole {
+				if p + 4 > data.len {
+					whole = false;
+				} else {
+					let n = u32at(data, p);
+					if p + 4 + n > data.len {
+						whole = false;
+					} else {
+						starts[k] = p + 4;
+						lens[k] = n;
+						p += 4 + n;
+					}
+				}
+			}
+		}
+		if !whole {
+			print("FAIL cases file is whole");
+			break;
+		}
+		recs.push(Rec { kind: u32at(data, at), count: u32at(data, at + 4), size: u32at(data, at + 8), flag: u32at(data, at + 12), input: copy(data[starts[0]..starts[0] + lens[0]]), extra: copy(data[starts[1]..starts[1] + lens[1]]), refb: copy(data[starts[2]..starts[2] + lens[2]]) });
+		at = p;
+	}
+	recs
+}
+fn encode_rec(r Rec&, out byte[>..]&) {
+	if r.kind == 0 {
+		meshpack::encode_attributes(r.input, r.count, r.size, out);
+	} else if r.kind == 1 {
+		let tri = ints(r.extra, 4);
+		meshpack::encode_triangles(tri, out);
+	} else {
+		let seq = ints(r.input, 4);
+		meshpack::encode_sequence(seq, out);
+	}
+}
+fn wanted(r Rec&) byte[>..] {
+	var out byte[>..] = [];
+	if r.kind == 0 {
+		out.append(r.input);
+	} else if r.kind == 1 {
+		let tri = ints(r.extra, 4);
+		let packed = bytes_of(tri, r.size);
+		out.append(packed);
+	} else {
+		let seq = ints(r.input, 4);
+		let packed = bytes_of(seq, r.size);
+		out.append(packed);
+	}
+	out
+}
+fn round_trip(r Rec&, stream const byte[:]) bool {
+	var got byte[>..] = [];
+	if !meshopt::decode(stream, r.count, r.size, r.kind, 0, got) {
+		return false;
+	}
+	let want = wanted(r);
+	if r.kind == 1 {
+		let a = ints(got, r.size);
+		let b = ints(want, r.size);
+		return same_tris(a, b);
+	}
+	return got == want;
+}
+fn p1_p2_p7(recs Rec[>..]&, dump const byte[:]) {
+	var total = 0;
+	var p1 = 0;
+	var p2 = 0;
+	var ours = 0;
+	var theirs = 0;
+	var damaged = 0;
+	var failed = 0;
+	var bad = -1;
+	var bad_kind = 0;
+	var bad_count = 0;
+	var bad_size = 0;
+	var dumped byte[>..] = [];
+	for &r in recs {
+		var stream byte[>..] = [];
+		encode_rec(r, stream);
+		if round_trip(r, stream) {
+			p1 += 1;
+		} else if bad < 0 {
+			bad = total;
+			bad_kind = r.kind;
+			bad_count = r.count;
+			bad_size = r.size;
+		}
+		if r.kind == 1 {
+			if stream.len <= r.refb.len {
+				p2 += 1;
+			}
+			ours += stream.len;
+			theirs += r.refb.len;
+		} else if stream == r.refb {
+			p2 += 1;
+		}
+		if dump.len > 0 {
+			let want = wanted(r);
+			put(dumped, r.kind, 4);
+			put(dumped, r.count, 4);
+			put(dumped, r.size, 4);
+			put(dumped, stream.len, 4);
+			dumped.append(stream);
+			put(dumped, want.len, 4);
+			dumped.append(want);
+		}
+		if r.count > 0 {
+			damaged += 1;
+			if stream.len > 1 {
+				stream[1] = stream[1] ^ 255;
+				if !round_trip(r, stream) {
+					failed += 1;
+				}
+			}
+		}
+		total += 1;
+	}
+	var d1 byte[>..] = [];
+	format(d1, p1, " of ", total);
+	if bad >= 0 {
+		format(d1, ", first failure record ", bad, " kind ", bad_kind, " count ", bad_count, " size ", bad_size);
+	}
+	check(p1 == total, "P1 round trip", d1);
+	var d2 byte[>..] = [];
+	format(d2, p2, " of ", total, ", triangle bytes ", ours, " vs ", theirs);
+	check(p2 == total, "P2 reference parity", d2);
+	var d7 byte[>..] = [];
+	format(d7, failed, " of ", damaged);
+	check(failed == damaged, "P7 damaged streams fail", d7);
+	if dump.len > 0 {
+		let wrote = write_file(dump, dumped);
+		check(wrote, "P3 streams written", dump);
+	}
+}
+fn first_use(list const int[:]) bool {
+	var hi = -1;
+	for v in list {
+		if v > hi + 1 {
+			return false;
+		}
+		hi = max(hi, v);
+	}
+	return true;
+}
+fn same_list(a const int[:], b const int[:]) bool {
+	if a.len != b.len {
+		return false;
+	}
+	for i in a.len {
+		if a[i] != b[i] {
+			return false;
+		}
+	}
+	return true;
+}
+fn p4_p5_p6(recs Rec[>..]&) {
+	var n = 0;
+	var grids = 0;
+	var ok4 = true;
+	var control4 = true;
+	var ok5 = true;
+	var control5 = true;
+	var ok6 = true;
+	var control6 = true;
+	for &r in recs {
+		if r.kind == 1 && (r.flag == 1 || r.flag == 3) && r.count / 3 >= 1000 {
+			n += 1;
+			let idx = ints(r.input, 4);
+			var top = -1;
+			for v in idx {
+				top = max(top, v);
+			}
+			let nv = top + 1;
+			let other = ints(r.extra, 4);
+			var out int[>..] = [];
+			var remap int[>..] = [];
+			let used = meshpack::optimize(idx, nv, out, remap);
+			let a = meshpack::acmr(out, 16);
+			let b = meshpack::acmr(other, 16);
+			let s = meshpack::acmr(idx, 16);
+			if !(a <= 1.07 * b) {
+				ok4 = false;
+			}
+			if !(s > 1.5) {
+				control4 = false;
+			}
+			print("P4 acmr ", r3(a), " ", r3(b), " ", r3(s));
+			if !first_use(out) {
+				ok5 = false;
+			}
+			if first_use(idx) {
+				control5 = false;
+			}
+			var seen bool[>..] = [];
+			seen.resize(nv, false);
+			var distinct = 0;
+			for v in idx {
+				if !seen[v] {
+					seen[v] = true;
+					distinct += 1;
+				}
+			}
+			if used != distinct {
+				ok5 = false;
+			}
+			var inv int[>..] = [];
+			inv.resize(nv, 0);
+			for v in nv {
+				if remap[v] >= 0 {
+					inv[remap[v]] = v;
+				}
+			}
+			var mapped int[>..] = [];
+			for x in out {
+				mapped.push(inv[x]);
+			}
+			let keys_out = tri_keys(mapped, nv);
+			let keys_in = tri_keys(idx, nv);
+			if !same_list(keys_out, keys_in) {
+				ok5 = false;
+			}
+			var data byte[>..] = [];
+			for v in nv {
+				for k in 12 {
+					data.push(((v * 7 + k) % 256) as byte);
+				}
+			}
+			var moved byte[>..] = [];
+			meshpack::remap_bytes(data, 12, remap, used, moved);
+			for v in nv {
+				if remap[v] >= 0 {
+					for k in 12 {
+						let slot = remap[v] * 12 + k;
+						if slot >= moved.len {
+							ok5 = false;
+						} else if moved[slot] != data[v * 12 + k] {
+							ok5 = false;
+						}
+					}
+				}
+			}
+			if r.flag == 3 {
+				grids += 1;
+				var enc byte[>..] = [];
+				meshpack::encode_triangles(out, enc);
+				var plain byte[>..] = [];
+				meshpack::encode_triangles(idx, plain);
+				let tris = idx.len / 3;
+				let bpt = (enc.len as real) / (tris as real);
+				let sb = (plain.len as real) / (tris as real);
+				if !(bpt < 2.0) {
+					ok6 = false;
+				}
+				if !(sb > 4.0) {
+					control6 = false;
+				}
+				print("P6 bytes a triangle ", r3(bpt), " ", r3(sb));
+			}
+		}
+	}
+	var det byte[>..] = [];
+	format(det, n, " meshes");
+	check(n > 0 && ok4, "P4 cache misses within 1.07x of meshoptimizer", det);
+	check(n > 0 && control4, "P4 control: shuffled input misses", det);
+	check(n > 0 && ok5, "P5 first-use order, same triangles, same vertex bytes", det);
+	check(n > 0 && control5, "P5 control: shuffled input is not in first-use order", det);
+	var det6 byte[>..] = [];
+	format(det6, grids, " meshes");
+	check(grids > 0 && ok6, "P6 under 2 bytes a triangle", det6);
+	check(grids > 0 && control6, "P6 control: shuffled order over 4", det6);
+}
+fn p8() {
+	let nv = 1001 * 501;
+	var tris int[>..] = [];
+	for y in 500 {
+		for x in 1000 {
+			let a = y * 1001 + x;
+			let b = a + 1;
+			let c = a + 1001;
+			let d = c + 1;
+			tris.push(a);
+			tris.push(b);
+			tris.push(d);
+			tris.push(a);
+			tris.push(d);
+			tris.push(c);
+		}
+	}
+	let ntri = tris.len / 3;
+	var s = 7;
+	var perm int[>..] = [];
+	for i in nv {
+		perm.push(i);
+	}
+	var i = nv - 1;
+	while i >= 1 {
+		s = (s * 1103515245 + 12345) % 4294967296;
+		let j = s % (i + 1);
+		let held = perm[i];
+		perm[i] = perm[j];
+		perm[j] = held;
+		i -= 1;
+	}
+	var t = ntri - 1;
+	while t >= 1 {
+		s = (s * 1103515245 + 12345) % 4294967296;
+		let j = s % (t + 1);
+		for k in 3 {
+			let held = tris[t * 3 + k];
+			tris[t * 3 + k] = tris[j * 3 + k];
+			tris[j * 3 + k] = held;
+		}
+		t -= 1;
+	}
+	var idx int[>..] = [];
+	for v in tris {
+		idx.push(perm[v]);
+	}
+	var data byte[>..] = [];
+	data.resize(nv * 12, 0);
+	for y in 501 {
+		for x in 1001 {
+			let at = perm[y * 1001 + x] * 12;
+			for k in 4 {
+				data[at + k] = ((x >> (8 * k)) & 255) as byte;
+				data[at + 4 + k] = ((y >> (8 * k)) & 255) as byte;
+			}
+		}
+	}
+	var out int[>..] = [];
+	var remap int[>..] = [];
+	var moved byte[>..] = [];
+	var enc_tri byte[>..] = [];
+	var enc_vert byte[>..] = [];
+	let t0 = clock_ns();
+	let used = meshpack::optimize(idx, nv, out, remap);
+	let t1 = clock_ns();
+	meshpack::remap_bytes(data, 12, remap, used, moved);
+	let t2 = clock_ns();
+	meshpack::encode_triangles(out, enc_tri);
+	let t3 = clock_ns();
+	meshpack::encode_attributes(moved, used, 12, enc_vert);
+	let t4 = clock_ns();
+	let ms_opt = ((t1 - t0) as real) / 1000000.0;
+	let ms_remap = ((t2 - t1) as real) / 1000000.0;
+	let ms_tri = ((t3 - t2) as real) / 1000000.0;
+	let ms_vert = ((t4 - t3) as real) / 1000000.0;
+	let total = ms_opt + ms_remap + ms_tri + ms_vert;
+	let bpt = (enc_tri.len as real) / (ntri as real);
+	let bpv = (enc_vert.len as real) / (used as real);
+	print("P8 ms optimize ", r3(ms_opt), " remap ", r3(ms_remap), " triangles ", r3(ms_tri), " attributes ", r3(ms_vert), " total ", r3(total), " bytes a triangle ", r3(bpt), " bytes a vertex ", r3(bpv));
+	var det byte[>..] = [];
+	format(det, r3(total), " ms");
+	check(total < 700.0, "P8 1M triangles packed under 700 ms", det);
+}
+fn main() {
+	var path byte[>..] = [];
+	if arg_count() > 1 {
+		arg(1, path);
+	} else {
+		path.append("hc/test/gfx/fixtures/meshpack_cases.bin");
+	}
+	var dump byte[>..] = [];
+	if arg_count() > 2 {
+		arg(2, dump);
+	}
+	var data byte[>..] = [];
+	if read_file(path, data) {
+		var recs = load(path);
+		p1_p2_p7(recs, dump);
+		p4_p5_p6(recs);
+	} else {
+		check(false, "cases file", path);
+	}
+	p8();
+	if FAILS == 0 {
+		print("meshpack: ok");
+	} else {
+		print("meshpack: FAILED ", FAILS);
+		exit(1);
+	}
+}
