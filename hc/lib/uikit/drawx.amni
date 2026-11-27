@@ -1,0 +1,1060 @@
+// Extra painters: HUD kits, charts, color, and the 100-effect text styles.
+namespace uikit;
+
+fn sin_milli(deg int) int {
+	var d = deg;
+	while d < 0 { d += 360; }
+	while d >= 360 { d -= 360; }
+	var sign = 1;
+	if d >= 180 { sign = -1; d -= 180; }
+	let num = 4 * d * (180 - d);
+	let den = 40500 - d * (180 - d);
+	if den == 0 { return 0; }
+	sign * num * 1000 / den
+}
+fn cos_milli(deg int) int { sin_milli(deg + 90) }
+
+fn atan2_deg(y int, x int) int {
+	if x == 0 && y == 0 { return 0; }
+	let ax = if x < 0 { -x } else { x };
+	let ay = if y < 0 { -y } else { y };
+	var deg = 0;
+	if ax >= ay && ax > 0 { deg = ay * 45 / ax; }
+	else if ay > 0 { deg = 90 - ax * 45 / ay; }
+	if x >= 0 && y >= 0 { return deg; }
+	if x < 0 && y >= 0 { return 180 - deg; }
+	if x < 0 && y < 0 { return 180 + deg; }
+	if deg == 0 { return 0; }
+	360 - deg
+}
+
+fn hsv(h int, s f32, v f32) u32 {
+	let c = v * s;
+	let hf = h as f32 / 60.0;
+	var hp = hf;
+	while hp >= 2.0 { hp = hp - 2.0; }
+	var d = hp - 1.0;
+	if d < 0.0 { d = 0.0 - d; }
+	let x = c * (1.0 - d);
+	let m = v - c;
+	var r f32 = 0.0;
+	var g f32 = 0.0;
+	var b f32 = 0.0;
+	let seg = (h / 60) % 6;
+	let seg6 = if seg < 0 { seg + 6 } else { seg };
+	if seg6 == 0 { r = c; g = x; }
+	else if seg6 == 1 { r = x; g = c; }
+	else if seg6 == 2 { g = c; b = x; }
+	else if seg6 == 3 { g = x; b = c; }
+	else if seg6 == 4 { r = x; b = c; }
+	else { r = c; b = x; }
+	var ri = ((r + m) * 255.0) as int;
+	var gi = ((g + m) * 255.0) as int;
+	var bi = ((b + m) * 255.0) as int;
+	if ri < 0 { ri = 0; } if ri > 255 { ri = 255; }
+	if gi < 0 { gi = 0; } if gi > 255 { gi = 255; }
+	if bi < 0 { bi = 0; } if bi > 255 { bi = 255; }
+	((ri << 16) | (gi << 8) | bi) as u32
+}
+
+fn blit_ring(rgb u32, rad int, alpha int) {
+	for k in 16 {
+		let dx = cos_milli(k * 22) * rad / 1000;
+		let dy = sin_milli(k * 22) * rad / 1000;
+		blit_run(rgb, dx, dy, alpha);
+	}
+}
+
+fn blit_shadow(rgb u32) {
+	blit_run(rgb, 1, 1, 80);
+	blit_run(rgb, 2, 2, 60);
+	blit_run(rgb, 3, 4, 40);
+	blit_run(rgb, 5, 6, 24);
+	blit_run(rgb, 7, 9, 14);
+}
+
+fn blit_gradient(top u32, bot u32) {
+	for i in GI.len {
+		let id = GI[i];
+		let x0 = GX[i] as int + C_X[id];
+		let y0 = GY[i] as int + C_Y[id];
+		let gh = if C_H[id] < 1 { 1 } else { C_H[id] };
+		for py in C_H[id] {
+			let col = lerp_rgb(top, bot, py as f32 / gh as f32);
+			for px in C_W[id] {
+				let a = alpha(id, px, py);
+				if a > 0 { put(x0 + px, y0 + py, col, a); }
+			}
+		}
+	}
+}
+
+fn fx_pair(slot int) u32, u32 {
+	if slot == 0 { return 0xFDE047, 0xC2410C; }
+	if slot == 1 { return 0xFEF08A, 0xE11D48; }
+	if slot == 2 { return 0xE0F2FE, 0x1D4ED8; }
+	if slot == 3 { return 0xFDE68A, 0x6D28D9; }
+	if slot == 4 { return 0xBBF7D0, 0x047857; }
+	if slot == 5 { return 0xF5D0FE, 0x6B21A8; }
+	if slot == 6 { return 0xF8FAFC, 0x1E293B; }
+	if slot == 7 { return 0xFBCFE8, 0x7C3AED; }
+	if slot == 8 { return 0xFDBA74, 0x9F1239; }
+	return 0x111111, 0xF8FAFC;
+}
+
+fn fx_draw(i int, x int, y int, text const byte[:], size f32, rgb u32) {
+	let g = if i < 0 { 0 } else { i / 10 };
+	let slot = if i < 0 { 0 } else { i % 10 };
+	var limit = -1;
+	if i == 6 { limit = 3; }
+	TRACK = if i == 7 { size * 0.14 } else { 0.0 };
+	let n = place_run(text, x as f32, y as f32, size, false, i == 1 || g == 5 && slot == 3, false, limit);
+	TRACK = 0.0;
+	if n < 1 { return; }
+	if g == 8 {
+		for k in n { GY[k] = GY[k] + ((k % 3) - 1) as f32 * 2.0; }
+	}
+	if i == 93 && n > 2 { GY[1] = GY[1] - 3.0; }
+	if g == 1 {
+		let ink = if slot == 2 { 0xE11D48 } else if slot == 3 { 0xCA8A04 } else if slot == 8 { 0xF8FAFC } else if slot == 9 { 0x111111 } else { 0x111111 };
+		let rad = if slot == 0 || slot == 6 { 1 } else if slot == 1 || slot == 7 { 3 } else { 2 };
+		blit_ring(ink as u32, rad, 255);
+		if slot == 5 { blit_ring(0xF8FAFC, rad + 1, 255); }
+	}
+	if i == 3 {
+		blit_run(0x111111, 2, 3, 90);
+		blit_run(0x111111, 4, 5, 40);
+	}
+	if g == 2 {
+		let dx = if slot == 1 || slot == 2 { 6 } else if slot == 3 { 5 } else { 2 };
+		let dy = if slot == 4 { 1 } else if slot == 1 { 0 } else { dx };
+		let col = if slot == 5 { 0x2563EB } else if slot == 6 { 0xC2410C } else if slot == 7 { 0x0369A1 } else { 0x111111 };
+		let a = if slot == 1 || slot == 8 { 255 } else { 140 };
+		blit_run(col as u32, dx, dy, a);
+		if slot == 8 { blit_run(0x111111, dx + 3, dy + 2, 100); }
+	}
+	if i == 4 || g == 3 {
+		let glow = if slot == 0 { 0x22D3EE } else if slot == 1 { 0xE879F9 } else if slot == 2 { 0xFACC15 } else if slot == 3 { 0xF43F5E } else if slot == 6 { 0xF97316 } else if slot == 8 { 0x38BDF8 } else { 0xF8FAFC };
+		blit_ring(glow as u32, 3, 160);
+		blit_ring(0x111111, 1, 180);
+	}
+	if g == 6 && slot != 3 && slot != 8 {
+		let glow = if slot == 0 || slot == 6 { 0xF97316 } else if slot == 1 { 0x38BDF8 } else if slot == 2 || slot == 4 { 0xA3E635 } else if slot == 5 { 0xFDE047 } else if slot == 7 { 0x818CF8 } else { 0xE11D48 };
+		blit_ring(glow as u32, 3, 150);
+	}
+	if g == 7 {
+		blit_run(0x22D3EE, -1, 0, 200);
+		blit_run(0xE879F9, 1, 0, 200);
+	}
+	if i == 52 { blit_run(0xF8FAFC, 1, 1, 230); blit_run(0x111111, -2, -2, 230); }
+	else if i == 51 { blit_run(0xF8FAFC, -2, -2, 240); blit_run(0x111111, 3, 3, 220); }
+	else if i == 50 { blit_run(0xF8FAFC, -1, -1, 230); blit_run(0x111111, 1, 1, 200); }
+	else if i == 57 { blit_run(0x111111, -1, -1, 200); }
+	else if i == 58 { blit_run(0xF8FAFC, 0, 2, 230); }
+	if g == 4 || i == 5 || (g == 6 && slot != 6 && slot != 8) || i == 94 || i == 95 || i == 97 {
+		let top, bot = fx_pair(if g == 4 { slot } else if i == 94 || i == 97 { 0 } else if i == 95 { 4 } else if i == 53 { 6 } else { slot });
+		if g == 4 || i == 99 || i == 94 || i == 95 || i == 97 { blit_ring(0x111111, 1, 255); }
+		blit_gradient(top, bot);
+	} else if i == 54 {
+		blit_gradient(0xE2E8F0, 0x334155);
+		blit_run(0xF8FAFC, 0, -2, 180);
+	} else if i == 59 {
+		blit_ring(0x111111, 2, 255);
+		blit_ring(0xF8FAFC, 1, 255);
+	} else if g == 8 || i == 99 {
+		for k in n {
+			let col = hsv((k * 48 + slot * 18) % 360, 0.9, 0.95);
+			let id = GI[k];
+			let x0 = GX[k] as int + C_X[id];
+			let y0 = GY[k] as int + C_Y[id];
+			for py in C_H[id] { for px in C_W[id] { let a = alpha(id, px, py); if a > 0 { put(x0 + px, y0 + py, col, a); } } }
+		}
+		blit_ring(0x111111, 1, 200);
+	} else if i == 56 {
+		blit_ring(0xF8FAFC, 1, 255);
+		blit_run(0xBFDBFE, 0, 0, 140);
+	} else if i == 96 {
+		blit_ring(0x111111, 2, 255);
+		blit_run(0xF8FAFC, 0, 0, 255);
+		blit_run(0xE11D48, 3, 3, 160);
+	} else if i != 59 {
+		let fill = if i == 52 { 0x334155 } else if i == 51 { 0xF8FAFC } else if i == 68 { 0x7F1D1D } else if g == 6 && slot == 8 { 0xFDE047 } else { rgb };
+		blit_run(fill, 0, 0, 255);
+	}
+	if i == 8 { fill_rect(x, y + size as int - 2, (n * 8), 2, 0x111111, 255); }
+	if i == 9 { fill_rect(x, y + (size as int) / 2, n * 8, 2, 0xE11D48, 255); }
+}
+
+fn text_pop(x int, y int, text const byte[:], size f32, fill u32, stroke u32, lift f32) {
+	let yy = y - (lift * 6.0) as int;
+	let n = place_run(text, x as f32, yy as f32 + size * 0.8, size, false, true, false, -1);
+	if n < 1 { return; }
+	blit_ring(stroke, 2, 255);
+	blit_shadow(0x000000);
+	blit_gradient(0xFFFFFF, fill);
+}
+
+fn isqrt(n int) int {
+	if n <= 0 { return 0; }
+	var a = n;
+	var b = (a + 1) / 2;
+	while b < a { a = b; b = (a + n / a) / 2; }
+	a
+}
+
+fn fill_ell(cx int, cy int, rx int, ry int, rgb u32, a int) {
+	if rx < 2 || ry < 2 { return; }
+	var py = cy - ry;
+	while py <= cy + ry {
+		let dy = (py - cy) * 1000 / ry;
+		let room = 1000000 - dy * dy;
+		if room > 0 {
+			let hw = isqrt(room) * rx / 1000;
+			if hw > 0 { fill_rect(cx - hw, py, hw * 2 + 1, 1, rgb, a); }
+		}
+		py += 1;
+	}
+}
+
+fn map_at(o int, s int, p int) int { o + s * p / 100 }
+
+fn map_rad(w int, h int, p int) int {
+	let s = if w < h { w } else { h };
+	let r = s * p / 100;
+	if r < 3 { 3 } else { r }
+}
+
+fn map_blob(x int, y int, w int, h int, px int, py int, rx int, ry int, rgb u32) {
+	fill_ell(map_at(x, w, px), map_at(y, h, py), w * rx / 100, h * ry / 100, rgb, 255);
+}
+
+fn map_node(x int, y int, w int, h int, px int, py int, p int, rgb u32) {
+	let r = map_rad(w, h, p);
+	fill_ell(map_at(x, w, px), map_at(y, h, py), r, r, rgb, 255);
+}
+
+fn map_chain(x int, y int, w int, h int, x0 int, y0 int, x1 int, y1 int, n int, p int, rgb u32) {
+	if n < 2 { return; }
+	let r = map_rad(w, h, p);
+	let dx = (x1 - x0) * w / 100;
+	let dy = (y1 - y0) * h / 100;
+	var steps = isqrt(dx * dx + dy * dy) / (r / 2 + 1);
+	if steps < n { steps = n; }
+	if steps > 40 { steps = 40; }
+	if steps < 2 { steps = 2; }
+	let ry = if r < 5 { r } else { r * 3 / 4 };
+	var i = 0;
+	while i < steps {
+		let px = x0 + (x1 - x0) * i / (steps - 1);
+		let py = y0 + (y1 - y0) * i / (steps - 1);
+		fill_ell(map_at(x, w, px), map_at(y, h, py), r, ry, rgb, 255);
+		i += 1;
+	}
+}
+
+fn map_ring(x int, y int, w int, h int, px int, py int, p int, rgb u32) {
+	let cx = map_at(x, w, px);
+	let cy = map_at(y, h, py);
+	let r = map_rad(w, h, p);
+	var n = r;
+	if n < 16 { n = 16; }
+	if n > 72 { n = 72; }
+	let d = if r > 48 { 4 } else { 2 };
+	var i = 0;
+	while i < n {
+		let ox = cos_milli(i * 360 / n) * r / 1000;
+		let oy = sin_milli(i * 360 / n) * r / 1000;
+		fill_ell(cx + ox, cy + oy, d, d, rgb, 255);
+		i += 1;
+	}
+}
+
+fn map_lay(seed int, x int, y int, w int, h int) {
+	if seed == 1 {
+		map_blob(x, y, w, h, 50, 54, 38, 34, 0x245C38);
+		map_blob(x, y, w, h, 38, 46, 16, 12, 0x3A7048);
+		map_ring(x, y, w, h, 50, 50, 40, 0x8A78E0);
+		map_node(x, y, w, h, 62, 40, 3, 0xE8C840);
+	} else if seed == 2 {
+		map_blob(x, y, w, h, 50, 50, 48, 8, 0x1A4A6A);
+		map_chain(x, y, w, h, 12, 18, 88, 18, 8, 3, 0xC2B280);
+		map_chain(x, y, w, h, 14, 82, 86, 16, 8, 3, 0xC2B280);
+		map_chain(x, y, w, h, 16, 84, 84, 84, 8, 3, 0xC2B280);
+		map_node(x, y, w, h, 14, 16, 6, 0x3A6AD0);
+		map_node(x, y, w, h, 86, 84, 6, 0xD04A3A);
+	} else if seed == 3 {
+		map_blob(x, y, w, h, 48, 42, 40, 16, 0x3A4A32);
+		map_node(x, y, w, h, 22, 70, 8, 0x4A4430);
+		map_node(x, y, w, h, 74, 28, 7, 0x2A4038);
+		map_node(x, y, w, h, 40, 36, 3, 0xE8C840);
+		map_node(x, y, w, h, 58, 48, 3, 0xE8C840);
+	} else if seed == 4 {
+		map_blob(x, y, w, h, 22, 62, 18, 16, 0x1A4A73);
+		map_blob(x, y, w, h, 30, 28, 16, 14, 0xD0D8E4);
+		map_blob(x, y, w, h, 68, 40, 20, 16, 0x3A6848);
+		map_node(x, y, w, h, 78, 72, 5, 0xC2B280);
+		map_chain(x, y, w, h, 22, 62, 68, 40, 6, 2, 0x8A7048);
+	} else if seed == 5 {
+		map_chain(x, y, w, h, 16, 78, 40, 58, 5, 5, 0x3A342C);
+		map_chain(x, y, w, h, 40, 58, 62, 36, 4, 5, 0x3A342C);
+		map_node(x, y, w, h, 78, 24, 8, 0x6A3030);
+		map_node(x, y, w, h, 16, 78, 3, 0xE8C840);
+	} else if seed == 6 {
+		map_blob(x, y, w, h, 28, 32, 18, 16, 0x2A6840);
+		map_blob(x, y, w, h, 62, 28, 16, 14, 0x1A4A6A);
+		map_blob(x, y, w, h, 48, 68, 22, 16, 0x4A4430);
+		map_chain(x, y, w, h, 28, 32, 62, 28, 4, 2, 0xC2B280);
+		map_chain(x, y, w, h, 48, 68, 62, 28, 4, 2, 0xC2B280);
+	} else if seed == 7 {
+		map_blob(x, y, w, h, 50, 50, 42, 34, 0x3A3E44);
+		map_blob(x, y, w, h, 50, 50, 28, 20, 0x1E4A32);
+		map_node(x, y, w, h, 50, 18, 2, 0xE6E2D0);
+	} else if seed == 8 {
+		map_blob(x, y, w, h, 50, 54, 36, 28, 0x4A3428);
+		map_node(x, y, w, h, 38, 54, 4, 0x6EC8FF);
+		map_node(x, y, w, h, 62, 54, 4, 0xFF5A5A);
+	} else if seed == 9 {
+		map_blob(x, y, w, h, 50, 52, 40, 30, 0x2A7048);
+		map_ring(x, y, w, h, 50, 52, 8, 0xE8E4D0);
+		map_node(x, y, w, h, 18, 52, 3, 0xE8E4D0);
+		map_node(x, y, w, h, 82, 52, 3, 0xE8E4D0);
+	} else if seed == 10 {
+		map_blob(x, y, w, h, 30, 28, 22, 6, 0x3A6844);
+		map_blob(x, y, w, h, 58, 46, 26, 6, 0x2A5038);
+		map_blob(x, y, w, h, 36, 66, 20, 5, 0x4A7850);
+		map_blob(x, y, w, h, 70, 80, 18, 5, 0x345C40);
+		map_node(x, y, w, h, 58, 40, 2, 0xE8C840);
+	} else if seed == 11 {
+		map_node(x, y, w, h, 22, 24, 8, 0x2A2428);
+		map_node(x, y, w, h, 48, 30, 7, 0x322C30);
+		map_node(x, y, w, h, 72, 48, 9, 0x3A3034);
+		map_node(x, y, w, h, 36, 68, 8, 0x2A2428);
+		map_node(x, y, w, h, 68, 76, 7, 0x4A3030);
+		map_chain(x, y, w, h, 22, 24, 48, 30, 3, 2, 0x5A5048);
+		map_chain(x, y, w, h, 48, 30, 72, 48, 3, 2, 0x5A5048);
+		map_chain(x, y, w, h, 48, 30, 36, 68, 3, 2, 0x5A5048);
+	} else if seed == 12 {
+		map_chain(x, y, w, h, 16, 70, 84, 30, 6, 4, 0x3A6848);
+		map_node(x, y, w, h, 84, 30, 6, 0x6A3030);
+		map_node(x, y, w, h, 16, 70, 4, 0xE8C840);
+	} else if seed == 13 {
+		map_blob(x, y, w, h, 30, 36, 16, 14, 0x3A6840);
+		map_blob(x, y, w, h, 68, 58, 18, 14, 0x2A5034);
+		map_blob(x, y, w, h, 48, 74, 14, 8, 0x1A4A6A);
+		map_node(x, y, w, h, 34, 40, 3, 0xE8C840);
+	} else if seed == 14 {
+		map_blob(x, y, w, h, 24, 32, 14, 12, 0x3A3830);
+		map_blob(x, y, w, h, 48, 28, 12, 10, 0x4A4438);
+		map_blob(x, y, w, h, 72, 48, 16, 12, 0x2E2C28);
+		map_blob(x, y, w, h, 40, 70, 46, 8, 0x1A4A6A);
+	} else if seed == 15 {
+		map_node(x, y, w, h, 28, 30, 9, 0x1A1A20);
+		map_node(x, y, w, h, 58, 36, 8, 0x141418);
+		map_node(x, y, w, h, 40, 68, 10, 0x3A3420);
+		map_chain(x, y, w, h, 28, 30, 40, 68, 3, 2, 0x2A2A30);
+	} else if seed == 16 {
+		map_node(x, y, w, h, 32, 42, 12, 0x3A4A6A);
+		map_node(x, y, w, h, 68, 36, 6, 0xC8C0A8);
+		map_node(x, y, w, h, 58, 70, 4, 0x6A4030);
+		map_chain(x, y, w, h, 32, 42, 68, 36, 5, 2, 0x8AA0C0);
+	} else if seed == 17 {
+		map_blob(x, y, w, h, 26, 40, 18, 16, 0x2A6840);
+		map_blob(x, y, w, h, 58, 30, 16, 14, 0x1A4A6A);
+		map_blob(x, y, w, h, 72, 66, 18, 14, 0x4A4430);
+		map_node(x, y, w, h, 40, 58, 3, 0xE8C840);
+	} else if seed == 18 {
+		map_blob(x, y, w, h, 28, 40, 14, 10, 0x6A5030);
+		map_blob(x, y, w, h, 52, 36, 12, 9, 0x5A4828);
+		map_blob(x, y, w, h, 72, 58, 14, 10, 0x3A6828);
+		map_blob(x, y, w, h, 36, 70, 12, 8, 0x1A4A6A);
+		map_node(x, y, w, h, 18, 24, 5, 0x4A4030);
+	} else if seed == 19 {
+		map_blob(x, y, w, h, 50, 50, 8, 40, 0x2A1830);
+		map_node(x, y, w, h, 50, 22, 3, 0xE24A8A);
+		map_node(x, y, w, h, 50, 40, 3, 0x4AA0E2);
+		map_node(x, y, w, h, 50, 58, 3, 0xE8C840);
+		map_node(x, y, w, h, 50, 76, 3, 0xE24A8A);
+	} else if seed == 20 {
+		map_node(x, y, w, h, 28, 30, 6, 0x3A3848);
+		map_node(x, y, w, h, 50, 30, 6, 0x4A4860);
+		map_node(x, y, w, h, 72, 30, 6, 0x3A3848);
+		map_node(x, y, w, h, 28, 55, 6, 0x4A4860);
+		map_node(x, y, w, h, 50, 55, 6, 0xE8C840);
+		map_node(x, y, w, h, 72, 55, 6, 0x3A3848);
+		map_node(x, y, w, h, 40, 78, 6, 0x4A4860);
+		map_node(x, y, w, h, 62, 78, 6, 0x3A3848);
+	} else if seed == 21 {
+		map_chain(x, y, w, h, 16, 72, 84, 28, 6, 4, 0x3A3040);
+		map_node(x, y, w, h, 16, 72, 4, 0xE0A060);
+		map_node(x, y, w, h, 84, 28, 4, 0xE8E4D0);
+	} else if seed == 22 {
+		map_node(x, y, w, h, 48, 48, 14, 0x4A4030);
+		map_node(x, y, w, h, 24, 30, 6, 0x3A3428);
+		map_node(x, y, w, h, 74, 32, 5, 0x3A3428);
+		map_node(x, y, w, h, 70, 70, 6, 0x2A2620);
+		map_chain(x, y, w, h, 24, 30, 48, 48, 3, 2, 0x8A7048);
+	} else if seed == 23 {
+		map_node(x, y, w, h, 50, 42, 8, 0xE8C840);
+		map_node(x, y, w, h, 30, 28, 4, 0xF4E7C5);
+		map_node(x, y, w, h, 70, 26, 3, 0xF4E7C5);
+		map_node(x, y, w, h, 24, 58, 3, 0xC8B0E0);
+		map_node(x, y, w, h, 76, 62, 4, 0xC8B0E0);
+		map_chain(x, y, w, h, 30, 28, 50, 42, 3, 2, 0x8A78E0);
+		map_chain(x, y, w, h, 50, 42, 76, 62, 3, 2, 0x8A78E0);
+	} else {
+		map_blob(x, y, w, h, 28, 36, 16, 14, 0x245C40);
+		map_blob(x, y, w, h, 68, 62, 18, 14, 0x1A4A38);
+		map_chain(x, y, w, h, 12, 78, 40, 58, 5, 3, 0xC2B280);
+		map_chain(x, y, w, h, 40, 58, 88, 28, 5, 3, 0xC2B280);
+		map_ring(x, y, w, h, 62, 40, 16, 0xF2E35A);
+	}
+}
+
+fn paint_curve(x int, y int, w int, amp int, thick int, phase int, rgb u32) {
+	var i = 0;
+	while i < w {
+		let ang = phase + i * 360 / w;
+		let yy = y + sin_milli(ang) * amp / 1000;
+		fill_rect(x + i, yy, 3, thick, rgb, 255);
+		i += 2;
+	}
+}
+
+fn paint_park(cx int, cy int, rgb u32) {
+	fill_ell(cx, cy, 70, 46, rgb, 255);
+	fill_ell(cx - 36, cy + 18, 48, 34, rgb, 255);
+	fill_ell(cx + 40, cy - 10, 36, 28, rgb, 255);
+	fill_ell(cx + 8, cy + 28, 30, 22, rgb, 255);
+}
+
+fn paint_streets(x int, y int, w int, h int) {
+	var paper = 0xE7E4DA;
+	var road = 0xFBFBF8;
+	var major = 0xF0D48A;
+	var park = 0xC5DDB4;
+	var water = 0xB5D0E4;
+	var name = 0x3A4038;
+	if chan_luma(THEME.ink as int) > 150 {
+		paper = 0x171C22;
+		road = 0x2A313C;
+		major = 0x3A3428;
+		park = 0x1C3326;
+		water = 0x1A3044;
+		name = 0xD5D8DE;
+	}
+	fill_rect(x, y, w, h, paper as u32, 255);
+	paint_park(x + w / 4, y + h / 3, park as u32);
+	paint_park(x + w * 3 / 4, y + h / 5, park as u32);
+	paint_park(x + w / 2, y + h * 3 / 4, park as u32);
+	paint_curve(x, y + h / 2, w, h / 10, h / 18, 20, water as u32);
+	paint_curve(x, y + h / 5, w, h / 12, 14, 0, road as u32);
+	paint_curve(x, y + h * 2 / 3, w, h / 9, 18, 80, major as u32);
+	paint_curve(x, y + h / 3, w, h / 14, 10, 160, road as u32);
+	var i = 0;
+	while i < h {
+		let ang = 40 + i * 360 / h;
+		let xx = x + w / 3 + sin_milli(ang) * (w / 10) / 1000;
+		fill_rect(xx, y + i, 12, 3, road as u32, 255);
+		i += 2;
+	}
+	i = 0;
+	while i < h {
+		let ang = i * 280 / h;
+		let xx = x + w * 2 / 3 + sin_milli(ang) * (w / 14) / 1000;
+		fill_rect(xx, y + i, 16, 3, major as u32, 255);
+		i += 2;
+	}
+	draw_text(x + 16, y + 16, "Harbor", 16.0, name as u32, 0, -1);
+	draw_text(x + w / 2, y + h / 3, "Oak", 16.0, name as u32, 0, -1);
+	draw_text(x + w / 5, y + h * 2 / 3, "Mill", 16.0, name as u32, 0, -1);
+	paint_pin(x + w * 2 / 3, y + h / 3);
+}
+
+fn paint_pin(cx int, cy int) {
+	fill_tri(cx - 8, cy - 2, cx + 8, cy - 2, cx, cy + 16, 0xE23B3B);
+	fill_ell(cx, cy - 6, 10, 10, 0xE23B3B, 255);
+	fill_ell(cx, cy - 6, 4, 4, 0xFFFFFF, 255);
+}
+
+fn paint_minimap(x int, y int, w int, h int, seed int) {
+	if w < 16 || h < 16 { return; }
+	if seed == 38 { paint_streets(x, y, w, h); return; }
+	var base = 0x1B3328;
+	if seed == 1 { base = 0x0E2430; }
+	else if seed == 2 { base = 0x121A16; }
+	else if seed == 5 || seed == 11 || seed == 15 { base = 0x100C10; }
+	else if seed == 7 || seed == 8 { base = 0x161412; }
+	else if seed == 14 { base = 0x1A1C18; }
+	else if seed == 16 { base = 0x070814; }
+	else if seed == 19 || seed == 23 { base = 0x120814; }
+	else if seed == 20 || seed == 21 { base = 0x14121A; }
+	else if seed == 22 { base = 0x161410; }
+	fill_rect(x, y, w, h, base as u32, 255);
+	map_lay(seed, x, y, w, h);
+	var py = y + 2;
+	while py < y + h {
+		var px = x + 2;
+		while px < x + w {
+			if noise(px + seed * 13, py) > 230 { put(px, py, 0xFFFFFF, 32); }
+			px += 4;
+		}
+		py += 4;
+	}
+	let cx = map_at(x, w, 46);
+	let cy = map_at(y, h, 56);
+	let m = if w > 400 { 8 } else { 4 };
+	fill_tri(cx, cy - m, cx - m, cy + m, cx + m, cy + m, 0xFFFFFF);
+	ih_mark(map_at(x, w, 70), map_at(y, h, 32), 0xFF5A5A);
+	ih_mark(map_at(x, w, 24), map_at(y, h, 72), 0x7CFFB2);
+}
+
+fn ih_mark(x int, y int, rgb u32) {
+	fill_tri(x, y - 4, x - 4, y + 3, x + 4, y + 3, rgb);
+}
+
+fn fill_tri(ax int, ay int, bx int, by int, cx int, cy int, rgb u32) {
+	var minx = ax; if bx < minx { minx = bx; } if cx < minx { minx = cx; }
+	var maxx = ax; if bx > maxx { maxx = bx; } if cx > maxx { maxx = cx; }
+	var miny = ay; if by < miny { miny = by; } if cy < miny { miny = cy; }
+	var maxy = ay; if by > maxy { maxy = by; } if cy > maxy { maxy = cy; }
+	for py in miny..maxy + 1 {
+		for px in minx..maxx + 1 {
+			let c1 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+			let c2 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+			let c3 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+			if (c1 >= 0 && c2 >= 0 && c3 >= 0) || (c1 <= 0 && c2 <= 0 && c3 <= 0) { put(px, py, rgb, 255); }
+		}
+	}
+}
+
+fn in_sector(dx int, dy int, i int, n int) bool {
+	if n < 1 { return false; }
+	let a0 = i * 360 / n;
+	let a1 = (i + 1) * 360 / n;
+	let c0 = cos_milli(a0);
+	let s0 = sin_milli(a0);
+	let c1 = cos_milli(a1);
+	let s1 = sin_milli(a1);
+	let cr0 = c0 * dy - s0 * dx;
+	let cr1 = c1 * dy - s1 * dx;
+	cr0 >= 0 && cr1 <= 0
+}
+
+fn paint_radial(x int, y int, w int, h int, count int, selected int, seed int) {
+	let cx = x + w / 2;
+	let cy = y + h / 2;
+	var r = w / 2 - 2;
+	if h / 2 - 2 < r { r = h / 2 - 2; }
+	if r < 12 { return; }
+	let n = if count < 3 { 6 } else if count > 8 { 8 } else { count };
+	let inner = r / 3;
+	for py in cy - r..cy + r {
+		for px in cx - r..cx + r {
+			let dx = px - cx;
+			let dy = cy - py;
+			let d2 = dx * dx + dy * dy;
+			if d2 > r * r || d2 < inner * inner { continue; }
+			var seg = 0;
+			var found = 0;
+			for i in n { if in_sector(dx, dy, i, n) { seg = i; found = 1; } }
+			if found == 0 { continue; }
+			var col = if seg == selected { THEME.accent } else if seg % 2 == 0 { THEME.surface2 } else { THEME.surface };
+			put(px, py, col, 255);
+			if d2 > (r - 2) * (r - 2) || d2 < (inner + 2) * (inner + 2) { put(px, py, THEME.ink, 180); }
+		}
+	}
+	for i in n {
+		let mid = i * 360 / n + 180 / n;
+		let ox = cos_milli(mid) * (r * 2 / 3) / 1000;
+		let oy = sin_milli(mid) * (r * 2 / 3) / 1000;
+		icon_draw(slot_icon(seed + i), cx + ox - 8, cy - oy - 8, 16, THEME.ink);
+	}
+}
+
+fn rarity_col(i int) u32 {
+	if i % 5 == 0 { return 0x9AA0A6; }
+	if i % 5 == 1 { return 0x3DDC97; }
+	if i % 5 == 2 { return 0x3B82F6; }
+	if i % 5 == 3 { return 0xA855F7; }
+	0xEAB308
+}
+
+fn paint_inventory(x int, y int, w int, h int, cols int, rows int, seed int) {
+	let c = if cols < 1 { 3 } else { cols };
+	let r = if rows < 1 { 2 } else { rows };
+	let cw = (w - 8) / c;
+	let rh = (h - 8) / r;
+	for yy in r {
+		for xx in c {
+			let x0 = x + 4 + xx * cw;
+			let y0 = y + 4 + yy * rh;
+			let rare = rarity_col(seed + xx + yy * 3);
+			fill_rect(x0 + 2, y0 + 2, cw - 4, rh - 4, 0x12141A, 255);
+			stroke_rect(x0 + 2, y0 + 2, cw - 4, rh - 4, rare, 2);
+			let empty = (xx + yy + seed) % 5 == 0;
+			if !empty {
+				let isz = if cw < rh { cw - 8 } else { rh - 8 };
+				if isz > 4 {
+					let ix = x0 + (cw - isz) / 2;
+					let iy = y0 + (rh - isz) / 2;
+					icon_draw(slot_icon(seed + xx + yy * 3), ix, iy, isz, 0xF4F6FB);
+				}
+				let stack = (xx + yy * 2 + seed) % 6 + 1;
+				if stack > 1 {
+					TMP.clear();
+					format(TMP, stack);
+					draw_text(x0 + cw - 16, y0 + rh - 14, TMP[..], 10.0, 0xFFFFFF, 0, -1);
+				}
+			}
+		}
+	}
+}
+
+fn slot_icon(i int) int {
+	let k = if i < 0 { 0 } else { i % 8 };
+	if k == 0 { return 0; }
+	if k == 1 { return 4; }
+	if k == 2 { return 1; }
+	if k == 3 { return 16; }
+	if k == 4 { return 8; }
+	if k == 5 { return 43; }
+	if k == 6 { return 5; }
+	15
+}
+
+fn paint_quest(x int, y int, w int, h int, seed int) {
+	fill_rect(x, y, w, h, THEME.surface, 255);
+	draw_text(x + 8, y + 6, "Quests", 16.0, THEME.ink, 0, -1);
+	let a = if seed % 3 == 0 { "Find the gate" } else if seed % 3 == 1 { "Escort Mira" } else { "Light the beacon" };
+	let b = if seed % 2 == 0 { "Collect 3" } else { "Clear the camp" };
+	draw_text(x + 8, y + 28, a, 15.0, THEME.ink, 0, -1);
+	draw_text(x + 8, y + 50, b, 15.0, THEME.ink, 0, -1);
+}
+
+fn paint_boss(x int, y int, w int, h int, name const byte[:], v f32) {
+	if h <= 24 && name.len > 0 { draw_text(x + 4, y + 1, name, 11.0, THEME.ink, 0, -1); }
+	let by = y + h - 8;
+	fill_rect(x + 4, by, w - 8, 6, 0x2A1214, 255);
+	var fw = ((w - 8) as f32 * v) as int;
+	if fw < 0 { fw = 0; }
+	if fw > w - 8 { fw = w - 8; }
+	var trail = v + HIT_GAP;
+	if trail > 1.0 { trail = 1.0; }
+	var tw = ((w - 8) as f32 * trail) as int;
+	if tw > w - 8 { tw = w - 8; }
+	let chip = if HIT_A > 200 { 0xFFE7A8 } else if HIT_A > 140 { 0xF0C36A } else { 0xC4A060 };
+	if tw > fw { fill_rect(x + 4 + fw, by, tw - fw, 6, chip as u32, HIT_A); }
+	fill_rect(x + 4, by, fw, 6, 0xE23B3B, 255);
+	fill_rect(x + 4, by, fw, 2, 0xFFB4A8, 180);
+	var tick = 24;
+	while tick < w - 8 { fill_rect(x + 4 + tick, by, 1, 6, 0x000000, 120); tick += 24; }
+}
+
+fn paint_buffs(x int, y int, w int, h int, seed int) {
+	let n = 4;
+	let cw = if w / n < 8 { 8 } else { w / n };
+	for i in n {
+		let x0 = x + 4 + i * cw;
+		round_rect(x0, y + 4, cw - 8, h - 8, 4, THEME.surface2, 255);
+		icon_draw(slot_icon(seed + i), x0 + 2, y + 6, h - 12, THEME.ink);
+	}
+}
+
+fn paint_cooldowns(x int, y int, w int, h int, seed int) {
+	let n = 5;
+	let cw = w / n;
+	var r = h / 2 - 4;
+	if cw / 2 - 2 < r { r = cw / 2 - 2; }
+	if r < 6 { return; }
+	for i in n {
+		let cx = x + cw * i + cw / 2;
+		let cy = y + h / 2;
+		let ready = (seed + i) % 5;
+		for py in cy - r..cy + r {
+			for px in cx - r..cx + r {
+				let dx = px - cx;
+				let dy = cy - py;
+				let d2 = dx * dx + dy * dy;
+				if d2 > r * r { continue; }
+				put(px, py, THEME.surface2, 255);
+				let ang = atan2_deg(dy, dx);
+				let sweep = ready * 60;
+				if ang > 90 && ang < 90 + sweep { put(px, py, 0x000000, 140); }
+				if d2 > (r - 2) * (r - 2) { put(px, py, THEME.accent, 255); }
+			}
+		}
+		icon_draw(slot_icon(seed + i), cx - r / 2, cy - r / 2, r, THEME.ink);
+	}
+}
+
+fn day_lab(i int) const byte[:] {
+	if i == 0 { return "Mon"; }
+	if i == 1 { return "Tue"; }
+	if i == 2 { return "Wed"; }
+	if i == 3 { return "Thu"; }
+	if i == 4 { return "Fri"; }
+	if i == 5 { return "Sat"; }
+	"Sun"
+}
+
+fn chart_y(base int, ph int, v int) int { base - v * ph / 16 }
+
+fn chart_grid(x int, y int, w int, h int, spark int) int, int, int, int {
+	var left = 8;
+	var bot = 8;
+	var top = 8;
+	var right = 8;
+	if spark == 0 && w >= 160 && h >= 120 {
+		left = 44;
+		bot = 28;
+		top = 12;
+		right = 12;
+	}
+	let px = x + left;
+	let py = y + top;
+	let pw = if w > left + right { w - left - right } else { 4 };
+	let ph = if h > top + bot { h - top - bot } else { 4 };
+	let base = py + ph;
+	if spark == 0 && left > 8 {
+		var g = 0;
+		while g <= 4 {
+			let gy = chart_y(base, ph, g * 4);
+			fill_rect(px, gy, pw, 1, THEME.border, 180);
+			TMP.clear();
+			format(TMP, g * 4);
+			draw_text(x + 4, gy - 8, TMP[..], 16.0, THEME.muted, 0, -1);
+			g += 1;
+		}
+		var i = 0;
+		while i < 7 {
+			draw_text(px + i * pw / 7, base + 6, day_lab(i), 16.0, THEME.muted, 0, -1);
+			i += 1;
+		}
+	}
+	return px, py, pw, ph;
+}
+
+fn chart_series(px int, base int, pw int, ph int, area int) {
+	let vals = [4, 8, 6, 12, 9, 14, 11];
+	var i = 0;
+	while i < 6 {
+		let x0 = px + i * pw / 6;
+		let x1 = px + (i + 1) * pw / 6;
+		let y0 = chart_y(base, ph, vals[i]);
+		let y1 = chart_y(base, ph, vals[i + 1]);
+		if area != 0 {
+			var xx = x0;
+			while xx < x1 {
+				let t = if x1 == x0 { 0 } else { (xx - x0) * 100 / (x1 - x0) };
+				let yy = y0 + (y1 - y0) * t / 100;
+				if base > yy { fill_rect(xx, yy, 1, base - yy, THEME.accent, 70); }
+				xx += 1;
+			}
+		}
+		stroke_line(x0, y0, x1, y1, THEME.accent);
+		stroke_line(x0, y0 + 1, x1, y1 + 1, THEME.accent);
+		i += 1;
+	}
+	fill_ell(px + pw, chart_y(base, ph, vals[6]), 4, 4, THEME.accent, 255);
+}
+
+fn chart_bars(px int, base int, pw int, ph int) {
+	let vals = [6, 11, 8, 14, 9, 12, 7];
+	let bw = pw / 7;
+	var i = 0;
+	while i < 7 {
+		let bh = vals[i] * ph / 16;
+		let bx = px + i * bw + 4;
+		let gap = if bw > 12 { 8 } else { 2 };
+		fill_rect(bx, base - bh, bw - gap, bh, THEME.accent, 255);
+		i += 1;
+	}
+}
+
+fn chart_donut(x int, y int, w int, h int) {
+	let cx = x + w / 2;
+	let cy = y + h / 2;
+	var r = h / 2 - 16;
+	if w / 2 - 16 < r { r = w / 2 - 16; }
+	if r < 16 { return; }
+	let inner = r * 58 / 100;
+	for py in cy - r..cy + r {
+		for px in cx - r..cx + r {
+			let dx = px - cx;
+			let dy = cy - py;
+			let d2 = dx * dx + dy * dy;
+			if d2 > r * r || d2 < inner * inner { continue; }
+			let ang = atan2_deg(dy, dx);
+			let col = if ang < 170 { THEME.accent } else if ang < 280 { THEME.ok } else { THEME.warn };
+			put(px, py, col, 255);
+		}
+	}
+	draw_text(cx - 16, cy - 10, "64", 20.0, THEME.ink, 0, -1);
+}
+
+fn paint_goods(x int, y int, w int, h int, kind int) {
+	let ink = THEME.ink;
+	let acc = THEME.accent;
+	let cx = x + w / 2;
+	let cy = y + h / 2;
+	if kind == 0 {
+		fill_rect(cx - 28, cy - 10, 56, 48, acc, 255);
+		fill_ell(cx, cy + 28, 28, 14, acc, 255);
+		fill_ell(cx + 36, cy + 8, 16, 22, ink, 255);
+		fill_ell(cx + 28, cy + 8, 10, 16, THEME.surface, 255);
+	} else if kind == 1 {
+		fill_rect(cx - 8, cy, 16, 36, ink, 255);
+		fill_ell(cx, cy + 36, 28, 8, ink, 255);
+		fill_ell(cx, cy - 8, 48, 18, acc, 255);
+	} else if kind == 2 {
+		fill_rect(cx - 36, cy - 8, 72, 56, acc, 255);
+		fill_ell(cx - 16, cy - 20, 10, 16, ink, 255);
+		fill_ell(cx + 16, cy - 20, 10, 16, ink, 255);
+	} else if kind == 3 {
+		fill_rect(cx - 40, cy - 4, 80, 8, ink, 255);
+		fill_rect(cx + 28, cy - 8, 16, 16, acc, 255);
+	} else if kind == 4 {
+		fill_ell(cx, cy + 8, 48, 22, acc, 255);
+		fill_ell(cx, cy + 4, 36, 12, THEME.surface, 255);
+	} else {
+		fill_rect(cx - 40, cy - 16, 80, 28, acc, 255);
+		fill_rect(cx - 28, cy + 8, 64, 20, ink, 180);
+	}
+}
+
+fn paint_chart(x int, y int, w int, h int, kind int) {
+	if kind >= 10 { paint_goods(x, y, w, h, kind - 10); return; }
+	let k = if kind < 0 { 0 } else { kind % 7 };
+	if k == 2 && w >= 120 && h >= 120 { chart_donut(x, y, w, h); return; }
+	let spark = if k == 4 || k == 5 || h < 96 || w < 140 { 1 } else { 0 };
+	let px, py, pw, ph = chart_grid(x, y, w, h, spark);
+	let base = py + ph;
+	if k == 1 || k == 6 { chart_bars(px, base, pw, ph); return; }
+	if k == 3 { chart_series(px, base, pw, ph, 1); return; }
+	chart_series(px, base, pw, ph, 0);
+}
+
+fn stroke_line(x0 int, y0 int, x1 int, y1 int, rgb u32) {
+	var dx = x1 - x0; if dx < 0 { dx = -dx; }
+	var dy = y1 - y0; if dy < 0 { dy = -dy; }
+	let n = if dx > dy { dx } else { dy };
+	if n < 1 { put(x0, y0, rgb, 255); return; }
+	for i in n + 1 {
+		let x = x0 + (x1 - x0) * i / n;
+		let y = y0 + (y1 - y0) * i / n;
+		put(x, y, rgb, 255);
+	}
+}
+
+fn paint_picker(x int, y int, w int, h int, hue int, s f32, v f32) {
+	let side = if h - 8 < w / 2 { h - 8 } else { w / 2 };
+	if side < 8 { return; }
+	for py in side {
+		for px in side {
+			let ss = px as f32 / side as f32;
+			let vv = 1.0 - py as f32 / side as f32;
+			put(x + 4 + px, y + 4 + py, hsv(hue, ss, vv), 255);
+		}
+	}
+	let mx = x + 4 + (s * side as f32) as int;
+	let my = y + 4 + ((1.0 - v) * side as f32) as int;
+	let mark = if contrast_ratio(0xFFFFFF, THEME.bg) < 3.0 { THEME.ink } else { 0xFFFFFF };
+	stroke_rect(mx - 3, my - 3, 6, 6, mark, 1);
+	let rx = x + side + 14;
+	let ry = y + 4 + side / 2;
+	let rr = side / 2;
+	for py in ry - rr..ry + rr {
+		for px in rx..rx + rr {
+			let dx = px - rx;
+			let dy = ry - py;
+			let d2 = dx * dx + dy * dy;
+			if d2 > rr * rr || d2 < (rr - 10) * (rr - 10) { continue; }
+			let ang = atan2_deg(dy, dx);
+			put(px, py, hsv(ang, 1.0, 1.0), 255);
+		}
+	}
+}
+
+var SKY_TOP = 0x101820;
+var SKY_BOT = 0x1C2A38;
+var SKY_GRD = 0x121820;
+var SKY_H = 720;
+var LIGHT_SCENE = 0;
+
+fn chan_luma(c int) int {
+	let r = (c >> 16) & 255;
+	let g = (c >> 8) & 255;
+	let b = c & 255;
+	(r * 3 + g * 6 + b) / 10
+}
+
+fn title_ink(ty int) u32 {
+	var t = 0;
+	if ty >= SKY_H { t = 5; }
+	else if SKY_H > 0 { t = ty * 5 / SKY_H; }
+	if t < 0 { t = 0; }
+	if t > 5 { t = 5; }
+	let col = if ty >= SKY_H { SKY_GRD as u32 } else { lerp_rgb(SKY_TOP as u32, SKY_BOT as u32, t as f32 / 5.0) };
+	if chan_luma(col as int) > 150 { return 0x1A140C; }
+	THEME.ink
+}
+
+fn back_title(g int, screen int, mode int) {
+	if screen != 0 || g >= 24 { return; }
+	var tx = 120;
+	var ty = 260;
+	if mode == 1 { tx = 180; ty = 140; }
+	else if mode == 2 { tx = 760; ty = 150; }
+	else if mode == 3 { tx = 140; ty = 150; }
+	else if mode == 4 { tx = 1080; ty = 220; }
+	let ink = title_ink(ty);
+	draw_text(tx, ty, genre_name(g), 84.0, ink, 0, -1);
+	draw_text(tx, ty + 96, sub_line(g), 28.0, ink, 0, -1);
+	fill_rect(tx, ty + 88, 220, 4, THEME.accent, 255);
+}
+
+fn back_speck(x int, y int, w int, h int, cut int, light int) {
+	var py = y + 3;
+	while py < y + h {
+		var px = x + 3;
+		while px < x + w {
+			let n = noise(px, py);
+			if light != 0 {
+				if n > cut { put(px, py, 0x1A140C, 40); }
+			} else if n > cut { put(px, py, 0xFFFFFF, 90); }
+			px += 5;
+		}
+		py += 5;
+	}
+}
+
+fn back_lay(g int, x int, y int, w int, h int, skyh int, farx int, nearx int, far u32, near u32, accent u32) {
+	let hy = y + skyh;
+	fill_ell(x + w / 10 + farx, hy + h / 28, w / 16, h / 16, far, 150);
+	fill_ell(x + w - w / 7 + farx, hy + h / 24, w / 18, h / 18, far, 130);
+	fill_ell(x + w / 5 + nearx, hy + 6, w / 24, h / 12, near, 170);
+	if g == 16 {
+		fill_ell(x + w * 3 / 5 + farx, y + h / 2, w / 16, w / 16, 0x3A6AD8, 255);
+		fill_ell(x + w * 2 / 3 + farx / 2, y + h / 6, 20, 20, 0xF4E7C5, 255);
+		fill_ell(x + w / 8, y + h / 5, 4, 4, 0xFFFFFF, 255);
+		fill_ell(x + w / 2, y + h / 8, 3, 3, 0xFFFFFF, 255);
+		fill_ell(x + w * 4 / 5, y + h / 4, 4, 4, 0xFFFFFF, 255);
+		fill_ell(x + w * 3 / 4, y + h * 2 / 3, 3, 3, 0xFFFFFF, 255);
+		fill_ell(x + w / 3, y + h / 2, 3, 3, 0xE8E4D0, 255);
+	} else if g == 9 {
+		fill_ell(x + w / 2, hy + h / 12, 16, 16, 0xF8F8F8, 255);
+		fill_rect(x + w / 2 - 2, hy, 4, h - skyh, 0xF4F4F0, 200);
+	} else if g == 18 {
+		fill_ell(x + w * 3 / 4 + farx / 2, y + h / 6, 40, 40, 0xFFE08A, 255);
+	} else if g == 23 {
+		fill_ell(x + w / 3 + farx / 2, y + h / 5, 44, 44, 0xFFD24A, 240);
+		fill_ell(x + w * 2 / 3 + nearx / 3, y + h / 3, 28, 28, 0xFF4AD0, 220);
+	} else if g == 19 {
+		fill_ell(x + w / 3, y + h / 4, 26, 26, 0xFF4A8A, 210);
+		fill_ell(x + w * 2 / 3, y + h / 5, 20, 20, 0x4AD0FF, 210);
+	} else if g == 15 {
+		fill_ell(x + w * 4 / 5, y + h / 7, 14, 14, 0xE03030, 220);
+	} else if g == 1 {
+		fill_ell(x + w / 2 + farx, hy - h / 18, w / 10, h / 14, 0x3CB56A, 255);
+	} else if g == 2 {
+		fill_ell(x + w / 2, hy - 6, w / 3, h / 28, 0x3AA0E8, 255);
+	} else {
+		fill_ell(x + w * 4 / 5 + farx / 2, y + h / 7, 24, 24, accent, 230);
+	}
+	if g != 16 { fill_rect(x, hy - 2, w, 4, accent, 170); }
+}
+
+fn back_depth(g int, mode int, x int, y int, w int, h int) {
+	var top = 0x101820;
+	var bot = 0x3E86C4;
+	var ground = 0x1A3348;
+	var far = 0x163A60;
+	var near = 0x102840;
+	var accent = 0xF08A3A;
+	if g == 1 { top = 0x2E78C8; bot = 0x8ED4F8; ground = 0x2E9A58; far = 0x1A6840; near = 0x145030; accent = 0x7A5AD8; }
+	else if g == 2 { top = 0x14604A; bot = 0x3AAA78; ground = 0x1E7848; far = 0x145038; near = 0x0E3828; accent = 0x3AA0E8; }
+	else if g == 3 { top = 0x4A8A58; bot = 0xC6D878; ground = 0xD0A85A; far = 0x3A6838; near = 0x2A4828; accent = 0xE0C04A; }
+	else if g == 4 { top = 0x3A1878; bot = 0xE070C0; ground = 0x2A7848; far = 0x2A1860; near = 0x1A4030; accent = 0xF4E7C5; }
+	else if g == 5 { top = 0x1A1210; bot = 0x3A2820; ground = 0x140E0C; far = 0x2A1A14; near = 0x100C0A; accent = 0xE25822; }
+	else if g == 6 { top = 0x1A3068; bot = 0x3A78D0; ground = 0x6A4A28; far = 0x142850; near = 0x3A3018; accent = 0xF0C14A; }
+	else if g == 7 { top = 0x2A78C0; bot = 0xF0C14A; ground = 0x3A4048; far = 0x1A5080; near = 0x2A3038; accent = 0xF0E040; }
+	else if g == 8 { top = 0x6A1830; bot = 0xE04858; ground = 0x2A1418; far = 0x4A1020; near = 0x1A0C10; accent = 0xF0C14A; }
+	else if g == 9 { top = 0x5EC8F8; bot = 0xD4F2FF; ground = 0x3DDC6A; far = 0x1E8A48; near = 0x146838; accent = 0xF8F8F8; }
+	else if g == 10 { top = 0x4AA0F0; bot = 0xF2D27A; ground = 0x3A9A48; far = 0x2A7040; near = 0x1A5030; accent = 0xF2D27A; }
+	else if g == 11 { top = 0x2A1438; bot = 0x5A2858; ground = 0x1A1018; far = 0x3A1840; near = 0x120C14; accent = 0xE07030; }
+	else if g == 12 { top = 0x1A3050; bot = 0x24885A; ground = 0x1E8A50; far = 0x145038; near = 0x0A3028; accent = 0xE8C040; }
+	else if g == 13 { top = 0x3A78B0; bot = 0xF0C878; ground = 0x3A8A40; far = 0x2A6030; near = 0x1A4020; accent = 0xF0C878; }
+	else if g == 14 { top = 0x6AB0E8; bot = 0xE4F2FF; ground = 0xD0B48A; far = 0x4A6A88; near = 0x3A5068; accent = 0xF0C14A; }
+	else if g == 15 { top = 0x10080C; bot = 0x1A1014; ground = 0x0C080C; far = 0x1A1014; near = 0x080608; accent = 0xC02020; }
+	else if g == 16 { top = 0x040818; bot = 0x1230A0; ground = 0x081028; far = 0x0A1848; near = 0x1A3068; accent = 0xF4E7C5; }
+	else if g == 17 { top = 0x2A58A0; bot = 0x7AD4F0; ground = 0x3AAA58; far = 0x1A6840; near = 0x145030; accent = 0xF4E7C5; }
+	else if g == 18 { top = 0xF8D7A8; bot = 0xF7B7C8; ground = 0x8ED36A; far = 0xE0A070; near = 0x6AAA58; accent = 0xFFE08A; }
+	else if g == 19 { top = 0x3A0860; bot = 0xE02878; ground = 0x180818; far = 0x5A1060; near = 0x100610; accent = 0x4AD0FF; }
+	else if g == 20 { top = 0x243878; bot = 0x5A78E0; ground = 0x1A2858; far = 0x2A3878; near = 0x141E40; accent = 0xF2C14A; }
+	else if g == 21 { top = 0x4A2058; bot = 0xF0A090; ground = 0x2A1828; far = 0x3A1840; near = 0x1A1020; accent = 0xF0A060; }
+	else if g == 22 { top = 0x4A3018; bot = 0xF0B050; ground = 0x2A1C10; far = 0x3A2814; near = 0x1A140C; accent = 0xF0C14A; }
+	else if g == 23 { top = 0x7A14C0; bot = 0xFF3AA8; ground = 0x4A0878; far = 0x5A1090; near = 0x2A0848; accent = 0xFFD24A; }
+	else if g == 24 { top = 0x1E3A5C; bot = 0x4A7AB0; ground = 0x16304A; far = 0x163454; near = 0x102438; accent = 0x5B8DEF; }
+	else if g == 25 { top = 0x241848; bot = 0x4A3A88; ground = 0x1A1430; far = 0x2A2058; near = 0x140E28; accent = 0x8A7AE0; }
+	else if g == 26 { top = 0xF6E6D4; bot = 0xF0C8A8; ground = 0xE8B090; far = 0xE0A888; near = 0xC88868; accent = 0xE05A3A; }
+	else if g == 27 { top = 0x3A1860; bot = 0xE04080; ground = 0x2A1048; far = 0x4A1868; near = 0x1A0830; accent = 0xFF5A9A; }
+	else if g == 28 { top = 0x14382C; bot = 0x3AAA78; ground = 0x102820; far = 0x1A4838; near = 0x0C2018; accent = 0x5AD0A0; }
+	else if g == 29 { top = 0x140818; bot = 0x6A1860; ground = 0x100610; far = 0x3A1040; near = 0x0C0810; accent = 0xE040A0; }
+	else if g == 30 { top = 0x1A1C22; bot = 0x2E3440; ground = 0x12141A; far = 0x242830; near = 0x101218; accent = 0x7AA2F7; }
+	else if g == 31 { top = 0xE8EEF4; bot = 0xD0D8E4; ground = 0xC8D0DC; far = 0xB0B8C8; near = 0x98A0B0; accent = 0x3A6FE0; }
+	else if g == 32 { top = 0xE8D8F8; bot = 0xF0C8E8; ground = 0xD8C0E8; far = 0xC8A8D8; near = 0xB090C0; accent = 0x7A4AD0; }
+	else if g == 33 { top = 0x0E1A40; bot = 0x1A3A80; ground = 0x0A1430; far = 0x142858; near = 0x081028; accent = 0x4A8AE0; }
+	else if g == 34 { top = 0xF4F7FB; bot = 0xD6E4F8; ground = 0xE8F0FA; far = 0xC0D0E8; near = 0xA8B8D0; accent = 0x635BFF; }
+	else if g == 35 { top = 0xF6F1E6; bot = 0xE8DCC8; ground = 0xEFE6D4; far = 0xD8C8B0; near = 0xC0B098; accent = 0xC45A20; }
+	else if g == 36 { top = 0xD6ECFA; bot = 0x8EC8F0; ground = 0xC8E4F4; far = 0x98C0E0; near = 0x78A8C8; accent = 0xE05A3A; }
+	else if g == 37 { top = 0xF0E6D4; bot = 0xE0C8A8; ground = 0xE8D4B8; far = 0xD0B898; near = 0xB89878; accent = 0x3A8A5A; }
+	else if g == 38 { top = 0x1A4A38; bot = 0x3A9A68; ground = 0x2A6848; far = 0x1A5838; near = 0x123828; accent = 0xE0C04A; }
+	else if g == 39 { top = 0x0E2420; bot = 0x1A4A40; ground = 0x0A1C18; far = 0x143830; near = 0x081410; accent = 0xD4B06A; }
+	else if g == 40 { top = 0xE8F6F2; bot = 0xB8E8DC; ground = 0xD4F0E8; far = 0xA0D0C0; near = 0x80B8A8; accent = 0xE04058; }
+	SKY_TOP = top; SKY_BOT = bot; SKY_GRD = ground;
+	var skyh = h * 2 / 3;
+	if g == 16 { skyh = h; }
+	SKY_H = skyh;
+	var i = 0;
+	while i < 6 {
+		let col = lerp_rgb(top as u32, bot as u32, i as f32 / 5.0);
+		let y0 = y + skyh * i / 6;
+		let y1 = y + skyh * (i + 1) / 6;
+		fill_rect(x, y0, w, y1 - y0 + 1, col, 255);
+		i += 1;
+	}
+	if skyh < h { fill_rect(x, y + skyh, w, h - skyh, ground as u32, 255); }
+	let farx = mode * 10;
+	let nearx = mode * 36;
+	back_lay(g, x, y, w, h, skyh, farx, nearx, far as u32, near as u32, accent as u32);
+	let light = if chan_luma(top) > 140 || chan_luma(ground) > 140 { 1 } else { 0 };
+	LIGHT_SCENE = light;
+	let cut = if g == 16 { 80 } else if light != 0 { 210 } else { 200 };
+	back_speck(x, y, w, h, cut, light);
+}
+
+fn paint_stage_back(id int, x int, y int, w int, h int) {
+	let g = N[id].i0;
+	let screen = N[id].i1;
+	let mode = N[id].i2;
+	if g >= 24 {
+		LIGHT_SCENE = 0;
+		fill_rect(x, y, w, h, THEME.bg, 255);
+		return;
+	}
+	if mode <= 0 { HIT_GAP = 0.22; HIT_A = 255; }
+	else if mode == 1 { HIT_GAP = 0.16; HIT_A = 220; }
+	else if mode == 2 { HIT_GAP = 0.11; HIT_A = 180; }
+	else if mode == 3 { HIT_GAP = 0.07; HIT_A = 140; }
+	else { HIT_GAP = 0.04; HIT_A = 90; }
+	back_depth(g, mode, x, y, w, h);
+	if g == 0 && screen == 3 {
+		let cx = x + w / 2;
+		let cy = y + h / 2;
+		fill_rect(cx - 2, cy - 28, 4, 18, THEME.ink, 255);
+		fill_rect(cx - 2, cy + 10, 4, 18, THEME.ink, 255);
+		fill_rect(cx - 28, cy - 2, 18, 4, THEME.ink, 255);
+		fill_rect(cx + 10, cy - 2, 18, 4, THEME.ink, 255);
+	}
+	back_title(g, screen, mode);
+}

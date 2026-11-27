@@ -1,0 +1,244 @@
+// Formatting: alignment, grouping, currency, dates, and `{index:spec}` interpolation.
+namespace text;
+import text.utf;
+
+fn fmt_int_raw(v int, base int) byte[>..] {
+	var out byte[>..] = [];
+	var neg = v < 0;
+	var u = if neg { 0 - v } else { v };
+	if v == -9223372036854775807 - 1 { out.append("-9223372036854775808"); return out; }
+	if u == 0 { out.push(48); }
+	var rev byte[>..] = [];
+	while u > 0 {
+		let d = u % base;
+		let ch = if d < 10 { 48 + d } else { 87 + d };
+		rev.push(ch as! byte);
+		u = u / base;
+	}
+	if neg { out.push(45); }
+	var k = rev.len;
+	while k > 0 { k -= 1; out.push(rev[k]); }
+	out
+}
+
+fn group_number(s const byte[:], sep byte) byte[>..] {
+	var out byte[>..] = [];
+	var i = 0;
+	if s.len > 0 && (s[0] == 45 || s[0] == 43) { out.push(s[0]); i = 1; }
+	var end = s.len;
+	var d = i;
+	while d < s.len && s[d] != 46 { d += 1; }
+	let digits = d - i;
+	var p = 0;
+	while i < d {
+		if p > 0 && (digits - p) % 3 == 0 { out.push(sep); }
+		out.push(s[i]);
+		i += 1;
+		p += 1;
+	}
+	if d < s.len { out.append(s[d..]); }
+	out
+}
+
+fn apply_align(s const byte[:], width int, align int, fill int, zero bool) byte[>..] {
+	if zero && align == 1 {
+		var core const byte[:] = s;
+		var sign byte = 0;
+		if s.len > 0 && (s[0] == 45 || s[0] == 43) { sign = s[0]; core = s[1..]; }
+		let room = width - display_width(s);
+		var out byte[>..] = [];
+		if sign != 0 { out.push(sign); }
+		for i in room { out.push(48); }
+		out.append(core);
+		return out;
+	}
+	pad_to(s, width, align, fill)
+}
+
+fn slot_real(s const byte[:]) real, bool { parse_flt(trim(s)) }
+
+fn format_fixed(v real, prec int) byte[>..] {
+	let t = fmt(v, prec);
+	t
+}
+
+fn format_sci(v real, prec int) byte[>..] {
+	var out byte[>..] = [];
+	if v == 0.0 { out.append(fmt(0.0, prec)); out.append("e+00"); return out; }
+	var neg = v < 0.0;
+	var x = if neg { -v } else { v };
+	var exp = 0;
+	while x >= 10.0 { x = x / 10.0; exp += 1; }
+	while x < 1.0 { x = x * 10.0; exp -= 1; }
+	if neg { x = -x; }
+	out.append(fmt(x, prec));
+	out.push(101);
+	if exp >= 0 { out.push(43); } else { out.push(45); exp = -exp; }
+	if exp < 10 { out.push(48); }
+	out.append(fmt_int_raw(exp, 10));
+	out
+}
+
+fn interp_one(spec const byte[:], raw const byte[:]) byte[>..] {
+	var fill = 32;
+	var align = 1;
+	var at = 0;
+	var align_set = false;
+	if spec.len >= 2 && (spec[1] == 60 || spec[1] == 62 || spec[1] == 94) {
+		fill = spec[0] as int;
+		align = if spec[1] == 60 { 0 } else if spec[1] == 94 { 2 } else { 1 };
+		align_set = true;
+		at = 2;
+	} else if spec.len >= 1 && (spec[0] == 60 || spec[0] == 62 || spec[0] == 94) {
+		align = if spec[0] == 60 { 0 } else if spec[0] == 94 { 2 } else { 1 };
+		align_set = true;
+		at = 1;
+	}
+	var zero = false;
+	if at < spec.len && spec[at] == 48 { zero = true; at += 1; }
+	var width = 0;
+	while at < spec.len && spec[at] >= 48 && spec[at] <= 57 { width = width * 10 + (spec[at] - 48) as int; at += 1; }
+	var grouping = false;
+	if at < spec.len && spec[at] == 44 { grouping = true; at += 1; }
+	var prec = -1;
+	if at < spec.len && spec[at] == 46 {
+		at += 1;
+		prec = 0;
+		while at < spec.len && spec[at] >= 48 && spec[at] <= 57 { prec = prec * 10 + (spec[at] - 48) as int; at += 1; }
+	}
+	var ty = 0;
+	if at < spec.len { ty = spec[at] as int; }
+	if !align_set {
+		if ty == 115 || ty == 0 { align = 0; } else { align = 1; }
+	}
+	var body byte[>..] = [];
+	if ty == 115 || ty == 0 && prec < 0 {
+		body.append(raw);
+	} else if ty == 100 || ty == 120 || ty == 88 || ty == 98 || ty == 111 || ty == 0 {
+		let base = if ty == 120 || ty == 88 { 16 } else if ty == 98 { 2 } else if ty == 111 { 8 } else { 10 };
+		let iv, ok = parse_int(trim(raw), base);
+		if ok { body.append(fmt_int_raw(iv, base)); }
+		else { body.append(raw); }
+		if ty == 88 { for j in body.len { if body[j] >= 97 && body[j] <= 122 { body[j] = body[j] - 32; } } }
+	} else {
+		let rv, ok = slot_real(raw);
+		if !ok { body.append(raw); }
+		else if ty == 101 || ty == 69 {
+			let p = if prec < 0 { 6 } else { prec };
+			body.append(format_sci(rv, p));
+			if ty == 69 { for j in body.len { if body[j] == 101 { body[j] = 69; } } }
+		} else if ty == 37 {
+			let p = if prec < 0 { 0 } else { prec };
+			body.append(format_fixed(rv * 100.0, p));
+			body.push(37);
+		} else {
+			let p = if prec < 0 { 6 } else { prec };
+			body.append(format_fixed(rv, p));
+		}
+	}
+	if grouping { let g = group_number(body[..], 44); body.clear(); body.append(g[..]); }
+	if width > 0 { let a = apply_align(body[..], width, align, fill, zero && (ty != 115 && ty != 0)); body.clear(); body.append(a[..]); }
+	body
+}
+
+fn interpolate(pat const byte[:], slots byte[>..][>..]&) byte[>..] {
+	var out byte[>..] = [];
+	var i = 0;
+	while i < pat.len {
+		if pat[i] == 123 && i + 1 < pat.len && pat[i + 1] == 123 { out.push(123); i += 2; continue; }
+		if pat[i] == 125 && i + 1 < pat.len && pat[i + 1] == 125 { out.push(125); i += 2; continue; }
+		if pat[i] == 123 {
+			var e = i + 1;
+			while e < pat.len && pat[e] != 125 { e += 1; }
+			var spec_at = i + 1;
+			var idx = 0;
+			while spec_at < e && pat[spec_at] >= 48 && pat[spec_at] <= 57 {
+				idx = idx * 10 + (pat[spec_at] - 48) as int;
+				spec_at += 1;
+			}
+			if spec_at < e && pat[spec_at] == 58 { spec_at += 1; }
+			let spec = pat[spec_at..e];
+			if idx >= 0 && idx < slots.len {
+				let piece = interp_one(spec, slots[idx][..]);
+				out.append(piece[..]);
+			}
+			i = e + 1;
+			continue;
+		}
+		out.push(pat[i]);
+		i += 1;
+	}
+	out
+}
+
+fn currency(amount real, code const byte[:]) byte[>..] {
+	var dec = 2;
+	var sym byte[>..] = [];
+	if code == "JPY" || code == "KRW" { dec = 0; }
+	if code == "USD" { sym.append("$"); }
+	else if code == "EUR" { utf8_put(sym, 0x20AC); }
+	else if code == "GBP" { utf8_put(sym, 0x00A3); }
+	else if code == "JPY" { utf8_put(sym, 0x00A5); }
+	else { sym.append(code); sym.push(32); }
+	let num = group_number(format_fixed(amount, dec)[..], 44);
+	sym.append(num[..]);
+	sym
+}
+
+fn month_name(m int, long bool) const byte[:] {
+	if m == 1 { if long { return "January"; } return "Jan"; }
+	if m == 2 { if long { return "February"; } return "Feb"; }
+	if m == 3 { if long { return "March"; } return "Mar"; }
+	if m == 4 { if long { return "April"; } return "Apr"; }
+	if m == 5 { return "May"; }
+	if m == 6 { if long { return "June"; } return "Jun"; }
+	if m == 7 { if long { return "July"; } return "Jul"; }
+	if m == 8 { if long { return "August"; } return "Aug"; }
+	if m == 9 { if long { return "September"; } return "Sep"; }
+	if m == 10 { if long { return "October"; } return "Oct"; }
+	if m == 11 { if long { return "November"; } return "Nov"; }
+	if long { return "December"; }
+	"Dec"
+}
+
+fn put_2(out byte[>..]&, v int) {
+	if v < 10 { out.push(48); }
+	out.append(fmt_int_raw(v, 10));
+}
+
+fn format_date(y int, m int, d int, pat const byte[:]) byte[>..] {
+	var out byte[>..] = [];
+	var i = 0;
+	while i < pat.len {
+		if i + 5 <= pat.len && pat[i..i + 5] == "MONTH" { out.append(month_name(m, true)); i += 5; continue; }
+		if i + 4 <= pat.len && pat[i..i + 4] == "YYYY" { out.append(fmt_int_raw(y, 10)); i += 4; continue; }
+		if i + 3 <= pat.len && pat[i..i + 3] == "Mon" { out.append(month_name(m, false)); i += 3; continue; }
+		if i + 2 <= pat.len && pat[i..i + 2] == "YY" { put_2(out, y % 100); i += 2; continue; }
+		if i + 2 <= pat.len && pat[i..i + 2] == "MM" { put_2(out, m); i += 2; continue; }
+		if i + 2 <= pat.len && pat[i..i + 2] == "DD" { put_2(out, d); i += 2; continue; }
+		out.push(pat[i]);
+		i += 1;
+	}
+	out
+}
+
+fn format_time(h int, mi int, s int, pat const byte[:]) byte[>..] {
+	var out byte[>..] = [];
+	var i = 0;
+	while i < pat.len {
+		if i + 2 <= pat.len && pat[i..i + 2] == "HH" { put_2(out, h); i += 2; continue; }
+		if i + 2 <= pat.len && pat[i..i + 2] == "hh" {
+			var h12 = h % 12;
+			if h12 == 0 { h12 = 12; }
+			put_2(out, h12);
+			i += 2;
+			continue;
+		}
+		if i + 2 <= pat.len && pat[i..i + 2] == "mm" { put_2(out, mi); i += 2; continue; }
+		if i + 2 <= pat.len && pat[i..i + 2] == "ss" { put_2(out, s); i += 2; continue; }
+		if i + 2 <= pat.len && pat[i..i + 2] == "AP" { if h < 12 { out.append("AM"); } else { out.append("PM"); } i += 2; continue; }
+		out.push(pat[i]);
+		i += 1;
+	}
+	out
+}

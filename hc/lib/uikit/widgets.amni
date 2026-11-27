@@ -1,0 +1,191 @@
+// Constructors. Every interactive kind has six looks (filled through sharp).
+namespace uikit;
+import text;
+import uikit.core;
+
+var CELL_N int[>..] = [];
+var CELL_R int[>..] = [];
+var CELL_C int[>..] = [];
+var CELL_S int[>..] = [];
+var TORD int[>..][>..] = [];
+
+fn widgets_reset() { CELL_N.clear(); CELL_R.clear(); CELL_C.clear(); CELL_S.clear(); TORD.clear(); }
+
+fn box(parent int, kind int, label const byte[:], look int) int {
+	let id = add(parent, kind);
+	set_look(id, look);
+	if label.len > 0 { set_text(id, label); }
+	id
+}
+
+fn flex(parent int, dir int) int { let id = add(parent, K_FLEX); set_dir(id, dir); id }
+fn grid(parent int, cols int) int { let id = add(parent, K_GRID); set_cols(id, cols); set_dir(id, DIR_ROW); id }
+fn stack(parent int) int { add(parent, K_STACK) }
+fn scroll(parent int) int { add(parent, K_SCROLL) }
+fn wrap_row(parent int) int { let id = add(parent, K_WRAP); set_dir(id, DIR_ROW); id }
+
+fn label(parent int, text const byte[:], preset int) int {
+	let id = box(parent, K_LABEL, text, 0);
+	set_preset(id, preset);
+	id
+}
+fn button(parent int, text const byte[:], look int) int { box(parent, K_BUTTON, text, look) }
+fn icon_button(parent int, icon int, look int) int { let id = box(parent, K_ICON, "", look); N[id].i0 = icon; id }
+fn fab(parent int, text const byte[:], look int) int { box(parent, K_FAB, text, look) }
+fn segmented(parent int, text const byte[:], look int) int { let id = box(parent, K_SEG, text, look); set_on(id, 1); id }
+fn toggle(parent int, text const byte[:], on int, look int) int { let id = box(parent, K_TOGGLE, text, look); set_on(id, on); id }
+fn checkbox(parent int, text const byte[:], on int, look int) int { let id = box(parent, K_CHECK, text, look); set_on(id, on); id }
+fn radio(parent int, text const byte[:], group int, on int, look int) int {
+	let id = box(parent, K_RADIO, text, look);
+	N[id].i2 = group;
+	set_on(id, on);
+	id
+}
+fn slider(parent int, v f32, look int) int { let id = box(parent, K_SLIDER, "", look); set_value(id, v); set_value2(id, 1.0); id }
+fn range_slider(parent int, a f32, b f32, look int) int { let id = box(parent, K_RANGE, "", look); set_value(id, a); set_value2(id, b); id }
+fn stepper(parent int, v f32, look int) int { let id = box(parent, K_STEP, "", look); set_value(id, v); id }
+fn text_field(parent int, text const byte[:], look int) int { box(parent, K_FIELD, text, look) }
+fn text_area(parent int, text const byte[:], look int) int { box(parent, K_AREA, text, look) }
+fn dropdown(parent int, text const byte[:], look int) int { let id = box(parent, K_SELECT, text, look); N[id].i0 = 0; id }
+fn combobox(parent int, text const byte[:], look int) int { box(parent, K_COMBO, text, look) }
+fn date_picker(parent int, y int, m int, d int, look int) int {
+	let id = box(parent, K_DATE, "", look);
+	N[id].i0 = y; N[id].i1 = m; N[id].i2 = d;
+	id
+}
+fn time_picker(parent int, h int, m int, look int) int { let id = box(parent, K_TIME, "", look); N[id].i0 = h; N[id].i1 = m; id }
+fn color_picker(parent int, rgb int, look int) int { let id = box(parent, K_COLOR, "", look); N[id].i0 = rgb; id }
+fn tabs(parent int, look int) int { let id = box(parent, K_TABS, "", look); set_dir(id, DIR_ROW); id }
+fn accordion(parent int, title const byte[:], open int, look int) int { let id = box(parent, K_ACC, title, look); set_open(id, open); set_dir(id, DIR_COL); id }
+fn tree_node(parent int, title const byte[:], open int, look int) int { let id = box(parent, K_TREE, title, look); set_open(id, open); set_dir(id, DIR_COL); id }
+fn table(parent int, rows int, cols int, look int) int {
+	let id = box(parent, K_TABLE, "", look);
+	N[id].i0 = rows; N[id].i1 = cols; N[id].val = 28.0;
+	while TORD.len <= id { TORD.push([]); }
+	TORD[id].clear();
+	for r in rows { TORD[id].push(r); }
+	id
+}
+fn virtual_list(parent int, count int, look int) int { let id = box(parent, K_VLIST, "", look); N[id].i0 = count; N[id].val = 0.0; N[id].val2 = 28.0; id }
+fn menu(parent int, look int) int { let id = box(parent, K_MENU, "", look); set_dir(id, DIR_COL); id }
+fn context_menu(parent int, open int, look int) int { let id = box(parent, K_CONTEXT, "", look); set_open(id, open); set_dir(id, DIR_COL); id }
+fn toolbar(parent int, look int) int { let id = box(parent, K_TOOL, "", look); set_dir(id, DIR_ROW); id }
+fn modal(parent int, title const byte[:], open int, look int) int { let id = box(parent, K_MODAL, title, look); set_open(id, open); id }
+fn drawer(parent int, title const byte[:], open int, look int) int { let id = box(parent, K_DRAWER, title, look); set_open(id, open); id }
+fn toast(parent int, text const byte[:], look int) int { box(parent, K_TOAST, text, look) }
+fn tooltip(parent int, text const byte[:], look int) int { box(parent, K_TIP, text, look) }
+fn popover(parent int, text const byte[:], open int, look int) int { let id = box(parent, K_POP, text, look); set_open(id, open); id }
+fn progress(parent int, v f32, look int) int { let id = box(parent, K_PROGRESS, "", look); set_value(id, v); id }
+fn spinner(parent int, look int) int { box(parent, K_SPIN, "", look) }
+fn skeleton(parent int, look int) int { box(parent, K_SKELETON, "", look) }
+fn badge(parent int, text const byte[:], look int) int { box(parent, K_BADGE, text, look) }
+fn chip(parent int, text const byte[:], look int) int { box(parent, K_CHIP, text, look) }
+fn tag(parent int, text const byte[:], look int) int { box(parent, K_TAG, text, look) }
+fn avatar(parent int, initials const byte[:], look int) int { box(parent, K_AVATAR, initials, look) }
+fn card(parent int, title const byte[:], look int) int { let id = box(parent, K_CARD, title, look); set_dir(id, DIR_COL); id }
+fn breadcrumbs(parent int, text const byte[:], look int) int { box(parent, K_CRUMB, text, look) }
+fn pagination(parent int, page int, pages int, look int) int { let id = box(parent, K_PAGE, "", look); N[id].i0 = page; N[id].i1 = pages; id }
+fn split_pane(parent int, ratio f32, look int) int { let id = box(parent, K_SPLIT, "", look); set_value(id, ratio); set_dir(id, DIR_ROW); id }
+fn health_bar(parent int, v f32, look int) int { let id = box(parent, K_HEALTH, "", look); set_value(id, v); id }
+fn mana_bar(parent int, v f32, look int) int { let id = box(parent, K_MANA, "", look); set_value(id, v); id }
+fn minimap(parent int, look int) int { box(parent, K_MINI, "", look) }
+fn inventory(parent int, cols int, rows int, look int) int { let id = box(parent, K_INV, "", look); N[id].i0 = cols; N[id].i1 = rows; id }
+fn radial(parent int, count int, selected int, look int) int { let id = box(parent, K_RADIAL, "", look); N[id].i0 = count; N[id].i1 = selected; id }
+fn dialogue(parent int, text const byte[:], shown int, look int) int {
+	let id = box(parent, K_DIALOGUE, text, look);
+	N[id].i0 = shown;
+	set_effect(id, 6);
+	id
+}
+fn damage_number(parent int, text const byte[:], look int) int { let id = box(parent, K_DAMAGE, text, look); set_value(id, 1.0); set_effect(id, 4); id }
+fn boss_bar(parent int, v f32) int { let id = box(parent, K_BOSS, "", 0); set_value(id, v); id }
+fn buff_row(parent int, seed int) int { let id = box(parent, K_BUFF, "", 0); N[id].i3 = seed; id }
+fn quest_log(parent int, seed int) int { let id = box(parent, K_QUEST, "", 0); N[id].i3 = seed; id }
+fn cooldown_row(parent int, seed int) int { let id = box(parent, K_COOL, "", 0); N[id].i3 = seed; id }
+fn chart(parent int, kind int, look int) int { let id = box(parent, K_CHART, "", look); N[id].i0 = kind; id }
+fn divider(parent int, look int) int { box(parent, K_DIV, "", look) }
+fn rating(parent int, stars int, look int) int { let id = box(parent, K_RATE, "", look); N[id].i0 = stars; id }
+fn message_bar(parent int, text const byte[:], look int) int { box(parent, K_MSG, text, look) }
+fn nav_rail(parent int, look int) int { let id = box(parent, K_NAV, "", look); set_dir(id, DIR_COL); id }
+
+fn table_set(id int, row int, col int, text const byte[:]) {
+	let s = s_new(text);
+	for i in CELL_N.len {
+		if CELL_N[i] == id && CELL_R[i] == row && CELL_C[i] == col { CELL_S[i] = s; return; }
+	}
+	CELL_N.push(id); CELL_R.push(row); CELL_C.push(col); CELL_S.push(s);
+}
+fn table_get(id int, row int, col int) const byte[:] {
+	for i in CELL_N.len { if CELL_N[i] == id && CELL_R[i] == row && CELL_C[i] == col { return s_text(CELL_S[i]); } }
+	""
+}
+var FILT_ID int[>..] = [];
+var FILT_S byte[>..][>..] = [];
+var COLW f32[>..][>..] = [];
+
+fn table_filter(id int, text const byte[:]) {
+	for i in FILT_ID.len { if FILT_ID[i] == id { FILT_S[i].clear(); FILT_S[i].append(text); return; } }
+	FILT_ID.push(id);
+	var s byte[>..] = [];
+	s.append(text);
+	FILT_S.push(copy(s));
+}
+fn table_filtered(id int, row int) bool {
+	var q const byte[:] = "";
+	for i in FILT_ID.len { if FILT_ID[i] == id { q = FILT_S[i][..]; } }
+	if q.len == 0 { return true; }
+	let cols = if N[id].i1 < 1 { 1 } else { N[id].i1 };
+	for c in cols { if text::contains(table_get(id, row, c), q) { return true; } }
+	false
+}
+fn table_pin(id int, cols int) { N[id].i3 = cols; }
+fn table_query(id int, out byte[>..]&) {
+	out.clear();
+	for i in FILT_ID.len { if FILT_ID[i] == id { out.append(FILT_S[i][..]); return; } }
+}
+fn table_resize(id int, col int, w f32) {
+	while COLW.len <= id { COLW.push([]); }
+	while COLW[id].len <= col { COLW[id].push(0.0); }
+	COLW[id][col] = w;
+}
+fn col_width(id int, col int, total int, cols int) int {
+	if id < COLW.len && col < COLW[id].len && COLW[id][col] > 1.0 { return (COLW[id][col] * SCALE) as int; }
+	if cols < 1 { return total; }
+	total / cols
+}
+
+fn table_row(id int, slot int) int {
+	if id < TORD.len && slot >= 0 && slot < TORD[id].len { return TORD[id][slot]; }
+	slot
+}
+fn table_sort(id int, col int, desc int) {
+	if id >= TORD.len { return; }
+	let n = TORD[id].len;
+	var i = 1;
+	while i < n {
+		let key = TORD[id][i];
+		var j = i - 1;
+		while j >= 0 {
+			let a = table_get(id, TORD[id][j], col);
+			let b = table_get(id, key, col);
+			let less = if desc != 0 { b < a } else { a > b };
+			if !less { break; }
+			TORD[id][j + 1] = TORD[id][j];
+			j -= 1;
+		}
+		TORD[id][j + 1] = key;
+		i += 1;
+	}
+	N[id].i2 = col;
+}
+
+fn list_window(id int) int, int {
+	let rh = if N[id].val2 < 1.0 { 28.0 } else { N[id].val2 };
+	var first = (N[id].val / rh) as int;
+	var vis = (N[id].h / rh) as int;
+	if vis < 1 { vis = 1; }
+	let count = N[id].i0;
+	var last = first + vis;
+	if last > count { last = count; }
+	return first, last;
+}

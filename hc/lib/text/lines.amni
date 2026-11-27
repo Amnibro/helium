@@ -1,0 +1,121 @@
+// Line breaking (a practical UAX #14 subset), column wrap, slugify, and truncation.
+namespace text;
+import text.utf;
+import text.case;
+import text.norm;
+
+fn lb_space(cp int) bool { cp == 0x20 || cp == 0x09 }
+fn lb_close(cp int) bool {
+	cp == 0x21 || cp == 0x2C || cp == 0x2E || cp == 0x3A || cp == 0x3B || cp == 0x3F || cp == 0x29 || cp == 0x5D || cp == 0x7D
+}
+fn lb_open(cp int) bool { cp == 0x28 || cp == 0x5B || cp == 0x7B }
+fn lb_cjk(cp int) bool { cp_width(cp) == 2 && is_letter_cp(cp) }
+
+fn break_before(prev int, cp int) bool {
+	if prev < 0 { return false; }
+	if lb_close(cp) || is_extend_cp(cp) || ccc(cp) != 0 { return false; }
+	if lb_open(prev) { return false; }
+	if lb_space(prev) { return true; }
+	if lb_cjk(prev) && lb_cjk(cp) { return true; }
+	if is_letter_cp(prev) && is_letter_cp(cp) { return false; }
+	if is_digit_cp(prev) && is_digit_cp(cp) { return false; }
+	if is_digit_cp(prev) && (cp == 0x2C || cp == 0x2E) { return false; }
+	if (prev == 0x2C || prev == 0x2E) && is_digit_cp(cp) { return false; }
+	true
+}
+
+fn wrap(s const byte[:], columns int) byte[>..] {
+	var out byte[>..] = [];
+	var line byte[>..] = [];
+	var width = 0;
+	var last_break = -1;
+	var i = 0;
+	var prev = -1;
+	while i < s.len {
+		if s[i] == 10 {
+			out.append(line[..]);
+			out.push(10);
+			line.clear();
+			width = 0;
+			last_break = -1;
+			prev = -1;
+			i += 1;
+			continue;
+		}
+		let e = grapheme_end(s, i);
+		let g = s[i..e];
+		let cp, n = utf8_next(g, 0);
+		let w = grapheme_width(g);
+		let br = break_before(prev, cp);
+		if width + w > columns && line.len > 0 {
+			if last_break >= 0 {
+				var cut = last_break;
+				while cut > 0 && (line[cut - 1] == 32 || line[cut - 1] == 9) { cut -= 1; }
+				out.append(line[..cut]);
+				out.push(10);
+				var rest byte[>..] = [];
+				rest.append(line[last_break..]);
+				line.clear();
+				line.append(rest[..]);
+				width = display_width(line[..]);
+				last_break = -1;
+			} else {
+				out.append(line[..]);
+				out.push(10);
+				line.clear();
+				width = 0;
+			}
+			if lb_space(cp) { prev = cp; i = e; continue; }
+		}
+		let at = line.len;
+		line.append(g);
+		width += w;
+		if br || lb_space(cp) { last_break = line.len; }
+		if !lb_space(cp) && br { last_break = at; }
+		prev = cp;
+		i = e;
+	}
+	out.append(line[..]);
+	out
+}
+
+fn truncate(s const byte[:], columns int, ellipsis const byte[:]) byte[>..] {
+	let ew = display_width(ellipsis);
+	if display_width(s) <= columns { var same byte[>..] = []; same.append(s); return same; }
+	let budget = if columns > ew { columns - ew } else { 0 };
+	var out byte[>..] = [];
+	var i = 0;
+	var w = 0;
+	while i < s.len {
+		let e = grapheme_end(s, i);
+		let gw = grapheme_width(s[i..e]);
+		if w + gw > budget { break; }
+		out.append(s[i..e]);
+		w += gw;
+		i = e;
+	}
+	out.append(ellipsis);
+	out
+}
+
+fn slugify(s const byte[:]) byte[>..] {
+	let dec = nfd(s);
+	let low = lower(dec[..]);
+	var out byte[>..] = [];
+	var dash = false;
+	var i = 0;
+	while i < low.len {
+		let cp, n = utf8_next(low[..], i);
+		if ccc(cp) != 0 { i += n; continue; }
+		if is_letter_cp(cp) || is_digit_cp(cp) {
+			utf8_put(out, cp);
+			dash = false;
+		} else if !dash && out.len > 0 {
+			out.push(45);
+			dash = true;
+		}
+		i += n;
+	}
+	if out.len > 0 && out[out.len - 1] == 45 { out.pop(); }
+	out
+}

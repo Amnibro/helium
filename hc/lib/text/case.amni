@@ -1,0 +1,168 @@
+// Unicode case mapping for Latin, Greek, and Cyrillic, plus the special
+// expansions (ß, İ, ligatures) and final sigma. Not the full Unicode case file.
+namespace text;
+import text.utf;
+
+fn case_put(out int[3]&, n int, a int, b int, c int) int {
+	out[0] = a; out[1] = b; out[2] = c;
+	n
+}
+
+fn case_special(cp int, mode int, out int[3]&) int {
+	if cp == 0xDF {
+		if mode == 0 { return case_put(out, 1, 0xDF, 0, 0); }
+		if mode == 2 { return case_put(out, 2, 0x53, 0x73, 0); }
+		return case_put(out, 2, 0x53, 0x53, 0);
+	}
+	if cp == 0x130 {
+		if mode == 0 { return case_put(out, 2, 0x69, 0x307, 0); }
+		return case_put(out, 1, 0x130, 0, 0);
+	}
+	if cp == 0x131 {
+		if mode == 0 { return case_put(out, 1, 0x131, 0, 0); }
+		return case_put(out, 1, 0x49, 0, 0);
+	}
+	if cp == 0xFB00 { if mode == 0 { return case_put(out, 2, 0x66, 0x66, 0); } return case_put(out, 2, 0x46, 0x46, 0); }
+	if cp == 0xFB01 { if mode == 0 { return case_put(out, 2, 0x66, 0x69, 0); } return case_put(out, 2, 0x46, 0x49, 0); }
+	if cp == 0xFB02 { if mode == 0 { return case_put(out, 2, 0x66, 0x6C, 0); } return case_put(out, 2, 0x46, 0x4C, 0); }
+	if cp == 0xFB03 { if mode == 0 { return case_put(out, 3, 0x66, 0x66, 0x69); } return case_put(out, 3, 0x46, 0x46, 0x49); }
+	if cp == 0xFB04 { if mode == 0 { return case_put(out, 3, 0x66, 0x66, 0x6C); } return case_put(out, 3, 0x46, 0x46, 0x4C); }
+	if cp == 0xB5 { if mode == 0 { return case_put(out, 1, 0x3BC, 0, 0); } return case_put(out, 1, 0x39C, 0, 0); }
+	if cp == 0xFF { if mode == 0 { return case_put(out, 1, 0xFF, 0, 0); } return case_put(out, 1, 0x178, 0, 0); }
+	if cp == 0x178 { if mode == 0 { return case_put(out, 1, 0xFF, 0, 0); } return case_put(out, 1, 0x178, 0, 0); }
+	if cp == 0x138 { if mode == 0 { return case_put(out, 1, 0x138, 0, 0); } return case_put(out, 1, 0x4B, 0, 0); }
+	if cp == 0x17F { if mode == 0 { return case_put(out, 1, 0x17F, 0, 0); } return case_put(out, 1, 0x53, 0, 0); }
+	0
+}
+
+fn case_pair(cp int, mode int, out int[3]&) int {
+	var u = cp;
+	var l = cp;
+	if cp >= 0x41 && cp <= 0x5A { l = cp + 0x20; }
+	else if cp >= 0x61 && cp <= 0x7A { u = cp - 0x20; }
+	else if cp >= 0xC0 && cp <= 0xD6 { l = cp + 0x20; }
+	else if cp >= 0xD8 && cp <= 0xDE { l = cp + 0x20; }
+	else if cp >= 0xE0 && cp <= 0xF6 { u = cp - 0x20; }
+	else if cp >= 0xF8 && cp <= 0xFE { u = cp - 0x20; }
+	else if cp >= 0x100 && cp <= 0x137 {
+		if cp % 2 == 0 { l = cp + 1; } else { u = cp - 1; }
+	} else if cp >= 0x139 && cp <= 0x148 {
+		if cp % 2 == 1 { l = cp + 1; } else { u = cp - 1; }
+	} else if cp >= 0x14A && cp <= 0x177 {
+		if cp % 2 == 0 { l = cp + 1; } else { u = cp - 1; }
+	} else if cp >= 0x179 && cp <= 0x17E {
+		if cp % 2 == 1 { l = cp + 1; } else { u = cp - 1; }
+	} else if cp >= 0x410 && cp <= 0x42F { l = cp + 0x20; }
+	else if cp >= 0x430 && cp <= 0x44F { u = cp - 0x20; }
+	else if cp >= 0x400 && cp <= 0x40F { l = cp + 0x50; }
+	else if cp >= 0x450 && cp <= 0x45F { u = cp - 0x50; }
+	else if cp >= 0x460 && cp <= 0x481 {
+		if cp % 2 == 0 { l = cp + 1; } else { u = cp - 1; }
+	} else if (cp >= 0x391 && cp <= 0x3A1) { l = cp + 0x20; }
+	else if cp >= 0x3A4 && cp <= 0x3AB { l = cp + 0x20; }
+	else if cp >= 0x3B1 && cp <= 0x3C1 { u = cp - 0x20; }
+	else if cp >= 0x3C3 && cp <= 0x3CB { u = cp - 0x20; }
+	else if cp == 0x3C2 { u = 0x3A3; l = 0x3C2; }
+	else if cp == 0x386 { l = 0x3AC; }
+	else if cp == 0x388 { l = 0x3AD; }
+	else if cp == 0x389 { l = 0x3AE; }
+	else if cp == 0x38A { l = 0x3AF; }
+	else if cp == 0x38C { l = 0x3CC; }
+	else if cp == 0x38E { l = 0x3CD; }
+	else if cp == 0x38F { l = 0x3CE; }
+	else if cp == 0x3AC { u = 0x386; }
+	else if cp == 0x3AD { u = 0x388; }
+	else if cp == 0x3AE { u = 0x389; }
+	else if cp == 0x3AF { u = 0x38A; }
+	else if cp == 0x3CC { u = 0x38C; }
+	else if cp == 0x3CD { u = 0x38E; }
+	else if cp == 0x3CE { u = 0x38F; }
+	else { return 0; }
+	if mode == 0 { return case_put(out, 1, l, 0, 0); }
+	case_put(out, 1, u, 0, 0)
+}
+
+fn map_cp(cp int, mode int, out int[3]&) int {
+	let sp = case_special(cp, mode, out);
+	if sp > 0 { return sp; }
+	if cp == 0x3A3 && mode == 0 { return case_put(out, 1, 0x3C3, 0, 0); }
+	let pr = case_pair(cp, mode, out);
+	if pr > 0 { return pr; }
+	case_put(out, 1, cp, 0, 0)
+}
+
+fn is_cased_cp(cp int) bool {
+	var tmp int[3] = [0, 0, 0];
+	let n = map_cp(cp, 1, tmp);
+	if n != 1 || tmp[0] != cp { return true; }
+	let m = map_cp(cp, 0, tmp);
+	m != 1 || tmp[0] != cp
+}
+
+fn is_ignorable_cp(cp int) bool {
+	if ccc(cp) != 0 { return true; }
+	if cp == 0x27 || cp == 0x2019 || cp == 0x2D || cp == 0xAD || cp == 0x2E { return true; }
+	false
+}
+
+fn cased_before(s const byte[:], at int) bool {
+	var i = 0;
+	var prev = -1;
+	while i < at {
+		let cp, n = utf8_next(s, i);
+		if i + n > at { break; }
+		if !is_ignorable_cp(cp) { prev = cp; }
+		i += n;
+	}
+	prev >= 0 && is_cased_cp(prev)
+}
+
+fn cased_after(s const byte[:], at int) bool {
+	var i = at;
+	var seen = false;
+	while i < s.len {
+		let cp, n = utf8_next(s, i);
+		if !seen { seen = true; i += n; continue; }
+		if !is_ignorable_cp(cp) { return is_cased_cp(cp); }
+		i += n;
+	}
+	false
+}
+
+fn map_at(s const byte[:], at int, mode int, out int[3]&) int {
+	let cp, n = utf8_next(s, at);
+	if cp == 0x3A3 && mode == 0 {
+		if cased_before(s, at) && !cased_after(s, at) { return case_put(out, 1, 0x3C2, 0, 0); }
+	}
+	map_cp(cp, mode, out)
+}
+
+fn emit_mapped(out byte[>..]&, buf int[3]&, n int) {
+	for i in n { utf8_put(out, buf[i]); }
+}
+
+fn convert_case(s const byte[:], mode int, fold bool) byte[>..] {
+	var out byte[>..] = [];
+	var i = 0;
+	var word = true;
+	var buf int[3] = [0, 0, 0];
+	while i < s.len {
+		let cp, n = utf8_next(s, i);
+		var use = mode;
+		if mode == 2 { if word { use = 2; } else { use = 0; } }
+		if fold && cp == 0x3A3 { let k = case_put(buf, 1, 0x3C3, 0, 0); emit_mapped(out, buf, k); }
+		else if fold && cp == 0xDF { let k = case_put(buf, 2, 0x73, 0x73, 0); emit_mapped(out, buf, k); }
+		else {
+			let k = map_at(s, i, use, buf);
+			emit_mapped(out, buf, k);
+		}
+		if is_ws(cp) { word = true; } else if !is_ignorable_cp(cp) { word = false; }
+		i += n;
+	}
+	out
+}
+
+fn lower(s const byte[:]) byte[>..] { convert_case(s, 0, false) }
+fn upper(s const byte[:]) byte[>..] { convert_case(s, 1, false) }
+fn title(s const byte[:]) byte[>..] { convert_case(s, 2, false) }
+fn casefold(s const byte[:]) byte[>..] { convert_case(s, 0, true) }

@@ -1,0 +1,3163 @@
+// 16:9 stage layouts. Coordinates are a 1920x1080 design grid.
+namespace uikit;
+import uikit.widgets;
+import uikit.core;
+
+fn menu_n(g int) int {
+	if g == 0 { return 5; }
+	if g == 2 { return 5; }
+	if g == 4 { return 4; }
+	if g == 5 { return 3; }
+	if g == 1 { return 5; }
+	if g == 7 { return 4; }
+	if g == 8 { return 4; }
+	if g == 12 { return 4; }
+	if g == 3 { return 4; }
+	if g == 6 { return 4; }
+	if g == 9 { return 4; }
+	if g == 10 { return 4; }
+	if g == 11 { return 4; }
+	if g == 13 { return 4; }
+	if g == 14 { return 4; }
+	if g == 15 { return 4; }
+	if g == 16 { return 4; }
+	if g == 17 { return 4; }
+	if g == 18 { return 4; }
+	if g == 19 { return 4; }
+	if g == 20 { return 4; }
+	if g == 21 { return 4; }
+	if g == 22 { return 4; }
+	if g == 23 { return 4; }
+	4
+}
+fn menu_at(g int, i int) const byte[:] {
+	if g == 0 {
+		if i == 0 { return "Play"; }
+		if i == 1 { return "Loadout"; }
+		if i == 2 { return "Range"; }
+		if i == 3 { return "Options"; }
+		return "Quit";
+	}
+	if g == 2 {
+		if i == 0 { return "Play"; }
+		if i == 1 { return "Practice"; }
+		if i == 2 { return "Collection"; }
+		if i == 3 { return "Options"; }
+		return "Quit";
+	}
+	if g == 4 {
+		if i == 0 { return "New Game"; }
+		if i == 1 { return "Continue"; }
+		if i == 2 { return "Extras"; }
+		return "Config";
+	}
+	if g == 5 {
+		if i == 0 { return "Continue"; }
+		if i == 1 { return "New Game"; }
+		return "Settings";
+	}
+	if g == 1 {
+		if i == 0 { return "Drop"; }
+		if i == 1 { return "Duos"; }
+		if i == 2 { return "Squads"; }
+		if i == 3 { return "Stash"; }
+		return "Quit";
+	}
+	if g == 7 {
+		if i == 0 { return "Race"; }
+		if i == 1 { return "Career"; }
+		if i == 2 { return "Garage"; }
+		return "Options";
+	}
+	if g == 8 {
+		if i == 0 { return "Versus"; }
+		if i == 1 { return "Arcade"; }
+		if i == 2 { return "Training"; }
+		return "Options";
+	}
+	if g == 23 {
+		if i == 0 { return "Home"; }
+		if i == 1 { return "Banners"; }
+		if i == 2 { return "Archive"; }
+		return "Options";
+	}
+	if g == 22 {
+		if i == 0 { return "Start"; }
+		if i == 1 { return "Continue"; }
+		if i == 2 { return "Prestige"; }
+		return "Options";
+	}
+	if g == 21 {
+		if i == 0 { return "Start"; }
+		if i == 1 { return "Load"; }
+		if i == 2 { return "Gallery"; }
+		return "Options";
+	}
+	if g == 20 {
+		if i == 0 { return "Play"; }
+		if i == 1 { return "Packs"; }
+		if i == 2 { return "Daily"; }
+		return "Options";
+	}
+	if g == 19 {
+		if i == 0 { return "Play"; }
+		if i == 1 { return "Setlist"; }
+		if i == 2 { return "Practice"; }
+		return "Options";
+	}
+	if g == 18 {
+		if i == 0 { return "Morning"; }
+		if i == 1 { return "Load"; }
+		if i == 2 { return "Album"; }
+		return "Options";
+	}
+	if g == 17 {
+		if i == 0 { return "Begin"; }
+		if i == 1 { return "Continue"; }
+		if i == 2 { return "Lore"; }
+		return "Options";
+	}
+	if g == 16 {
+		if i == 0 { return "Launch"; }
+		if i == 1 { return "Hangar"; }
+		if i == 2 { return "Crew"; }
+		return "Options";
+	}
+	if g == 15 {
+		if i == 0 { return "Enter"; }
+		if i == 1 { return "Notes"; }
+		if i == 2 { return "Continue"; }
+		return "Options";
+	}
+	if g == 14 {
+		if i == 0 { return "Found"; }
+		if i == 1 { return "Load"; }
+		if i == 2 { return "Atlas"; }
+		return "Options";
+	}
+	if g == 13 {
+		if i == 0 { return "Wake"; }
+		if i == 1 { return "Camp"; }
+		if i == 2 { return "Journal"; }
+		return "Options";
+	}
+	if g == 11 {
+		if i == 0 { return "Descend"; }
+		if i == 1 { return "Records"; }
+		if i == 2 { return "Codex"; }
+		return "Options";
+	}
+	if g == 10 {
+		if i == 0 { return "Start"; }
+		if i == 1 { return "Worlds"; }
+		if i == 2 { return "Badges"; }
+		return "Options";
+	}
+	if g == 9 {
+		if i == 0 { return "Kickoff"; }
+		if i == 1 { return "Season"; }
+		if i == 2 { return "Squad"; }
+		return "Options";
+	}
+	if g == 6 {
+		if i == 0 { return "Enter"; }
+		if i == 1 { return "Character"; }
+		if i == 2 { return "Group"; }
+		return "Options";
+	}
+	if g == 3 {
+		if i == 0 { return "Skirmish"; }
+		if i == 1 { return "Campaign"; }
+		if i == 2 { return "Ladder"; }
+		return "Options";
+	}
+	if g == 12 {
+		if i == 0 { return "Climb"; }
+		if i == 1 { return "Daily"; }
+		if i == 2 { return "Collection"; }
+		return "Options";
+	}
+	if i == 0 { return "Play"; }
+	if i == 1 { return "Continue"; }
+	if i == 2 { return "Options"; }
+	"Quit"
+}
+
+fn stage_title(f int, g int, mode int) {
+	var x f32 = 1420.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 760.0; y = 560.0; }
+	else if mode == 2 { x = 96.0; y = 520.0; }
+	else if mode == 3 { x = 760.0; y = 400.0; }
+	else if mode == 4 { x = 96.0; y = 160.0; }
+	let n = menu_n(g);
+	let col = flex(f, DIR_COL);
+	set_gap(col, 16.0);
+	set_pad(col, 0.0);
+	place_at(col, x, y, 400.0, 384.0);
+	for i in n {
+		let b = button(col, menu_at(g, i), if i == 0 { 0 } else { 2 });
+		set_px(b, 400.0, 64.0);
+		set_preset(b, 2);
+	}
+	var vx f32 = 80.0;
+	var px f32 = 1420.0;
+	if mode == 1 { vx = 80.0; px = 1420.0; }
+	if mode == 2 || mode == 4 { vx = 1100.0; px = 1100.0; }
+	let ver = label(f, "v1.04", 2);
+	place_at(ver, vx, 1000.0, 280.0, 40.0);
+	let go = label(f, "Press Start", 1);
+	place_at(go, px, 920.0, 360.0, 48.0);
+}
+
+fn mark_anchor(id int) { N[id].flags = N[id].flags | FL_ANCHOR; }
+
+fn kill_row(col int, killer const byte[:], kcol u32, icon int, victim const byte[:], vcol u32) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 8.0);
+	set_pad(row, 0.0);
+	set_px(row, 212.0, 36.0);
+	let a = label(row, killer, 3); set_px(a, 80.0, 36.0); N[a].fg = kcol;
+	let ic = icon_button(row, icon, 3); set_px(ic, 36.0, 36.0);
+	let b = label(row, victim, 3); set_px(b, 80.0, 36.0); N[b].fg = vcol;
+}
+
+fn feed_col(f int, x f32, y f32) {
+	let col = card(f, "", 2);
+	set_gap(col, 8.0);
+	set_pad(col, 8.0);
+	place_at(col, x, y, 228.0, 184.0);
+	let ally = 0xD6ECFF as u32;
+	let foe = 0xFFD0C2 as u32;
+	kill_row(col, "You", ally, 77, "Ace", foe);
+	kill_row(col, "Nova", foe, 0, "You", ally);
+	kill_row(col, "You", ally, 16, "Hex", foe);
+	kill_row(col, "Ace", foe, 74, "Kit", ally);
+}
+
+fn vitals(f int, x f32, y f32) {
+	let heart = icon_button(f, 2, 3); place_at(heart, x, y, 36.0, 36.0);
+	let hp = health_bar(f, 0.72, 0); place_at(hp, x + 44.0, y + 8.0, 220.0, 24.0);
+	let hn = label(f, "144", 2); place_at(hn, x + 272.0, y + 4.0, 72.0, 32.0);
+	let sh = icon_button(f, 1, 3); place_at(sh, x, y + 44.0, 36.0, 36.0);
+	let arm = health_bar(f, 0.4, 2); place_at(arm, x + 44.0, y + 52.0, 220.0, 20.0);
+	let sn = label(f, "80", 3); place_at(sn, x + 272.0, y + 44.0, 64.0, 28.0);
+}
+
+fn ammo_readout(f int, x f32, y f32) {
+	let big = label(f, "24", 0); place_at(big, x, y, 72.0, 56.0);
+	let slash = label(f, "/", 4); place_at(slash, x + 72.0, y + 20.0, 24.0, 28.0);
+	let small = label(f, "90", 3); place_at(small, x + 96.0, y + 16.0, 56.0, 32.0);
+}
+
+fn objective_pip(f int, y f32) {
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 8.0);
+	set_pad(row, 0.0);
+	place_at(row, 920.0, y, 144.0, 40.0);
+	mark_anchor(row);
+	let pip = icon_button(row, 75, 3); set_px(pip, 40.0, 40.0);
+	let letter = label(row, "A", 2); set_px(letter, 32.0, 40.0); N[letter].i2 = 1;
+	let dist = label(row, "32m", 3); set_px(dist, 56.0, 40.0); N[dist].i2 = 1;
+}
+
+fn prompt_center(f int, text const byte[:], y f32) {
+	let lab = label(f, text, 2);
+	place_at(lab, 840.0, y, 240.0, 40.0);
+	mark_anchor(lab);
+}
+
+fn ability4(f int, x f32, y f32, s f32) {
+	let gap = 16.0;
+	let w = s * 4.0 + gap * 3.0;
+	let row = flex(f, DIR_ROW);
+	set_gap(row, gap);
+	set_pad(row, 0.0);
+	place_at(row, x, y, w, s);
+	let a = icon_button(row, 77, 2); set_px(a, s, s);
+	let b = icon_button(row, 16, 2); set_px(b, s, s);
+	let c = icon_button(row, 1, 2); set_px(c, s, s);
+	let d = icon_button(row, 4, 2); set_px(d, s, s);
+}
+
+fn stage_hud_fps(f int, mode int) {
+	var mapx f32 = 48.0;
+	var mapy f32 = 48.0;
+	var maps f32 = 280.0;
+	var fx f32 = 1500.0;
+	var fy f32 = 48.0;
+	var hx f32 = 48.0;
+	var hy f32 = 900.0;
+	var ax f32 = 1560.0;
+	var ay f32 = 968.0;
+	var wx f32 = 1464.0;
+	var wy f32 = 968.0;
+	var bx f32 = 792.0;
+	var by f32 = 980.0;
+	var bs f32 = 72.0;
+	if mode == 1 {
+		maps = 160.0;
+		hx = 48.0; hy = 960.0;
+		ax = 1640.0; ay = 980.0;
+		wx = 1544.0; wy = 980.0;
+		bx = 824.0; by = 992.0; bs = 56.0;
+	} else if mode == 2 {
+		maps = 200.0;
+		hx = 520.0; hy = 960.0;
+		ax = 1280.0; ay = 980.0;
+		wx = 1560.0; wy = 968.0;
+		bx = 900.0; by = 880.0;
+	} else if mode == 3 {
+		mapx = 96.0; mapy = 96.0;
+		fx = 1460.0; fy = 96.0;
+		hx = 96.0; hy = 880.0;
+		ax = 1500.0; ay = 960.0;
+		wx = 1400.0; wy = 952.0;
+		bx = 760.0; by = 960.0;
+	} else if mode == 4 {
+		mapx = 1592.0; mapy = 48.0;
+		fx = 48.0; fy = 48.0;
+		hx = 1500.0; hy = 920.0;
+		ax = 48.0; ay = 980.0;
+		wx = 360.0; wy = 968.0;
+		bx = 792.0; by = 980.0;
+	}
+	let map = minimap(f, 0);
+	place_at(map, mapx, mapy, maps, maps);
+	N[map].i3 = 0;
+	feed_col(f, fx, fy);
+	vitals(f, hx, hy);
+	ammo_readout(f, ax, ay);
+	let gun = icon_button(f, 78, 2);
+	place_at(gun, wx, wy, 72.0, 72.0);
+	ability4(f, bx, by, bs);
+	let nade = icon_button(f, 79, 0);
+	place_at(nade, 48.0, if mode == 4 { 800.0 } else { 400.0 }, 72.0, 72.0);
+	prompt_center(f, "Hold F", 800.0);
+	objective_pip(f, 48.0);
+}
+
+fn ability6(f int, x f32, y f32, s f32) {
+	let gap = 12.0;
+	let w = s * 6.0 + gap * 5.0;
+	let row = flex(f, DIR_ROW);
+	set_gap(row, gap);
+	set_pad(row, 0.0);
+	place_at(row, x, y, w, s);
+	let q = icon_button(row, 0, 2); set_px(q, s, s);
+	let wpn = icon_button(row, 16, 2); set_px(wpn, s, s);
+	let e = icon_button(row, 1, 2); set_px(e, s, s);
+	let r = icon_button(row, 15, 2); set_px(r, s, s);
+	let d = icon_button(row, 4, 2); set_px(d, s, s);
+	let fl = icon_button(row, 74, 2); set_px(fl, s, s);
+}
+
+fn stage_hud_moba(f int, mode int) {
+	var px f32 = 48.0;
+	var py f32 = 900.0;
+	var mx f32 = 1572.0;
+	var my f32 = 732.0;
+	var ms f32 = 300.0;
+	var ax f32 = 704.0;
+	var ay f32 = 980.0;
+	var asz f32 = 64.0;
+	var sx f32 = 760.0;
+	var sy f32 = 24.0;
+	if mode == 1 { ms = 200.0; mx = 1672.0; my = 832.0; asz = 56.0; ax = 752.0; }
+	else if mode == 2 { ay = 640.0; ax = 48.0; }
+	else if mode == 3 { ms = 240.0; mx = 1632.0; my = 792.0; }
+	else if mode == 4 { sx = 48.0; sy = 160.0; }
+	let face = icon_button(f, 11, 0);
+	place_at(face, px, py, 96.0, 96.0);
+	let hp = health_bar(f, 0.66, 0);
+	place_at(hp, px + 112.0, py + 16.0, 320.0, 24.0);
+	let mp = mana_bar(f, 0.4, 0);
+	place_at(mp, px + 112.0, py + 52.0, 320.0, 20.0);
+	let gold = label(f, "2450 g", 2);
+	place_at(gold, px, py - 48.0, 200.0, 36.0);
+	let lv = label(f, "Lv 11", 2);
+	place_at(lv, px + 240.0, py - 48.0, 160.0, 36.0);
+	let map = minimap(f, 0);
+	place_at(map, mx, my, ms, ms);
+	N[map].i3 = 2;
+	ability6(f, ax, ay, asz);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	place_at(row, sx, sy, 400.0, 48.0);
+	let k = label(row, "4", 1); set_px(k, 80.0, 48.0);
+	let t = label(row, "12:40", 1); set_px(t, 160.0, 48.0);
+	let dth = label(row, "3", 1); set_px(dth, 80.0, 48.0);
+	let items = flex(f, DIR_ROW);
+	set_gap(items, 8.0);
+	set_pad(items, 0.0);
+	place_at(items, px, py - 112.0, 328.0, 48.0);
+	let i0 = icon_button(items, 52, 2); set_px(i0, 48.0, 48.0);
+	let i1 = icon_button(items, 43, 2); set_px(i1, 48.0, 48.0);
+	let i2 = icon_button(items, 0, 2); set_px(i2, 48.0, 48.0);
+	let i3 = icon_button(items, 4, 2); set_px(i3, 48.0, 48.0);
+	let i4 = icon_button(items, 8, 2); set_px(i4, 48.0, 48.0);
+	let i5 = icon_button(items, 13, 2); set_px(i5, 48.0, 48.0);
+}
+
+fn stage_pause(f int, g int, mode int) {
+	var x f32 = 680.0;
+	var y f32 = 220.0;
+	var w f32 = 560.0;
+	if mode == 1 { x = 80.0; y = 180.0; }
+	else if mode == 2 { x = 1280.0; y = 180.0; }
+	else if mode == 3 { x = 360.0; y = 640.0; w = 1200.0; }
+	else if mode == 4 { x = 680.0; y = 80.0; }
+	let col = flex(f, DIR_COL);
+	set_gap(col, 16.0);
+	set_pad(col, 0.0);
+	if mode == 3 {
+		place_at(col, x, y, w, 80.0);
+		set_dir(col, DIR_ROW);
+		let a = button(col, "Resume", 0); set_px(a, 280.0, 64.0); set_preset(a, 2);
+		let b = button(col, "Options", 2); set_px(b, 280.0, 64.0); set_preset(b, 2);
+		let c = button(col, if g == 2 { "Surrender" } else { "Loadout" }, 2); set_px(c, 280.0, 64.0); set_preset(c, 2);
+		let d = button(col, "Quit", 5); set_px(d, 280.0, 64.0); set_preset(d, 2);
+	} else {
+		place_at(col, x, y, w, 400.0);
+		let t = label(col, "Paused", 0); set_px(t, w, 56.0);
+		let a = button(col, "Resume", 0); set_px(a, w, 64.0); set_preset(a, 2);
+		let b = button(col, "Options", 2); set_px(b, w, 64.0); set_preset(b, 2);
+		let c = button(col, if g == 2 { "Surrender" } else { "Loadout" }, 2); set_px(c, w, 64.0); set_preset(c, 2);
+		let d = button(col, "Quit", 5); set_px(d, w, 64.0); set_preset(d, 2);
+	}
+	let ver = label(f, "v1.04", 3);
+	place_at(ver, 80.0, 1000.0, 200.0, 36.0);
+}
+
+fn stage_settings(f int, g int, mode int) {
+	var x f32 = 360.0;
+	var y f32 = 140.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { x = 160.0; y = 80.0; }
+	let head = label(f, "Options", 0);
+	place_at(head, x, y, 400.0, 56.0);
+	let a = toggle(f, if g == 2 { "Quick cast" } else { "Aim assist" }, 1, 0); place_at(a, x, y + 80.0, 520.0, 56.0);
+	let b = toggle(f, "Voice chat", 0, 2); place_at(b, x, y + 152.0, 520.0, 56.0);
+	let s = label(f, "Sound", 2); place_at(s, x, y + 216.0, 200.0, 28.0);
+	let c = slider(f, 0.7, 0); place_at(c, x, y + 252.0, 520.0, 40.0);
+	let e = label(f, "Look", 2); place_at(e, x, y + 304.0, 200.0, 32.0);
+	let d = slider(f, 0.4, 2); place_at(d, x, y + 344.0, 520.0, 40.0);
+	let apply = button(f, "Apply", 0); place_at(apply, x, y + 408.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn stage_shop_fps(f int, g int, mode int) {
+	var x f32 = 160.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 480.0; }
+	else if mode == 2 { y = 360.0; }
+	else if mode == 3 { x = 80.0; y = 80.0; }
+	else if mode == 4 { x = 160.0; y = 480.0; }
+	let head = label(f, if g == 2 { "Shop" } else { "Loadout" }, 0);
+	place_at(head, x, y, 400.0, 56.0);
+	let gold = label(f, "840 cr", 1);
+	place_at(gold, x + 880.0, y, 240.0, 48.0);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 24.0);
+	set_pad(row, 0.0);
+	place_at(row, x, y + 176.0, 1224.0, 200.0);
+	let a = button(row, if g == 2 { "Boots  300" } else { "Rifle  2900" }, 0); set_px(a, 288.0, 200.0); set_preset(a, 2);
+	let b = button(row, if g == 2 { "Tome  400" } else { "Vest  1000" }, 2); set_px(b, 288.0, 200.0); set_preset(b, 2);
+	let c = button(row, if g == 2 { "Gold  350" } else { "Ghost  500" }, 2); set_px(c, 288.0, 200.0); set_preset(c, 2);
+	let d = button(row, if g == 2 { "Ward  75" } else { "Sheriff  800" }, 2); set_px(d, 288.0, 200.0); set_preset(d, 2);
+	let ia = icon_button(f, if g == 2 { 52 } else { 77 }, 2); place_at(ia, x + 108.0, y + 88.0, 72.0, 72.0);
+	let ib = icon_button(f, if g == 2 { 14 } else { 1 }, 2); place_at(ib, x + 420.0, y + 88.0, 72.0, 72.0);
+	let ic = icon_button(f, if g == 2 { 5 } else { 50 }, 2); place_at(ic, x + 732.0, y + 88.0, 72.0, 72.0);
+	let id = icon_button(f, if g == 2 { 17 } else { 0 }, 2); place_at(id, x + 1044.0, y + 88.0, 72.0, 72.0);
+	let buy = button(f, "Buy", 0); place_at(buy, x, y + 400.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_map_fps(f int, g int, mode int) {
+	var x f32 = 80.0;
+	var y f32 = 80.0;
+	var w f32 = 1280.0;
+	var h f32 = 920.0;
+	if mode == 1 { x = 560.0; w = 1280.0; }
+	else if mode == 2 { y = 200.0; h = 760.0; w = 1760.0; }
+	else if mode == 3 { x = 80.0; y = 240.0; w = 1760.0; h = 640.0; }
+	else if mode == 4 { x = 480.0; y = 120.0; w = 960.0; h = 840.0; }
+	let map = minimap(f, 0);
+	place_at(map, x, y, w, h);
+	N[map].i3 = g;
+	let pin = button(f, "Ping", 0); place_at(pin, 80.0, 1000.0, 200.0, 56.0); set_preset(pin, 2);
+	let mark = button(f, "Mark", 2); place_at(mark, 300.0, 1000.0, 200.0, 56.0); set_preset(mark, 2);
+	let title = label(f, if g == 2 { "Rift" } else { "Strike map" }, 1); place_at(title, 80.0, 24.0, 360.0, 48.0);
+}
+
+fn board(f int, x f32, y f32, h0 const byte[:], h1 const byte[:], h2 const byte[:]) int {
+	let tb = table(f, 6, 3, 2);
+	place_at(tb, x, y, 720.0, 280.0);
+	table_set(tb, -1, 0, h0);
+	table_set(tb, -1, 1, h1);
+	table_set(tb, -1, 2, h2);
+	tb
+}
+
+fn stage_results_fps(f int, g int, mode int) {
+	var rx f32 = 80.0;
+	var ry f32 = 80.0;
+	var tx f32 = 640.0;
+	var ty f32 = 200.0;
+	if mode == 1 { rx = 1280.0; tx = 80.0; }
+	else if mode == 2 { rx = 680.0; ry = 80.0; tx = 360.0; ty = 280.0; }
+	else if mode == 3 { rx = 80.0; ry = 640.0; tx = 80.0; ty = 80.0; }
+	else if mode == 4 { rx = 80.0; ry = 200.0; tx = 900.0; ty = 200.0; }
+	let rank = label(f, if g == 2 { "VICTORY" } else { "WIN" }, 0);
+	place_at(rank, rx, ry, 400.0, 72.0);
+	let sub = label(f, if g == 2 { "12 / 3 / 7" } else { "13  -  9" }, 1);
+	place_at(sub, rx, ry + 80.0, 400.0, 48.0);
+	let tb = board(f, tx, ty, "Stat", "You", "Squad");
+	table_set(tb, 0, 0, "Kills"); table_set(tb, 0, 1, "18"); table_set(tb, 0, 2, "9");
+	table_set(tb, 1, 0, "Deaths"); table_set(tb, 1, 1, "7"); table_set(tb, 1, 2, "11");
+	table_set(tb, 2, 0, "Plants"); table_set(tb, 2, 1, "3"); table_set(tb, 2, 2, "1");
+	table_set(tb, 3, 0, "Score"); table_set(tb, 3, 1, "2840"); table_set(tb, 3, 2, "1910");
+	table_set(tb, 4, 0, "Shots"); table_set(tb, 4, 1, "86"); table_set(tb, 4, 2, "74");
+	table_set(tb, 5, 0, "Hits"); table_set(tb, 5, 1, "31"); table_set(tb, 5, 2, "22");
+	let rw = label(f, "Rewards", 2);
+	place_at(rw, tx, ty + 300.0, 240.0, 40.0);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	place_at(row, tx, ty + 352.0, 248.0, 72.0);
+	let a = icon_button(row, 5, 0); set_px(a, 72.0, 72.0);
+	let b = icon_button(row, 13, 2); set_px(b, 72.0, 72.0);
+	let c = icon_button(row, 43, 2); set_px(c, 72.0, 72.0);
+	let again = button(f, "Again", 0);
+	place_at(again, 80.0, 980.0, 240.0, 64.0);
+	set_preset(again, 2);
+}
+
+fn member(col int, name const byte[:], hp const byte[:]) {
+	let box = flex(col, DIR_COL);
+	set_gap(box, 4.0);
+	set_pad(box, 0.0);
+	set_px(box, 220.0, 100.0);
+	let n = label(box, name, 2); set_px(n, 220.0, 32.0);
+	let b = health_bar(box, 0.7, 0); set_px(b, 220.0, 20.0);
+	let h = label(box, hp, 3); set_px(h, 220.0, 28.0);
+}
+
+fn party_line(f int, x f32, y f32) {
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	place_at(row, x, y, 928.0, 100.0);
+	member(row, "Mira", "420");
+	member(row, "Soren", "310");
+	member(row, "Vela", "280");
+	member(row, "Bram", "190");
+}
+
+fn cmd_menu(f int, x f32, y f32) {
+	let col = flex(f, DIR_COL);
+	set_gap(col, 12.0);
+	set_pad(col, 0.0);
+	place_at(col, x, y, 280.0, 260.0);
+	let a = button(col, "Attack", 0); set_px(a, 280.0, 56.0); set_preset(a, 2);
+	let b = button(col, "Magic", 2); set_px(b, 280.0, 56.0); set_preset(b, 2);
+	let c = button(col, "Item", 2); set_px(c, 280.0, 56.0); set_preset(c, 2);
+	let d = button(col, "Defend", 5); set_px(d, 280.0, 56.0); set_preset(d, 2);
+}
+
+fn turn_row(f int, x f32, y f32) {
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	place_at(row, x, y, 492.0, 36.0);
+	let a = label(row, "Mira", 3); set_px(a, 100.0, 36.0);
+	let b = label(row, "Boss", 3); set_px(b, 100.0, 36.0); N[b].fg = 0xFFD0C2 as u32;
+	let c = label(row, "Soren", 3); set_px(c, 100.0, 36.0);
+	let d = label(row, "Vela", 3); set_px(d, 100.0, 36.0);
+}
+
+fn stage_hud_jrpg(f int, mode int) {
+	let foe = label(f, "Guard", 1);
+	place_at(foe, 840.0, 36.0, 240.0, 48.0);
+	mark_anchor(foe);
+	let bar = health_bar(f, 0.82, 0);
+	place_at(bar, 760.0, 96.0, 400.0, 24.0);
+	var px f32 = 80.0;
+	var py f32 = 920.0;
+	var cx f32 = 1560.0;
+	var cy f32 = 700.0;
+	var tx f32 = 80.0;
+	var ty f32 = 160.0;
+	if mode == 1 { cx = 80.0; cy = 200.0; tx = 1200.0; }
+	else if mode == 2 { py = 980.0; cx = 1500.0; cy = 860.0; }
+	else if mode == 3 { px = 80.0; py = 200.0; cx = 820.0; cy = 760.0; ty = 160.0; tx = 1200.0; }
+	else if mode == 4 { tx = 80.0; ty = 200.0; cx = 1560.0; cy = 360.0; }
+	if mode == 3 {
+		let col = flex(f, DIR_COL);
+		set_gap(col, 12.0);
+		set_pad(col, 0.0);
+		place_at(col, 80.0, 200.0, 280.0, 520.0);
+		member(col, "Mira", "420");
+		member(col, "Soren", "310");
+		member(col, "Vela", "280");
+		member(col, "Bram", "190");
+	} else {
+		party_line(f, px, py);
+	}
+	cmd_menu(f, cx, cy);
+	turn_row(f, tx, ty);
+}
+
+fn grid_menu(f int, x f32, y f32, a const byte[:], b const byte[:], c const byte[:], d const byte[:], e const byte[:], g6 const byte[:]) {
+	let grid = flex(f, DIR_COL);
+	set_gap(grid, 16.0);
+	set_pad(grid, 0.0);
+	place_at(grid, x, y, 888.0, 256.0);
+	let r1 = flex(grid, DIR_ROW); set_gap(r1, 24.0); set_pad(r1, 0.0); set_px(r1, 888.0, 120.0);
+	let r2 = flex(grid, DIR_ROW); set_gap(r2, 24.0); set_pad(r2, 0.0); set_px(r2, 888.0, 120.0);
+	let b1 = button(r1, a, 0); set_px(b1, 280.0, 120.0); set_preset(b1, 2);
+	let b2 = button(r1, b, 2); set_px(b2, 280.0, 120.0); set_preset(b2, 2);
+	let b3 = button(r1, c, 2); set_px(b3, 280.0, 120.0); set_preset(b3, 2);
+	let b4 = button(r2, d, 2); set_px(b4, 280.0, 120.0); set_preset(b4, 2);
+	let b5 = button(r2, e, 2); set_px(b5, 280.0, 120.0); set_preset(b5, 2);
+	let b6 = button(r2, g6, 5); set_px(b6, 280.0, 120.0); set_preset(b6, 2);
+}
+
+fn stage_pause_jrpg(f int, mode int) {
+	var x f32 = 516.0;
+	var y f32 = 360.0;
+	if mode == 1 { x = 80.0; y = 200.0; }
+	else if mode == 2 { x = 960.0; y = 180.0; }
+	else if mode == 3 { x = 516.0; y = 700.0; }
+	else if mode == 4 { x = 200.0; y = 80.0; }
+	let head = label(f, "Menu", 0);
+	place_at(head, x, y, 400.0, 56.0);
+	grid_menu(f, x, y + 72.0, "Party", "Items", "Magic", "Equip", "Save", "Quit");
+}
+
+fn stage_settings_jrpg(f int, mode int) {
+	var x f32 = 160.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 720.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 240.0; }
+	let head = label(f, "Config", 0); place_at(head, x, y, 400.0, 56.0);
+	let a = label(f, "Message", 2); place_at(a, x, y + 80.0, 240.0, 40.0);
+	let b = label(f, "Battle", 2); place_at(b, x, y + 160.0, 240.0, 40.0);
+	let c = label(f, "Cursor", 2); place_at(c, x, y + 240.0, 240.0, 40.0);
+	let s1 = slider(f, 0.35, 0); place_at(s1, x + 280.0, y + 88.0, 480.0, 28.0);
+	let s2 = slider(f, 0.6, 0); place_at(s2, x + 280.0, y + 168.0, 480.0, 28.0);
+	let s3 = slider(f, 0.8, 2); place_at(s3, x + 280.0, y + 248.0, 480.0, 28.0);
+	let apply = button(f, "Save", 0); place_at(apply, x, y + 340.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn ware(col int, name const byte[:], price const byte[:], icon int) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	set_px(row, 640.0, 64.0);
+	let ic = icon_button(row, icon, 3); set_px(ic, 48.0, 48.0);
+	let n = label(row, name, 2); set_px(n, 360.0, 48.0);
+	let p = label(row, price, 2); set_px(p, 160.0, 48.0);
+}
+
+fn stage_shop_jrpg(f int, mode int) {
+	var lx f32 = 80.0;
+	var ly f32 = 160.0;
+	var dx f32 = 820.0;
+	var dy f32 = 160.0;
+	if mode == 1 { lx = 880.0; dx = 80.0; }
+	else if mode == 2 { ly = 560.0; dy = 80.0; dx = 1040.0; }
+	else if mode == 3 { lx = 480.0; dx = 1240.0; dy = 360.0; }
+	else if mode == 4 { ly = 80.0; dy = 520.0; dx = 480.0; }
+	let head = label(f, "Shop", 0); place_at(head, lx, ly - 72.0, 280.0, 56.0);
+	let list = flex(f, DIR_COL);
+	set_gap(list, 12.0);
+	set_pad(list, 0.0);
+	place_at(list, lx, ly, 640.0, 292.0);
+	ware(list, "Potion", "50", 4);
+	ware(list, "Ether", "150", 16);
+	ware(list, "Tent", "200", 6);
+	ware(list, "Phoenix", "500", 15);
+	let detail = card(f, "", 2);
+	set_gap(detail, 16.0);
+	set_pad(detail, 24.0);
+	place_at(detail, dx, dy, 400.0, 400.0);
+	let big = icon_button(detail, 4, 0); set_px(big, 120.0, 120.0);
+	let name = label(detail, "Potion", 1); set_px(name, 352.0, 48.0);
+	let buy = button(detail, "Buy", 0); set_px(buy, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_map_jrpg(f int, mode int) {
+	var lx f32 = 48.0;
+	var mx f32 = 420.0;
+	var my f32 = 80.0;
+	var mw f32 = 1440.0;
+	var mh f32 = 880.0;
+	if mode == 1 { lx = 1560.0; mx = 48.0; mw = 1440.0; }
+	else if mode == 2 { my = 80.0; mh = 720.0; mw = 1760.0; mx = 80.0; lx = 80.0; }
+	else if mode == 3 { my = 360.0; mh = 640.0; }
+	else if mode == 4 { mx = 480.0; mw = 960.0; mh = 840.0; my = 120.0; }
+	let map = minimap(f, 0); place_at(map, mx, my, mw, mh); N[map].i3 = 4;
+	if mode == 2 {
+		let a = button(f, "Harbor", 0); place_at(a, 80.0, 840.0, 280.0, 56.0); set_preset(a, 2);
+		let b = button(f, "Frost", 2); place_at(b, 376.0, 840.0, 280.0, 56.0); set_preset(b, 2);
+		let c = button(f, "Capital", 2); place_at(c, 672.0, 840.0, 280.0, 56.0); set_preset(c, 2);
+		let d = button(f, "Skiff", 5); place_at(d, 968.0, 840.0, 280.0, 56.0); set_preset(d, 2);
+	} else {
+		let a = button(f, "Harbor", 0); place_at(a, lx, 160.0, 280.0, 64.0); set_preset(a, 2);
+		let b = button(f, "Frost", 2); place_at(b, lx, 240.0, 280.0, 64.0); set_preset(b, 2);
+		let c = button(f, "Capital", 2); place_at(c, lx, 320.0, 280.0, 64.0); set_preset(c, 2);
+		let d = button(f, "Skiff", 5); place_at(d, lx, 400.0, 280.0, 64.0); set_preset(d, 2);
+	}
+}
+
+fn stage_results_jrpg(f int, mode int) {
+	var y f32 = 80.0;
+	var ry f32 = 520.0;
+	if mode == 1 { y = 200.0; ry = 720.0; }
+	else if mode == 2 { y = 40.0; ry = 360.0; }
+	else if mode == 3 { y = 360.0; ry = 160.0; }
+	else if mode == 4 { y = 120.0; ry = 860.0; }
+	let win = label(f, "VICTORY", 0);
+	place_at(win, 760.0, y, 400.0, 64.0);
+	mark_anchor(win);
+	let xp = label(f, "2400 XP", 1);
+	place_at(xp, 800.0, y + 72.0, 320.0, 40.0);
+	let tb = board(f, 1040.0, y + 120.0, "Name", "HP", "XP");
+	table_set(tb, 0, 0, "Mira"); table_set(tb, 0, 1, "420"); table_set(tb, 0, 2, "800");
+	table_set(tb, 1, 0, "Soren"); table_set(tb, 1, 1, "310"); table_set(tb, 1, 2, "640");
+	table_set(tb, 2, 0, "Vela"); table_set(tb, 2, 1, "280"); table_set(tb, 2, 2, "510");
+	table_set(tb, 3, 0, "Bram"); table_set(tb, 3, 1, "190"); table_set(tb, 3, 2, "450");
+	table_set(tb, 4, 0, "Gil"); table_set(tb, 4, 1, "0"); table_set(tb, 4, 2, "1200");
+	table_set(tb, 5, 0, "Time"); table_set(tb, 5, 1, "4:12"); table_set(tb, 5, 2, "4:12");
+	let rw = label(f, "Spoils", 2); place_at(rw, 160.0, ry, 200.0, 36.0);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	place_at(row, 160.0, ry + 48.0, 248.0, 72.0);
+	let a = icon_button(row, 4, 0); set_px(a, 72.0, 72.0);
+	let b = icon_button(row, 5, 2); set_px(b, 72.0, 72.0);
+	let c = icon_button(row, 43, 2); set_px(c, 72.0, 72.0);
+	let next = button(f, "Onward", 0); place_at(next, 1520.0, 980.0, 280.0, 64.0); set_preset(next, 2);
+}
+
+fn stage_hud_souls(f int, mode int) {
+	let boss = label(f, "Ashgate", 1);
+	place_at(boss, 760.0, 36.0, 400.0, 56.0);
+	mark_anchor(boss);
+	let bar = boss_bar(f, 0.64);
+	place_at(bar, 640.0, 108.0, 640.0, 36.0);
+	let souls = label(f, "1240", 1);
+	place_at(souls, 1600.0, 48.0, 240.0, 48.0);
+	var hx f32 = 48.0;
+	var hy f32 = 880.0;
+	var ex f32 = 520.0;
+	var ix f32 = 1100.0;
+	var iy f32 = 960.0;
+	if mode == 1 { hx = 760.0; ex = 48.0; ix = 1500.0; }
+	else if mode == 2 { ex = 1700.0; ix = 900.0; iy = 880.0; hy = 960.0; }
+	else if mode == 3 { iy = 800.0; }
+	else if mode == 4 { hx = 1400.0; ex = 48.0; ix = 700.0; }
+	vitals(f, hx, hy);
+	let flask = icon_button(f, 4, 0); place_at(flask, ex, hy + 8.0, 64.0, 64.0);
+	let count = label(f, "3", 1); place_at(count, ex + 80.0, hy + 20.0, 48.0, 40.0);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	place_at(row, ix, iy, 260.0, 56.0);
+	let a = icon_button(row, 0, 2); set_px(a, 56.0, 56.0);
+	let b = icon_button(row, 1, 2); set_px(b, 56.0, 56.0);
+	let c = icon_button(row, 4, 2); set_px(c, 56.0, 56.0);
+	let d = icon_button(row, 8, 2); set_px(d, 56.0, 56.0);
+}
+
+fn stage_pause_souls(f int, mode int) {
+	var x f32 = 80.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 1420.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; y = 80.0; }
+	else if mode == 4 { x = 760.0; y = 280.0; }
+	let head = label(f, "Ash", 0); place_at(head, x, y, 420.0, 64.0);
+	let col = flex(f, DIR_COL);
+	set_gap(col, 24.0);
+	set_pad(col, 0.0);
+	place_at(col, x, y + 88.0, 420.0, 360.0);
+	let a = button(col, "Continue", 0); set_px(a, 420.0, 72.0); set_preset(a, 2);
+	let b = button(col, "Inventory", 2); set_px(b, 420.0, 72.0); set_preset(b, 2);
+	let c = button(col, "Settings", 2); set_px(c, 420.0, 72.0); set_preset(c, 2);
+	let d = button(col, "Quit", 5); set_px(d, 420.0, 72.0); set_preset(d, 2);
+}
+
+fn stage_settings_souls(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1100.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Brightness", 0); place_at(head, x, y, 480.0, 64.0);
+	let s1 = slider(f, 0.45, 0); place_at(s1, x, y + 88.0, 640.0, 32.0);
+	let cam = label(f, "Camera", 1); place_at(cam, x, y + 160.0, 320.0, 48.0);
+	let s2 = slider(f, 0.7, 2); place_at(s2, x, y + 224.0, 640.0, 32.0);
+	let apply = button(f, "Accept", 0); place_at(apply, x, y + 300.0, 280.0, 64.0); set_preset(apply, 2);
+}
+
+fn stage_shop_souls(f int, mode int) {
+	var x f32 = 560.0;
+	var y f32 = 120.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1120.0; }
+	else if mode == 3 { y = 360.0; }
+	else if mode == 4 { x = 320.0; y = 80.0; }
+	let head = label(f, "Vendor", 0); place_at(head, x, y, 400.0, 64.0);
+	let list = flex(f, DIR_COL);
+	set_gap(list, 16.0);
+	set_pad(list, 0.0);
+	place_at(list, x, y + 88.0, 640.0, 304.0);
+	ware(list, "Flask", "800", 4);
+	ware(list, "Rune", "1200", 43);
+	ware(list, "Gem", "2000", 13);
+	ware(list, "Ash", "400", 3);
+}
+
+fn stage_map_souls(f int, mode int) {
+	var my f32 = 48.0;
+	var mh f32 = 840.0;
+	var by f32 = 920.0;
+	if mode == 1 { my = 160.0; mh = 720.0; by = 80.0; }
+	else if mode == 2 { mh = 700.0; by = 780.0; }
+	else if mode == 3 { my = 80.0; mh = 640.0; by = 760.0; }
+	else if mode == 4 { my = 200.0; mh = 680.0; by = 920.0; }
+	let map = minimap(f, 0); place_at(map, 80.0, my, 1760.0, mh); N[map].i3 = 5;
+	let a = button(f, "Hearth", 0); place_at(a, 80.0, by, 280.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Cloister", 2); place_at(b, 376.0, by, 280.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Cistern", 5); place_at(c, 672.0, by, 280.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_results_souls(f int, mode int) {
+	var y f32 = 280.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 520.0; }
+	else if mode == 3 { y = 160.0; }
+	else if mode == 4 { y = 400.0; }
+	let dead = label(f, "YOU DIED", 0);
+	place_at(dead, 700.0, y, 520.0, 72.0);
+	mark_anchor(dead);
+	let tb = board(f, 600.0, y + 88.0, "Stat", "Lost", "Kept");
+	table_set(tb, 0, 0, "Souls"); table_set(tb, 0, 1, "1240"); table_set(tb, 0, 2, "0");
+	table_set(tb, 1, 0, "Humanity"); table_set(tb, 1, 1, "0"); table_set(tb, 1, 2, "0");
+	table_set(tb, 2, 0, "Boss"); table_set(tb, 2, 1, "64%"); table_set(tb, 2, 2, "Ashgate");
+	table_set(tb, 3, 0, "Time"); table_set(tb, 3, 1, "6:40"); table_set(tb, 3, 2, "0");
+	table_set(tb, 4, 0, "Hits"); table_set(tb, 4, 1, "18"); table_set(tb, 4, 2, "9");
+	table_set(tb, 5, 0, "Flask"); table_set(tb, 5, 1, "0"); table_set(tb, 5, 2, "3");
+	let retry = button(f, "Retry", 0);
+	place_at(retry, 840.0, y + 384.0, 240.0, 64.0);
+	set_preset(retry, 2);
+	let hum = label(f, "Humanity  0", 2);
+	place_at(hum, 80.0, 980.0, 280.0, 40.0);
+}
+
+fn stage_hud_royale(f int, mode int) {
+	var axl f32 = 48.0;
+	if mode == 4 { axl = 360.0; }
+	let alive = label(f, "Alive  42", 1); place_at(alive, axl, 36.0, 280.0, 48.0);
+	let zone = label(f, "Storm  240m", 2);
+	place_at(zone, 800.0, 36.0, 320.0, 40.0);
+	mark_anchor(zone);
+	var mx f32 = 48.0;
+	var my f32 = 100.0;
+	var ms f32 = 240.0;
+	var hx f32 = 48.0;
+	var hy f32 = 900.0;
+	var bx f32 = 760.0;
+	var by f32 = 980.0;
+	var fx f32 = 1640.0;
+	if mode == 1 { ms = 180.0; bx = 800.0; }
+	else if mode == 2 { hy = 820.0; by = 940.0; hx = 640.0; }
+	else if mode == 3 { mx = 80.0; my = 200.0; fx = 1560.0; }
+	else if mode == 4 { mx = 1632.0; my = 48.0; fx = 48.0; hx = 1400.0; }
+	let map = minimap(f, 0); place_at(map, mx, my, ms, ms); N[map].i3 = 1;
+	feed_col(f, fx, 48.0);
+	vitals(f, hx, hy);
+	let row = flex(f, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	place_at(row, bx, by, 328.0, 56.0);
+	let a = icon_button(row, 77, 2); set_px(a, 56.0, 56.0);
+	let b = icon_button(row, 4, 2); set_px(b, 56.0, 56.0);
+	let c = icon_button(row, 1, 2); set_px(c, 56.0, 56.0);
+	let d = icon_button(row, 74, 2); set_px(d, 56.0, 56.0);
+	let e = icon_button(row, 7, 2); set_px(e, 56.0, 56.0);
+}
+
+fn stage_pause_royale(f int, mode int) {
+	var x f32 = 520.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1000.0; y = 160.0; }
+	else if mode == 3 { y = 640.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Leave match?", 0); place_at(head, x, y, 640.0, 72.0);
+	let sub = label(f, "Squad of 3 will stay", 2); place_at(sub, x, y + 80.0, 520.0, 40.0);
+	let stay = button(f, "Stay", 0); place_at(stay, x, y + 160.0, 300.0, 80.0); set_preset(stay, 1);
+	let leave = button(f, "Leave", 5); place_at(leave, x + 324.0, y + 160.0, 300.0, 80.0); set_preset(leave, 1);
+}
+
+fn stage_shop_royale(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 80.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 480.0; y = 200.0; }
+	else if mode == 3 { y = 360.0; }
+	else if mode == 4 { x = 160.0; y = 40.0; }
+	let banner = button(f, "Featured glider", 0); place_at(banner, x, y, 880.0, 112.0); set_preset(banner, 1);
+	let ia = icon_button(f, 13, 0); place_at(ia, x + 108.0, y + 128.0, 64.0, 64.0);
+	let ib = icon_button(f, 11, 0); place_at(ib, x + 412.0, y + 128.0, 64.0, 64.0);
+	let ic = icon_button(f, 45, 0); place_at(ic, x + 716.0, y + 128.0, 64.0, 64.0);
+	let g1 = flex(f, DIR_ROW); set_gap(g1, 24.0); set_pad(g1, 0.0); place_at(g1, x, y + 208.0, 888.0, 140.0);
+	let a = button(g1, "Wrap", 2); set_px(a, 280.0, 140.0); set_preset(a, 2);
+	let b = button(g1, "Emote", 2); set_px(b, 280.0, 140.0); set_preset(b, 2);
+	let c = button(g1, "Pickaxe", 2); set_px(c, 280.0, 140.0); set_preset(c, 2);
+	let buy = button(f, "Equip", 0); place_at(buy, x, y + 364.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_settings_royale(f int, mode int) {
+	var x f32 = 360.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 900.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Drop settings", 0); place_at(head, x, y, 520.0, 64.0);
+	let a = label(f, "Look", 2); place_at(a, x, y + 88.0, 200.0, 36.0);
+	let s1 = slider(f, 0.55, 0); place_at(s1, x + 220.0, y + 92.0, 480.0, 28.0);
+	let b = label(f, "Voice", 2); place_at(b, x, y + 160.0, 200.0, 36.0);
+	let s2 = slider(f, 0.8, 2); place_at(s2, x + 220.0, y + 164.0, 480.0, 28.0);
+	let apply = button(f, "Apply", 0); place_at(apply, x, y + 240.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn stage_map_royale(f int, mode int) {
+	var my f32 = 80.0;
+	var mh f32 = 800.0;
+	var by f32 = 920.0;
+	if mode == 1 { my = 200.0; mh = 680.0; by = 80.0; }
+	else if mode == 2 { mh = 720.0; by = 840.0; }
+	else if mode == 3 { my = 48.0; mh = 640.0; by = 720.0; }
+	else if mode == 4 { my = 160.0; mh = 720.0; by = 920.0; }
+	let map = minimap(f, 0); place_at(map, 160.0, my, 1600.0, mh); N[map].i3 = 1;
+	let storm = button(f, "Storm", 5); place_at(storm, 80.0, by, 240.0, 56.0); set_preset(storm, 2);
+	let safe = button(f, "Safe", 0); place_at(safe, 340.0, by, 240.0, 56.0); set_preset(safe, 2);
+	let ping = button(f, "Ping", 2); place_at(ping, 600.0, by, 240.0, 56.0); set_preset(ping, 2);
+}
+
+fn stage_results_royale(f int, mode int) {
+	var y f32 = 160.0;
+	var ry f32 = 640.0;
+	if mode == 1 { y = 80.0; ry = 480.0; }
+	else if mode == 2 { y = 360.0; ry = 160.0; }
+	else if mode == 3 { y = 200.0; ry = 760.0; }
+	else if mode == 4 { y = 80.0; ry = 720.0; }
+	let place = label(f, "3rd", 0);
+	place_at(place, 800.0, y, 320.0, 80.0);
+	mark_anchor(place);
+	let tb = board(f, 600.0, y + 96.0, "Stat", "You", "Squad");
+	table_set(tb, 0, 0, "Elims"); table_set(tb, 0, 1, "12"); table_set(tb, 0, 2, "4");
+	table_set(tb, 1, 0, "Damage"); table_set(tb, 1, 1, "1840"); table_set(tb, 1, 2, "620");
+	table_set(tb, 2, 0, "Accuracy"); table_set(tb, 2, 1, "28%"); table_set(tb, 2, 2, "19%");
+	table_set(tb, 3, 0, "Survived"); table_set(tb, 3, 1, "18:40"); table_set(tb, 3, 2, "12:10");
+	table_set(tb, 4, 0, "Revives"); table_set(tb, 4, 1, "2"); table_set(tb, 4, 2, "1");
+	table_set(tb, 5, 0, "Place"); table_set(tb, 5, 1, "3"); table_set(tb, 5, 2, "11");
+	let rw = label(f, "Rewards", 2); place_at(rw, 160.0, ry, 240.0, 36.0);
+	let row = flex(f, DIR_ROW); set_gap(row, 16.0); set_pad(row, 0.0); place_at(row, 160.0, ry + 48.0, 248.0, 72.0);
+	let a = icon_button(row, 5, 0); set_px(a, 72.0, 72.0);
+	let b = icon_button(row, 13, 2); set_px(b, 72.0, 72.0);
+	let c = icon_button(row, 42, 2); set_px(c, 72.0, 72.0);
+	let again = button(f, "Queue", 0); place_at(again, 1520.0, 960.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_hud_racing(f int, mode int) {
+	var sx f32 = 1480.0;
+	var sy f32 = 820.0;
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var bx f32 = 48.0;
+	var gx f32 = 1360.0;
+	var secx f32 = 760.0;
+	if mode == 1 { sx = 800.0; sy = 880.0; gx = 680.0; secx = 48.0; }
+	else if mode == 2 { sx = 1480.0; my = 840.0; gx = 1360.0; }
+	else if mode == 3 { sx = 1480.0; sy = 160.0; bx = 400.0; gx = 1360.0; }
+	else if mode == 4 { sx = 80.0; sy = 860.0; mx = 1560.0; bx = 400.0; gx = 420.0; }
+	let pos = label(f, "P2", 0); place_at(pos, 48.0, 36.0, 160.0, 72.0);
+	let lap = label(f, "Lap  2 / 3", 1); place_at(lap, 760.0, 36.0, 400.0, 48.0); mark_anchor(lap);
+	let split = label(f, "1:12.4", 2); place_at(split, 1600.0, 36.0, 240.0, 40.0);
+	let drs = label(f, "DRS", 2); place_at(drs, 400.0, 48.0, 120.0, 40.0);
+	let board = flex(f, DIR_COL); set_gap(board, 8.0); set_pad(board, 0.0);
+	place_at(board, bx, 140.0, 240.0, 200.0);
+	let s1 = label(board, "1  Pell", 3); set_px(s1, 240.0, 36.0);
+	let s2 = label(board, "2  You", 3); set_px(s2, 240.0, 36.0);
+	let s3 = label(board, "3  Rex", 3); set_px(s3, 240.0, 36.0);
+	let s4 = label(board, "4  Ion", 3); set_px(s4, 240.0, 36.0);
+	let speed = label(f, "187", 0); place_at(speed, sx, sy, 200.0, 80.0);
+	let unit = label(f, "km/h", 3); place_at(unit, sx + 200.0, sy + 40.0, 120.0, 32.0);
+	let gear = label(f, "3", 0); place_at(gear, gx, sy, 80.0, 80.0);
+	let delta = label(f, "-0.42", 2); place_at(delta, sx, sy - 48.0, 200.0, 36.0);
+	let boost = health_bar(f, 0.7, 2); place_at(boost, sx, sy + 96.0, 320.0, 20.0);
+	let sec = label(f, "Sector 2", 2); place_at(sec, secx, 980.0, 280.0, 40.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 7;
+}
+
+fn stage_pause_racing(f int, mode int) {
+	var y f32 = 880.0;
+	var x f32 = 160.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 360.0; }
+	else if mode == 3 { x = 1040.0; y = 360.0; }
+	else if mode == 4 { y = 480.0; x = 360.0; }
+	let head = label(f, "Pit", 0); place_at(head, x, y - 72.0, 200.0, 56.0);
+	let row = flex(f, DIR_ROW); set_gap(row, 16.0); set_pad(row, 0.0);
+	place_at(row, x, y, 1192.0, 72.0);
+	let a = button(row, "Resume", 0); set_px(a, 280.0, 72.0); set_preset(a, 2);
+	let b = button(row, "Restart", 2); set_px(b, 280.0, 72.0); set_preset(b, 2);
+	let c = button(row, "Garage", 2); set_px(c, 280.0, 72.0); set_preset(c, 2);
+	let d = button(row, "Quit", 5); set_px(d, 280.0, 72.0); set_preset(d, 2);
+}
+
+fn upgrade_row(col int, name const byte[:], price const byte[:]) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 16.0);
+	set_pad(row, 0.0);
+	set_px(row, 880.0, 48.0);
+	let n = label(row, name, 2); set_px(n, 160.0, 40.0);
+	let bar = health_bar(row, 0.6, 2); set_px(bar, 480.0, 20.0);
+	let p = label(row, price, 2); set_px(p, 200.0, 40.0);
+}
+
+fn stage_shop_racing(f int, mode int) {
+	var x f32 = 400.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 960.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 240.0; }
+	let head = label(f, "Aero coupe", 0); place_at(head, x, y, 520.0, 64.0);
+	let list = flex(f, DIR_COL); set_gap(list, 16.0); set_pad(list, 0.0);
+	place_at(list, x, y + 88.0, 880.0, 240.0);
+	upgrade_row(list, "Aero", "1200");
+	upgrade_row(list, "Grip", "800");
+	upgrade_row(list, "Fuel", "400");
+	upgrade_row(list, "Turbo", "2000");
+	let buy = button(f, "Install", 0); place_at(buy, x, y + 360.0, 280.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_racing(f int, mode int) {
+	var y f32 = 160.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 240.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Finish", 0); place_at(head, 760.0, y, 400.0, 64.0); mark_anchor(head);
+	let lap = label(f, "Circuit", 2); place_at(lap, 80.0, y, 240.0, 40.0);
+	let tb = board(f, 600.0, y + 88.0, "Place", "Driver", "Time");
+	table_set(tb, 0, 0, "1"); table_set(tb, 0, 1, "Pell"); table_set(tb, 0, 2, "1:12.4");
+	table_set(tb, 1, 0, "2"); table_set(tb, 1, 1, "You"); table_set(tb, 1, 2, "1:12.8");
+	table_set(tb, 2, 0, "3"); table_set(tb, 2, 1, "Rex"); table_set(tb, 2, 2, "1:13.1");
+	table_set(tb, 3, 0, "4"); table_set(tb, 3, 1, "Ion"); table_set(tb, 3, 2, "1:14.0");
+	table_set(tb, 4, 0, "Best"); table_set(tb, 4, 1, "You"); table_set(tb, 4, 2, "1:11.2");
+	table_set(tb, 5, 0, "Gap"); table_set(tb, 5, 1, "You"); table_set(tb, 5, 2, "+0.4");
+	let again = button(f, "Rematch", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_racing(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Assists", 0); place_at(head, x, y, 400.0, 64.0);
+	let a = toggle(f, "ABS", 1, 0); place_at(a, x, y + 88.0, 480.0, 56.0);
+	let b = toggle(f, "Traction", 1, 2); place_at(b, x, y + 160.0, 480.0, 56.0);
+	let s = slider(f, 0.5, 0); place_at(s, x, y + 240.0, 560.0, 32.0);
+	let apply = button(f, "Apply", 0); place_at(apply, x, y + 300.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn stage_map_racing(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 80.0;
+	var w f32 = 1520.0;
+	var h f32 = 800.0;
+	if mode == 1 { x = 80.0; w = 1200.0; }
+	else if mode == 2 { x = 640.0; w = 1200.0; }
+	else if mode == 3 { y = 200.0; h = 680.0; }
+	else if mode == 4 { y = 48.0; h = 720.0; }
+	let map = minimap(f, 0); place_at(map, x, y, w, h); N[map].i3 = 7;
+	let lap = label(f, "Circuit", 1); place_at(lap, 80.0, 980.0, 280.0, 48.0);
+	let best = label(f, "Best  1:11.2", 2); place_at(best, 400.0, 988.0, 320.0, 36.0);
+	let next = label(f, "Next  hairpin", 2); place_at(next, 760.0, 988.0, 320.0, 36.0);
+}
+
+fn stage_hud_fighting(f int, mode int) {
+	var y f32 = 36.0;
+	var by f32 = 88.0;
+	var ty f32 = 36.0;
+	if mode == 1 { by = 280.0; y = 228.0; }
+	else if mode == 2 { by = 80.0; y = 28.0; ty = 440.0; }
+	else if mode == 3 { by = 120.0; y = 48.0; ty = 48.0; }
+	else if mode == 4 { by = 900.0; y = 840.0; ty = 36.0; }
+	let ln = label(f, "Juno", 0); place_at(ln, 48.0, y, 280.0, 40.0);
+	let rn = label(f, "Kade", 0); place_at(rn, 1592.0, y, 280.0, 40.0);
+	let lb = health_bar(f, 0.72, 0); place_at(lb, 48.0, by, 720.0, 28.0);
+	let rb = health_bar(f, 0.55, 1); place_at(rb, 1152.0, by, 720.0, 28.0);
+	let lm = health_bar(f, 0.4, 2); place_at(lm, 48.0, by + 40.0, 480.0, 16.0);
+	let rm = health_bar(f, 0.85, 2); place_at(rm, 1392.0, by + 40.0, 480.0, 16.0);
+	let p0 = icon_button(f, 13, 0); place_at(p0, 48.0, by + 68.0, 36.0, 36.0);
+	let p1 = icon_button(f, 13, 2); place_at(p1, 96.0, by + 68.0, 36.0, 36.0);
+	let p2 = icon_button(f, 13, 0); place_at(p2, 1788.0, by + 68.0, 36.0, 36.0);
+	let p3 = icon_button(f, 13, 2); place_at(p3, 1836.0, by + 68.0, 36.0, 36.0);
+	let timer = label(f, "99", 0); place_at(timer, 880.0, ty, 160.0, 72.0); mark_anchor(timer);
+	let round = label(f, "Round 2", 2); place_at(round, 840.0, ty + 80.0, 240.0, 32.0); mark_anchor(round);
+	let combo = label(f, "12 hits", 1); place_at(combo, 840.0, ty + 120.0, 240.0, 36.0); mark_anchor(combo);
+	let drive = label(f, "Drive", 3); place_at(drive, 560.0, by + 36.0, 160.0, 28.0);
+}
+
+fn stage_pause_fighting(f int, mode int) {
+	var y f32 = 240.0;
+	var lx f32 = 160.0;
+	var rx f32 = 1040.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { lx = 360.0; rx = 1080.0; y = 320.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { lx = 80.0; rx = 1280.0; y = 280.0; }
+	let a = label(f, "P1", 0); place_at(a, lx, y, 200.0, 56.0);
+	let b = label(f, "P2", 0); place_at(b, rx, y, 200.0, 56.0);
+	let a0 = button(f, "Resume", 0); place_at(a0, lx, y + 80.0, 400.0, 64.0); set_preset(a0, 2);
+	let a1 = button(f, "Training", 2); place_at(a1, lx, y + 160.0, 400.0, 64.0); set_preset(a1, 2);
+	let a2 = button(f, "Character", 2); place_at(a2, lx, y + 240.0, 400.0, 64.0); set_preset(a2, 2);
+	let b0 = button(f, "Rematch", 0); place_at(b0, rx, y + 80.0, 400.0, 64.0); set_preset(b0, 2);
+	let b1 = button(f, "Stage", 2); place_at(b1, rx, y + 160.0, 400.0, 64.0); set_preset(b1, 2);
+	let b2 = button(f, "Quit", 5); place_at(b2, rx, y + 240.0, 400.0, 64.0); set_preset(b2, 2);
+}
+
+fn stage_shop_fighting(f int, mode int) {
+	var x f32 = 160.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; y = 80.0; }
+	else if mode == 2 { x = 960.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { x = 480.0; y = 80.0; }
+	let head = label(f, "Colors", 0); place_at(head, x, y, 360.0, 56.0);
+	let c0 = button(f, "Classic  0", 0); place_at(c0, x, y + 80.0, 520.0, 64.0); set_preset(c0, 2);
+	let c1 = button(f, "Night  400", 2); place_at(c1, x, y + 160.0, 520.0, 64.0); set_preset(c1, 2);
+	let c2 = button(f, "Gold  1200", 2); place_at(c2, x, y + 240.0, 520.0, 64.0); set_preset(c2, 2);
+	let c3 = button(f, "Retro  800", 2); place_at(c3, x, y + 320.0, 520.0, 64.0); set_preset(c3, 2);
+	let buy = button(f, "Equip", 0); place_at(buy, x + 600.0, y + 160.0, 280.0, 64.0); set_preset(buy, 2);
+	let who = label(f, "Juno", 1); place_at(who, x + 600.0, y, 280.0, 56.0);
+}
+
+fn stage_results_fighting(f int, mode int) {
+	var y f32 = 200.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 360.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 120.0; }
+	let ko = label(f, "K.O.", 0); place_at(ko, 760.0, y, 400.0, 72.0); mark_anchor(ko);
+	let who = label(f, "Juno wins", 1); place_at(who, 760.0, y + 80.0, 400.0, 40.0); mark_anchor(who);
+	let tb = board(f, 600.0, y + 132.0, "Stat", "Juno", "Kade");
+	table_set(tb, 0, 0, "Rounds"); table_set(tb, 0, 1, "2"); table_set(tb, 0, 2, "1");
+	table_set(tb, 1, 0, "Time"); table_set(tb, 1, 1, "48"); table_set(tb, 1, 2, "48");
+	table_set(tb, 2, 0, "Damage"); table_set(tb, 2, 1, "312"); table_set(tb, 2, 2, "240");
+	table_set(tb, 3, 0, "Combo"); table_set(tb, 3, 1, "12"); table_set(tb, 3, 2, "6");
+	table_set(tb, 4, 0, "Super"); table_set(tb, 4, 1, "1"); table_set(tb, 4, 2, "0");
+	table_set(tb, 5, 0, "Perfect"); table_set(tb, 5, 1, "0"); table_set(tb, 5, 2, "0");
+	let again = button(f, "Rematch", 0); place_at(again, 560.0, y + 428.0, 360.0, 64.0); set_preset(again, 2);
+	let next = button(f, "Character", 2); place_at(next, 1000.0, y + 428.0, 360.0, 64.0); set_preset(next, 2);
+}
+
+fn stage_settings_fighting(f int, mode int) {
+	var y f32 = 200.0;
+	var lx f32 = 160.0;
+	var rx f32 = 1040.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { lx = 80.0; rx = 1120.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 120.0; lx = 360.0; rx = 1080.0; }
+	let a = label(f, "P1", 0); place_at(a, lx, y, 240.0, 56.0);
+	let b = label(f, "P2", 0); place_at(b, rx, y, 240.0, 56.0);
+	let a0 = toggle(f, "Arcade", 1, 0); place_at(a0, lx, y + 80.0, 480.0, 56.0);
+	let a1 = slider(f, 0.6, 0); place_at(a1, lx, y + 160.0, 480.0, 32.0);
+	let b0 = toggle(f, "Modern", 0, 2); place_at(b0, rx, y + 80.0, 480.0, 56.0);
+	let b1 = slider(f, 0.4, 2); place_at(b1, rx, y + 160.0, 480.0, 32.0);
+}
+
+fn stage_map_fighting(f int, mode int) {
+	var y f32 = 760.0;
+	var x f32 = 160.0;
+	var mx f32 = 480.0;
+	var my f32 = 80.0;
+	var mw f32 = 960.0;
+	var mh f32 = 560.0;
+	if mode == 1 { y = 880.0; x = 80.0; }
+	else if mode == 2 { x = 80.0; y = 880.0; my = 160.0; }
+	else if mode == 3 { y = 160.0; mx = 80.0; my = 360.0; mw = 720.0; mh = 480.0; }
+	else if mode == 4 { x = 80.0; y = 880.0; mx = 480.0; my = 120.0; }
+	let map = minimap(f, 0); place_at(map, mx, my, mw, mh); N[map].i3 = 8;
+	let s0 = button(f, "Dojo", 0); place_at(s0, x, y, 360.0, 64.0); set_preset(s0, 2);
+	let s1 = button(f, "Roof", 2); place_at(s1, x + 384.0, y, 360.0, 64.0); set_preset(s1, 2);
+	let s2 = button(f, "Metro", 2); place_at(s2, x + 768.0, y, 360.0, 64.0); set_preset(s2, 2);
+	let s3 = button(f, "Temple", 2); place_at(s3, x + 1152.0, y, 360.0, 64.0); set_preset(s3, 2);
+}
+
+fn stage_hud_deck(f int, mode int) {
+	var hy f32 = 760.0;
+	var hx f32 = 428.0;
+	var gap f32 = 16.0;
+	var ch f32 = 280.0;
+	var ey f32 = 40.0;
+	var iy f32 = 120.0;
+	if mode == 1 { hy = 640.0; ch = 240.0; hx = 520.0; }
+	else if mode == 2 { hy = 840.0; ch = 200.0; hx = 560.0; gap = 8.0; }
+	else if mode == 3 { hy = 720.0; hx = 240.0; gap = 24.0; }
+	else if mode == 4 { hy = 480.0; ch = 240.0; ey = 48.0; iy = 140.0; }
+	let foe = label(f, "Acolyte", 0); place_at(foe, 760.0, ey, 400.0, 56.0); mark_anchor(foe);
+	let intent = icon_button(f, 0, 0); place_at(intent, 928.0, iy, 64.0, 64.0);
+	let dmg = label(f, "14", 0); place_at(dmg, 860.0, iy + 76.0, 200.0, 40.0); mark_anchor(dmg);
+	let hp = label(f, "72 / 80", 2); place_at(hp, 48.0, 80.0, 240.0, 36.0);
+	let bar = health_bar(f, 0.9, 0); place_at(bar, 48.0, 124.0, 320.0, 24.0);
+	let blk = label(f, "Block  12", 2); place_at(blk, 48.0, 160.0, 240.0, 32.0);
+	let nrg = label(f, "3", 0); place_at(nrg, 48.0, hy + 80.0, 80.0, 80.0);
+	let c0 = button(f, "Jab", 0); place_at(c0, hx, hy, 200.0, ch); set_preset(c0, 2);
+	let c1 = button(f, "Ward", 2); place_at(c1, hx + 200.0 + gap, hy, 200.0, ch); set_preset(c1, 2);
+	let c2 = button(f, "Slam", 2); place_at(c2, hx + (200.0 + gap) * 2.0, hy, 200.0, ch); set_preset(c2, 2);
+	let c3 = button(f, "Spark", 2); place_at(c3, hx + (200.0 + gap) * 3.0, hy, 200.0, ch); set_preset(c3, 2);
+	let c4 = button(f, "Hilt", 2); place_at(c4, hx + (200.0 + gap) * 4.0, hy, 200.0, ch); set_preset(c4, 2);
+	let endb = button(f, "End", 0); place_at(endb, 1680.0, 960.0, 180.0, 64.0); set_preset(endb, 2);
+	let draw = label(f, "Draw  7", 3); place_at(draw, 48.0, 220.0, 200.0, 32.0);
+	let disc = label(f, "Discard  4", 3); place_at(disc, 48.0, 264.0, 240.0, 32.0);
+}
+
+fn stage_pause_deck(f int, mode int) {
+	var y f32 = 480.0;
+	var x f32 = 200.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 880.0; x = 80.0; }
+	else if mode == 3 { y = 280.0; x = 360.0; }
+	else if mode == 4 { y = 640.0; x = 200.0; }
+	let head = label(f, "Paused", 0); place_at(head, 760.0, y - 80.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Map", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Deck", 2); place_at(c, x + 768.0, y, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Give up", 5); place_at(d, x + 1152.0, y, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_deck(f int, mode int) {
+	var y f32 = 240.0;
+	var x f32 = 200.0;
+	var h f32 = 480.0;
+	if mode == 1 { y = 80.0; h = 400.0; }
+	else if mode == 2 { y = 360.0; h = 360.0; }
+	else if mode == 3 { x = 80.0; y = 200.0; }
+	else if mode == 4 { y = 160.0; x = 280.0; }
+	let head = label(f, "Choose one", 0); place_at(head, 760.0, y - 80.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Jab+", 0); place_at(a, x, y, 360.0, h); set_preset(a, 0);
+	let b = button(f, "Ward+", 2); place_at(b, x + 480.0, y, 360.0, h); set_preset(b, 2);
+	let c = button(f, "Skip", 5); place_at(c, x + 960.0, y, 360.0, h); set_preset(c, 2);
+	let pa = label(f, "Cost  1", 2); place_at(pa, x, y + h + 16.0, 200.0, 36.0);
+	let pb = label(f, "Cost  1", 2); place_at(pb, x + 480.0, y + h + 16.0, 200.0, 36.0);
+}
+
+fn stage_results_deck(f int, mode int) {
+	var y f32 = 200.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 360.0; }
+	else if mode == 3 { y = 120.0; }
+	else if mode == 4 { y = 280.0; }
+	let clear = label(f, "CLEAR", 0); place_at(clear, 760.0, y, 400.0, 64.0); mark_anchor(clear);
+	let act = label(f, "Act  1", 2); place_at(act, 80.0, y, 240.0, 40.0);
+	let tb = board(f, 600.0, y + 80.0, "Stat", "Run", "Best");
+	table_set(tb, 0, 0, "Floor"); table_set(tb, 0, 1, "12"); table_set(tb, 0, 2, "17");
+	table_set(tb, 1, 0, "Gold"); table_set(tb, 1, 1, "240"); table_set(tb, 1, 2, "410");
+	table_set(tb, 2, 0, "Card"); table_set(tb, 2, 1, "Jab+"); table_set(tb, 2, 2, "Slam");
+	table_set(tb, 3, 0, "HP"); table_set(tb, 3, 1, "42"); table_set(tb, 3, 2, "18");
+	table_set(tb, 4, 0, "Deck"); table_set(tb, 4, 1, "18"); table_set(tb, 4, 2, "15");
+	table_set(tb, 5, 0, "Turns"); table_set(tb, 5, 1, "6"); table_set(tb, 5, 2, "4");
+	let go = button(f, "Continue", 0); place_at(go, 780.0, y + 376.0, 360.0, 64.0); set_preset(go, 2);
+}
+
+fn stage_settings_deck(f int, mode int) {
+	var x f32 = 640.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1120.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Run", 0); place_at(head, x, y, 320.0, 56.0);
+	let a = toggle(f, "Fast", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.5, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Shake", 0, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_deck(f int, mode int) {
+	var y f32 = 360.0;
+	var x f32 = 200.0;
+	if mode == 1 { y = 160.0; }
+	else if mode == 2 { y = 640.0; x = 80.0; }
+	else if mode == 3 { y = 200.0; x = 360.0; }
+	else if mode == 4 { y = 480.0; x = 160.0; }
+	let act = label(f, "Act  1", 0); place_at(act, 760.0, y - 80.0, 400.0, 48.0); mark_anchor(act);
+	let a = button(f, "Elite", 0); place_at(a, x, y, 280.0, 72.0); set_preset(a, 2);
+	let b = button(f, "Rest", 2); place_at(b, x + 360.0, y + 120.0, 280.0, 72.0); set_preset(b, 2);
+	let c = button(f, "Shop", 1); place_at(c, x + 720.0, y, 280.0, 72.0); set_preset(c, 2);
+	let d = button(f, "Boss", 5); place_at(d, x + 1080.0, y + 120.0, 280.0, 72.0); set_preset(d, 2);
+}
+
+fn stage_pause_moba(f int, mode int) {
+	var y f32 = 200.0;
+	var x f32 = 480.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 280.0; }
+	else if mode == 3 { y = 480.0; x = 240.0; }
+	else if mode == 4 { x = 1040.0; y = 160.0; }
+	let head = label(f, "Match paused", 0); place_at(head, 700.0, y, 520.0, 56.0); mark_anchor(head);
+	let ks = label(f, "8", 1); place_at(ks, x, y + 80.0, 120.0, 48.0);
+	let tm = label(f, "12:40", 1); place_at(tm, x + 160.0, y + 80.0, 200.0, 48.0);
+	let ds = label(f, "6", 1); place_at(ds, x + 400.0, y + 80.0, 120.0, 48.0);
+	let go = button(f, "Continue", 0); place_at(go, x, y + 160.0, 280.0, 72.0); set_preset(go, 2);
+	let sur = button(f, "Surrender", 5); place_at(sur, x + 304.0, y + 160.0, 280.0, 72.0); set_preset(sur, 2);
+	let opt = button(f, "Scoreboard", 2); place_at(opt, x, y + 256.0, 180.0, 56.0); set_preset(opt, 2);
+	let shop = button(f, "Shop", 2); place_at(shop, x + 196.0, y + 256.0, 180.0, 56.0); set_preset(shop, 2);
+	let quit = button(f, "Quit", 5); place_at(quit, x + 392.0, y + 256.0, 180.0, 56.0); set_preset(quit, 2);
+}
+
+fn stage_settings_moba(f int, mode int) {
+	var y f32 = 160.0;
+	var lx f32 = 120.0;
+	var rx f32 = 1040.0;
+	if mode == 1 { y = 80.0; lx = 80.0; rx = 1000.0; }
+	else if mode == 2 { lx = 80.0; rx = 1120.0; y = 240.0; }
+	else if mode == 3 { y = 440.0; }
+	else if mode == 4 { y = 80.0; lx = 360.0; rx = 1080.0; }
+	let a = label(f, "Casting", 0); place_at(a, lx, y, 360.0, 56.0);
+	let b = label(f, "Audio", 0); place_at(b, rx, y, 360.0, 56.0);
+	let t0 = toggle(f, "Quick cast", 1, 0); place_at(t0, lx, y + 80.0, 480.0, 56.0);
+	let t1 = toggle(f, "Smart cast", 1, 2); place_at(t1, lx, y + 152.0, 480.0, 56.0);
+	let t2 = toggle(f, "Ranges", 0, 2); place_at(t2, lx, y + 224.0, 480.0, 56.0);
+	let m = label(f, "Music", 2); place_at(m, rx, y + 80.0, 200.0, 32.0);
+	let s0 = slider(f, 0.6, 0); place_at(s0, rx, y + 120.0, 480.0, 32.0);
+	let e = label(f, "Effects", 2); place_at(e, rx, y + 168.0, 200.0, 32.0);
+	let s1 = slider(f, 0.4, 2); place_at(s1, rx, y + 208.0, 480.0, 32.0);
+	let apply = button(f, "Apply", 0); place_at(apply, lx, y + 320.0, 240.0, 64.0); set_preset(apply, 2);
+}
+
+fn moba_item(col int, icon int, name const byte[:], price const byte[:]) {
+	let row = flex(col, DIR_ROW);
+	set_gap(row, 12.0);
+	set_pad(row, 0.0);
+	set_px(row, 520.0, 56.0);
+	let ic = icon_button(row, icon, 2); set_px(ic, 48.0, 48.0);
+	let n = label(row, name, 2); set_px(n, 280.0, 40.0);
+	let p = label(row, price, 2); set_px(p, 160.0, 40.0);
+}
+
+fn stage_shop_moba(f int, mode int) {
+	var x f32 = 80.0;
+	var y f32 = 160.0;
+	var gx f32 = 720.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 1080.0; gx = 80.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { x = 160.0; y = 120.0; gx = 880.0; }
+	let head = label(f, "Recommended", 0); place_at(head, x, y, 400.0, 48.0);
+	let gold = label(f, "2450 g", 1); place_at(gold, 1560.0, 48.0, 280.0, 40.0);
+	let list = flex(f, DIR_COL); set_gap(list, 12.0); set_pad(list, 0.0);
+	place_at(list, x, y + 64.0, 520.0, 272.0);
+	moba_item(list, 52, "Boots", "300");
+	moba_item(list, 14, "Tome", "400");
+	moba_item(list, 0, "Sword", "350");
+	moba_item(list, 17, "Ward", "75");
+	let g0 = button(f, "Dagger", 2); place_at(g0, gx, y + 64.0, 200.0, 96.0); set_preset(g0, 2);
+	let g1 = button(f, "Cloth", 2); place_at(g1, gx + 216.0, y + 64.0, 200.0, 96.0); set_preset(g1, 2);
+	let g2 = button(f, "Ring", 2); place_at(g2, gx + 432.0, y + 64.0, 200.0, 96.0); set_preset(g2, 2);
+	let g3 = button(f, "Amp", 0); place_at(g3, gx, y + 176.0, 200.0, 96.0); set_preset(g3, 2);
+	let g4 = button(f, "Orb", 2); place_at(g4, gx + 216.0, y + 176.0, 200.0, 96.0); set_preset(g4, 2);
+	let g5 = button(f, "Stop", 5); place_at(g5, gx + 432.0, y + 176.0, 200.0, 96.0); set_preset(g5, 2);
+	let buy = button(f, "Buy", 0); place_at(buy, 1320.0, 960.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_map_moba(f int, mode int) {
+	var x f32 = 360.0;
+	var y f32 = 120.0;
+	var w f32 = 1200.0;
+	var h f32 = 760.0;
+	var lx f32 = 80.0;
+	if mode == 1 { x = 80.0; lx = 1480.0; }
+	else if mode == 2 { y = 200.0; h = 680.0; }
+	else if mode == 3 { x = 480.0; w = 960.0; h = 640.0; }
+	else if mode == 4 { y = 140.0; h = 760.0; lx = 80.0; }
+	let map = minimap(f, 0); place_at(map, x, y, w, h); N[map].i3 = 2;
+	let top = button(f, "Top", 0); place_at(top, lx, 160.0, 240.0, 64.0); set_preset(top, 2);
+	let mid = button(f, "Mid", 2); place_at(mid, lx, 240.0, 240.0, 64.0); set_preset(mid, 2);
+	let bot = button(f, "Bot", 2); place_at(bot, lx, 320.0, 240.0, 64.0); set_preset(bot, 2);
+	let ward = button(f, "Ward", 1); place_at(ward, lx, 420.0, 240.0, 64.0); set_preset(ward, 2);
+	let clock = label(f, "12:40", 1); place_at(clock, 840.0, 36.0, 240.0, 48.0); mark_anchor(clock);
+}
+
+fn stage_results_moba(f int, mode int) {
+	var y f32 = 120.0;
+	var x f32 = 480.0;
+	if mode == 1 { y = 80.0; x = 80.0; }
+	else if mode == 2 { x = 1080.0; y = 160.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 240.0; }
+	let head = label(f, "VICTORY", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Blue side", 1); place_at(side, 80.0, 40.0, 280.0, 40.0);
+	let tb = board(f, x, y + 40.0, "Player", "KDA", "Gold");
+	table_set(tb, 0, 0, "You"); table_set(tb, 0, 1, "12/3/7"); table_set(tb, 0, 2, "14200");
+	table_set(tb, 1, 0, "Nova"); table_set(tb, 1, 1, "8/4/11"); table_set(tb, 1, 2, "12100");
+	table_set(tb, 2, 0, "Hex"); table_set(tb, 2, 1, "2/6/14"); table_set(tb, 2, 2, "9800");
+	table_set(tb, 3, 0, "Ace"); table_set(tb, 3, 1, "9/5/4"); table_set(tb, 3, 2, "13110");
+	table_set(tb, 4, 0, "Kit"); table_set(tb, 4, 1, "1/7/16"); table_set(tb, 4, 2, "8600");
+	table_set(tb, 5, 0, "Towers"); table_set(tb, 5, 1, "9"); table_set(tb, 5, 2, "3");
+	let again = button(f, "Play again", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_hud_rts(f int, mode int) {
+	var mx f32 = 48.0;
+	var my f32 = 780.0;
+	var cx f32 = 1200.0;
+	var cy f32 = 840.0;
+	var sx f32 = 400.0;
+	var ry f32 = 24.0;
+	if mode == 1 { mx = 1560.0; my = 48.0; cx = 48.0; cy = 860.0; sx = 720.0; }
+	else if mode == 2 { mx = 48.0; my = 48.0; ry = 980.0; sx = 400.0; }
+	else if mode == 3 { mx = 1480.0; my = 760.0; cx = 48.0; cy = 200.0; sx = 400.0; }
+	else if mode == 4 { mx = 1560.0; my = 760.0; cx = 480.0; cy = 860.0; sx = 48.0; }
+	let minerals = label(f, "Minerals  480", 2); place_at(minerals, 48.0, ry, 220.0, 36.0);
+	let gas = label(f, "Gas  120", 2); place_at(gas, 280.0, ry, 180.0, 36.0);
+	let supply = label(f, "Supply  48/80", 2); place_at(supply, 480.0, ry, 240.0, 36.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 320.0, 240.0); N[map].i3 = 3;
+	let who = label(f, "Squad", 1); place_at(who, sx, 820.0, 200.0, 36.0);
+	let hp = health_bar(f, 0.8, 0); place_at(hp, sx, 864.0, 280.0, 20.0);
+	let n = label(f, "12", 0); place_at(n, sx + 296.0, 852.0, 80.0, 40.0);
+	let idle = button(f, "Idle", 2); place_at(idle, sx, 760.0, 160.0, 48.0); set_preset(idle, 2);
+	let a = button(f, "Move", 0); place_at(a, cx, cy, 120.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Stop", 2); place_at(b, cx + 136.0, cy, 120.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Hold", 2); place_at(c, cx + 272.0, cy, 120.0, 56.0); set_preset(c, 2);
+	let d = button(f, "Attack", 5); place_at(d, cx, cy + 72.0, 120.0, 56.0); set_preset(d, 2);
+	let e = button(f, "Patrol", 2); place_at(e, cx + 136.0, cy + 72.0, 120.0, 56.0); set_preset(e, 2);
+	let g6 = button(f, "Build", 1); place_at(g6, cx + 272.0, cy + 72.0, 120.0, 56.0); set_preset(g6, 2);
+}
+
+fn stage_pause_rts(f int, mode int) {
+	var x f32 = 560.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1120.0; y = 160.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { x = 200.0; y = 200.0; }
+	let head = label(f, "Game paused", 0); place_at(head, 700.0, y - 80.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Menu", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Surrender", 5); place_at(c, x, y + 80.0, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x + 384.0, y + 80.0, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_rts(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Production", 0); place_at(head, x, y, 400.0, 56.0);
+	let a = button(f, "Trooper  50", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Tank  150", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Flyer  125", 2); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Worker  50", 1); place_at(d, x, y + 320.0, 480.0, 64.0); set_preset(d, 2);
+	let buy = button(f, "Train", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_rts(f int, mode int) {
+	var y f32 = 120.0;
+	var x f32 = 560.0;
+	if mode == 1 { y = 80.0; x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { y = 80.0; x = 240.0; }
+	let head = label(f, "Victory", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let mapn = label(f, "Basin", 2); place_at(mapn, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y + 40.0, "Stat", "You", "Foe");
+	table_set(tb, 0, 0, "Units"); table_set(tb, 0, 1, "86"); table_set(tb, 0, 2, "74");
+	table_set(tb, 1, 0, "Lost"); table_set(tb, 1, 1, "22"); table_set(tb, 1, 2, "41");
+	table_set(tb, 2, 0, "Minerals"); table_set(tb, 2, 1, "4200"); table_set(tb, 2, 2, "3100");
+	table_set(tb, 3, 0, "Gas"); table_set(tb, 3, 1, "1800"); table_set(tb, 3, 2, "2100");
+	table_set(tb, 4, 0, "Structures"); table_set(tb, 4, 1, "14"); table_set(tb, 4, 2, "9");
+	table_set(tb, 5, 0, "Time"); table_set(tb, 5, 1, "18:40"); table_set(tb, 5, 2, "18:40");
+	let again = button(f, "Rematch", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_rts(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Match", 0); place_at(head, x, y, 320.0, 56.0);
+	let a = toggle(f, "Grid", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.6, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Fog", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_rts(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { x = 80.0; by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 160.0; by = 80.0; }
+	else if mode == 3 { x = 480.0; }
+	else if mode == 4 { y = 48.0; by = 880.0; }
+	let map = minimap(f, 0); place_at(map, x, y, 1400.0, 760.0); N[map].i3 = 3;
+	if mode == 1 || mode == 2 { place_at(map, x, 240.0, 1400.0, 720.0); }
+	let a = button(f, "Main", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Natural", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Third", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_mmo(f int, mode int) {
+	var px f32 = 48.0;
+	var py f32 = 36.0;
+	var mx f32 = 1600.0;
+	var my f32 = 48.0;
+	var ax f32 = 720.0;
+	var ay f32 = 960.0;
+	if mode == 1 { py = 860.0; mx = 1600.0; my = 760.0; ay = 780.0; }
+	else if mode == 2 { px = 1560.0; ax = 48.0; ay = 480.0; mx = 48.0; my = 760.0; }
+	else if mode == 3 { mx = 48.0; my = 760.0; ay = 860.0; }
+	else if mode == 4 { py = 200.0; mx = 1600.0; my = 48.0; }
+	let name = label(f, "Mira", 1); place_at(name, px, py, 240.0, 36.0);
+	let hp = health_bar(f, 0.7, 0); place_at(hp, px, py + 44.0, 280.0, 20.0);
+	let mp = mana_bar(f, 0.4, 0); place_at(mp, px, py + 72.0, 280.0, 16.0);
+	let lv = label(f, "Lv 40", 2); place_at(lv, px, py + 96.0, 160.0, 32.0);
+	let foe = label(f, "Warden", 0); place_at(foe, 760.0, 36.0, 400.0, 48.0); mark_anchor(foe);
+	let th = health_bar(f, 0.55, 1); place_at(th, 760.0, 96.0, 400.0, 20.0);
+	let cast = label(f, "Casting", 2); place_at(cast, 760.0, ay - 40.0, 240.0, 32.0);
+	let bar = health_bar(f, 0.35, 2); place_at(bar, 760.0, ay, 400.0, 16.0);
+	ability6(f, ax, ay + 36.0, 56.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 240.0); N[map].i3 = 6;
+}
+
+fn stage_pause_mmo(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Rest", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Return", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Character", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Logout", 5); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_mmo(f int, mode int) {
+	var x f32 = 160.0;
+	var y f32 = 160.0;
+	if mode == 1 { x = 80.0; y = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { x = 480.0; y = 80.0; }
+	let head = label(f, "Vendor", 0); place_at(head, x, y, 360.0, 56.0);
+	let gold = label(f, "Gold  86", 1); place_at(gold, x + 520.0, y, 240.0, 40.0);
+	let a = button(f, "Potion  2", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Food  1", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Scroll  8", 2); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Buy", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_mmo(f int, mode int) {
+	var y f32 = 140.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 420.0; }
+	else if mode == 4 { y = 160.0; x = 240.0; }
+	let head = label(f, "Clear", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let zone = label(f, "Vault", 2); place_at(zone, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "Group");
+	table_set(tb, 0, 0, "Damage"); table_set(tb, 0, 1, "48200"); table_set(tb, 0, 2, "91000");
+	table_set(tb, 1, 0, "Healing"); table_set(tb, 1, 1, "1200"); table_set(tb, 1, 2, "24000");
+	table_set(tb, 2, 0, "Deaths"); table_set(tb, 2, 1, "0"); table_set(tb, 2, 2, "1");
+	table_set(tb, 3, 0, "Loot"); table_set(tb, 3, 1, "Ring"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "22:10"); table_set(tb, 4, 2, "22:10");
+	table_set(tb, 5, 0, "Gold"); table_set(tb, 5, 1, "40"); table_set(tb, 5, 2, "160");
+	let again = button(f, "Leave", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_mmo(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Interface", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = toggle(f, "Nameplates", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = toggle(f, "Self cast", 0, 2); place_at(b, x, y + 152.0, 480.0, 56.0);
+	let s = slider(f, 0.5, 0); place_at(s, x, y + 232.0, 480.0, 32.0);
+}
+
+fn stage_map_mmo(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { x = 80.0; by = 80.0; y = 200.0; }
+	else if mode == 3 { x = 400.0; }
+	else if mode == 4 { y = 48.0; by = 880.0; }
+	let map = minimap(f, 0); place_at(map, x, y, 1440.0, 760.0); N[map].i3 = 6;
+	if mode == 1 || mode == 2 { place_at(map, 240.0, 200.0, 1440.0, 760.0); }
+	let a = button(f, "Town", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Wild", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Vault", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_sports(f int, mode int) {
+	var y f32 = 36.0;
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var sx f32 = 1480.0;
+	var sy f32 = 880.0;
+	if mode == 1 { y = 160.0; my = 760.0; mx = 48.0; }
+	else if mode == 2 { mx = 1560.0; my = 760.0; sx = 48.0; }
+	else if mode == 3 { sy = 160.0; sx = 1480.0; my = 760.0; mx = 48.0; }
+	else if mode == 4 { y = 820.0; my = 48.0; sy = 200.0; sx = 1480.0; }
+	let home = label(f, "North  2", 0); place_at(home, 48.0, y, 280.0, 48.0);
+	let clock = label(f, "12:40", 0); place_at(clock, 760.0, y, 400.0, 48.0); mark_anchor(clock);
+	let away = label(f, "South  1", 0); place_at(away, 1560.0, y, 280.0, 48.0);
+	let q = label(f, "Q3", 2); place_at(q, 860.0, y + 56.0, 200.0, 32.0); mark_anchor(q);
+	let poss = label(f, "Ball", 2); place_at(poss, 480.0, y + 100.0, 120.0, 32.0);
+	let bar = health_bar(f, 0.62, 2); place_at(bar, 620.0, y + 108.0, 680.0, 16.0);
+	let foul = label(f, "Fouls  3", 3); place_at(foul, 200.0, y + 100.0, 200.0, 32.0);
+	let who = label(f, "No. 9", 1); place_at(who, sx, sy, 200.0, 36.0);
+	let stam = health_bar(f, 0.45, 0); place_at(stam, sx, sy + 44.0, 280.0, 20.0);
+	let shot = label(f, "24", 0); place_at(shot, sx + 300.0, sy, 80.0, 48.0);
+	let sub = label(f, "Subs  2", 2); place_at(sub, sx, sy + 76.0, 200.0, 32.0);
+	let ball = icon_button(f, 13, 0); place_at(ball, 48.0, y + 56.0, 48.0, 48.0);
+	let coach = label(f, "Coach", 2); place_at(coach, 400.0, 400.0, 200.0, 36.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 280.0, 220.0); N[map].i3 = 9;
+}
+
+fn stage_pause_sports(f int, mode int) {
+	var x f32 = 520.0;
+	var y f32 = 320.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1080.0; y = 160.0; }
+	else if mode == 3 { y = 640.0; }
+	else if mode == 4 { x = 200.0; y = 200.0; }
+	let head = label(f, "Timeout", 0); place_at(head, 700.0, y - 80.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Replay", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Lineup", 2); place_at(c, x, y + 80.0, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x + 384.0, y + 80.0, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_sports(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 240.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; y = 200.0; }
+	else if mode == 4 { x = 360.0; y = 160.0; }
+	let head = label(f, "Kit room", 0); place_at(head, 760.0, y - 80.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Home  40", 0); place_at(a, x, y, 320.0, 280.0); set_preset(a, 0);
+	let b = button(f, "Away  40", 2); place_at(b, x + 360.0, y, 320.0, 280.0); set_preset(b, 2);
+	let c = button(f, "Ball  12", 2); place_at(c, x + 720.0, y, 320.0, 280.0); set_preset(c, 2);
+	let d = button(f, "Whistle  4", 1); place_at(d, x + 1080.0, y, 320.0, 280.0); set_preset(d, 2);
+}
+
+fn stage_results_sports(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1040.0; y = 160.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { y = 160.0; x = 240.0; }
+	let head = label(f, "Final", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "North", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "North", "South");
+	table_set(tb, 0, 0, "Score"); table_set(tb, 0, 1, "2"); table_set(tb, 0, 2, "1");
+	table_set(tb, 1, 0, "Shots"); table_set(tb, 1, 1, "14"); table_set(tb, 1, 2, "9");
+	table_set(tb, 2, 0, "Fouls"); table_set(tb, 2, 1, "3"); table_set(tb, 2, 2, "6");
+	table_set(tb, 3, 0, "Saves"); table_set(tb, 3, 1, "4"); table_set(tb, 3, 2, "7");
+	table_set(tb, 4, 0, "Corners"); table_set(tb, 4, 1, "5"); table_set(tb, 4, 2, "2");
+	table_set(tb, 5, 0, "Time"); table_set(tb, 5, 1, "90"); table_set(tb, 5, 2, "90");
+	let again = button(f, "Rematch", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_sports(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Match", 0); place_at(head, x, y, 320.0, 56.0);
+	let a = toggle(f, "Radar", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = toggle(f, "Fatigue", 1, 2); place_at(b, x, y + 152.0, 480.0, 56.0);
+	let s = slider(f, 0.5, 0); place_at(s, x, y + 232.0, 480.0, 32.0);
+}
+
+fn stage_map_sports(f int, mode int) {
+	var x f32 = 360.0;
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { x = 80.0; by = 920.0; }
+	else if mode == 3 { x = 480.0; y = 120.0; }
+	else if mode == 4 { y = 48.0; by = 880.0; }
+	let map = minimap(f, 0); place_at(map, x, y, 1200.0, 760.0); N[map].i3 = 9;
+	if mode == 1 { place_at(map, 360.0, 200.0, 1200.0, 760.0); }
+	let a = button(f, "Pitch", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Bench", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Tunnel", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_platform(f int, mode int) {
+	var y f32 = 36.0;
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var bx f32 = 48.0;
+	var by f32 = 860.0;
+	if mode == 1 { y = 860.0; mx = 1600.0; my = 48.0; bx = 48.0; by = 200.0; }
+	else if mode == 2 { mx = 48.0; my = 760.0; bx = 400.0; by = 200.0; }
+	else if mode == 3 { y = 160.0; mx = 48.0; my = 400.0; bx = 1480.0; by = 760.0; }
+	else if mode == 4 { mx = 1600.0; my = 760.0; bx = 48.0; by = 200.0; }
+	let world = label(f, "Grove  1-2", 1); place_at(world, 48.0, y, 280.0, 40.0);
+	let time = label(f, "1:12", 0); place_at(time, 760.0, y, 400.0, 48.0); mark_anchor(time);
+	let coins = label(f, "Coins  120", 2); place_at(coins, 1560.0, y, 280.0, 40.0);
+	let bells = label(f, "Bells  1", 2); place_at(bells, 1560.0, y + 56.0, 240.0, 32.0);
+	let h0 = icon_button(f, 2, 0); place_at(h0, 48.0, y + 56.0, 40.0, 40.0);
+	let h1 = icon_button(f, 2, 0); place_at(h1, 96.0, y + 56.0, 40.0, 40.0);
+	let h2 = icon_button(f, 2, 2); place_at(h2, 144.0, y + 56.0, 40.0, 40.0);
+	let lives = label(f, "x  3", 2); place_at(lives, 200.0, y + 60.0, 120.0, 32.0);
+	let who = label(f, "Pip", 0); place_at(who, bx, by, 160.0, 48.0);
+	let gem = icon_button(f, 43, 0); place_at(gem, bx, by + 56.0, 48.0, 48.0);
+	let gn = label(f, "4", 1); place_at(gn, bx + 64.0, by + 64.0, 80.0, 36.0);
+	let flag = label(f, "Flag  2", 2); place_at(flag, bx, by + 116.0, 200.0, 32.0);
+	let score = label(f, "Score  2400", 2); place_at(score, 760.0, y + 64.0, 400.0, 36.0); mark_anchor(score);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 180.0); N[map].i3 = 10;
+}
+
+fn stage_pause_platform(f int, mode int) {
+	var y f32 = 880.0;
+	var x f32 = 160.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 400.0; }
+	else if mode == 3 { y = 480.0; x = 360.0; }
+	else if mode == 4 { y = 200.0; x = 160.0; }
+	let head = label(f, "Paused", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Retry", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Worlds", 2); place_at(c, x + 768.0, y, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x + 1152.0, y, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_platform(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 960.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 360.0; }
+	let head = label(f, "Grove shop", 0); place_at(head, x, y, 400.0, 56.0);
+	let a = button(f, "Bell  20", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Feather  30", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Key  10", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Take", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_platform(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Clear", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Grove", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Run", "Best");
+	table_set(tb, 0, 0, "Time"); table_set(tb, 0, 1, "1:12"); table_set(tb, 0, 2, "0:58");
+	table_set(tb, 1, 0, "Coins"); table_set(tb, 1, 1, "120"); table_set(tb, 1, 2, "140");
+	table_set(tb, 2, 0, "Deaths"); table_set(tb, 2, 1, "2"); table_set(tb, 2, 2, "0");
+	table_set(tb, 3, 0, "Gems"); table_set(tb, 3, 1, "4"); table_set(tb, 3, 2, "5");
+	table_set(tb, 4, 0, "Flags"); table_set(tb, 4, 1, "2"); table_set(tb, 4, 2, "3");
+	table_set(tb, 5, 0, "Score"); table_set(tb, 5, 1, "2400"); table_set(tb, 5, 2, "3100");
+	let again = button(f, "Next", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_platform(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Play", 0); place_at(head, x, y, 280.0, 56.0);
+	let a = toggle(f, "Run", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.4, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Hints", 0, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_platform(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { y = 160.0; by = 80.0; }
+	let map = minimap(f, 0); place_at(map, 200.0, y, 1520.0, 760.0); N[map].i3 = 10;
+	if mode == 1 || mode == 4 { place_at(map, 200.0, 200.0, 1520.0, 720.0); }
+	let a = button(f, "Grove", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Cave", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Peak", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_rogue(f int, mode int) {
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var wx f32 = 1200.0;
+	if mode == 1 { mx = 48.0; my = 760.0; }
+	else if mode == 2 { my = 200.0; }
+	else if mode == 3 { mx = 1600.0; my = 760.0; }
+	else if mode == 4 { my = 480.0; }
+	let floor = label(f, "Floor  7", 0); place_at(floor, 760.0, 36.0, 400.0, 48.0); mark_anchor(floor);
+	let room = label(f, "Room  3", 2); place_at(room, 48.0, 40.0, 200.0, 36.0);
+	let seed = label(f, "Seed  19", 2); place_at(seed, 1560.0, 40.0, 240.0, 36.0);
+	let hp = health_bar(f, 0.55, 0); place_at(hp, 48.0, 120.0, 360.0, 24.0);
+	let hn = label(f, "42", 1); place_at(hn, 420.0, 112.0, 80.0, 36.0);
+	let turn = label(f, "Turn  14", 3); place_at(turn, 48.0, 160.0, 200.0, 32.0);
+	let ic = icon_button(f, 45, 0); place_at(ic, wx, 120.0, 56.0, 56.0);
+	let wname = label(f, "Thorn", 1); place_at(wname, wx + 72.0, 128.0, 200.0, 40.0);
+	let gold = label(f, "Gold  12", 2); place_at(gold, wx, 200.0, 200.0, 32.0);
+	let g0 = icon_button(f, 15, 2); place_at(g0, 720.0, 900.0, 64.0, 64.0);
+	let g1 = icon_button(f, 16, 2); place_at(g1, 800.0, 900.0, 64.0, 64.0);
+	let g2 = icon_button(f, 4, 2); place_at(g2, 880.0, 900.0, 64.0, 64.0);
+	let g3 = icon_button(f, 8, 2); place_at(g3, 960.0, 900.0, 64.0, 64.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 11;
+}
+
+fn stage_pause_rogue(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Abandon?", 0); place_at(head, 700.0, y - 72.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Stay", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Give up", 5); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Log", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_rogue(f int, mode int) {
+	var y f32 = 200.0;
+	var x f32 = 200.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; }
+	else if mode == 4 { x = 360.0; y = 160.0; }
+	let head = label(f, "Pick one", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Ember", 0); place_at(a, x, y, 360.0, 360.0); set_preset(a, 0);
+	let b = button(f, "Mist", 2); place_at(b, x + 400.0, y, 360.0, 360.0); set_preset(b, 2);
+	let c = button(f, "Skip", 5); place_at(c, x + 800.0, y, 360.0, 360.0); set_preset(c, 2);
+}
+
+fn stage_results_rogue(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Slain", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Floor  7", 2); place_at(side, 80.0, 40.0, 240.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Run", "Best");
+	table_set(tb, 0, 0, "Floor"); table_set(tb, 0, 1, "7"); table_set(tb, 0, 2, "12");
+	table_set(tb, 1, 0, "Kills"); table_set(tb, 1, 1, "34"); table_set(tb, 1, 2, "80");
+	table_set(tb, 2, 0, "Gold"); table_set(tb, 2, 1, "12"); table_set(tb, 2, 2, "40");
+	table_set(tb, 3, 0, "Gifts"); table_set(tb, 3, 1, "4"); table_set(tb, 3, 2, "6");
+	table_set(tb, 4, 0, "Turns"); table_set(tb, 4, 1, "140"); table_set(tb, 4, 2, "90");
+	table_set(tb, 5, 0, "Weapon"); table_set(tb, 5, 1, "Thorn"); table_set(tb, 5, 2, "Thorn");
+	let again = button(f, "Again", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_rogue(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Run", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Permadeath", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.3, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Map", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_rogue(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 280.0, y, 1360.0, 760.0); N[map].i3 = 11;
+	if mode == 1 || mode == 4 { place_at(map, 280.0, 200.0, 1360.0, 720.0); }
+	let a = button(f, "Stairs", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Shrine", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Vault", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_survive(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var sy f32 = 920.0;
+	if mode == 1 { mx = 48.0; my = 760.0; sy = 200.0; }
+	else if mode == 2 { mx = 48.0; my = 400.0; sy = 920.0; }
+	else if mode == 3 { mx = 1600.0; my = 760.0; sy = 860.0; }
+	else if mode == 4 { mx = 1600.0; my = 400.0; sy = 920.0; }
+	let day = label(f, "Day  4", 0); place_at(day, 760.0, 36.0, 400.0, 48.0); mark_anchor(day);
+	let night = label(f, "Dusk", 2); place_at(night, 1560.0, 40.0, 200.0, 36.0);
+	let hp = label(f, "HP  80", 2); place_at(hp, 48.0, 120.0, 160.0, 32.0);
+	let hb = health_bar(f, 0.8, 0); place_at(hb, 220.0, 124.0, 360.0, 20.0);
+	let food = label(f, "Food", 2); place_at(food, 48.0, 168.0, 160.0, 32.0);
+	let fb = health_bar(f, 0.4, 2); place_at(fb, 220.0, 172.0, 360.0, 20.0);
+	let wet = label(f, "Water", 2); place_at(wet, 48.0, 216.0, 160.0, 32.0);
+	let wb = health_bar(f, 0.62, 1); place_at(wb, 220.0, 220.0, 360.0, 20.0);
+	let warm = label(f, "Warm", 2); place_at(warm, 48.0, 264.0, 160.0, 32.0);
+	let tb = health_bar(f, 0.3, 5); place_at(tb, 220.0, 268.0, 360.0, 20.0);
+	let s0 = icon_button(f, 45, 2); place_at(s0, 640.0, sy, 64.0, 64.0);
+	let s1 = icon_button(f, 4, 2); place_at(s1, 720.0, sy, 64.0, 64.0);
+	let s2 = icon_button(f, 52, 0); place_at(s2, 800.0, sy, 64.0, 64.0);
+	let s3 = icon_button(f, 7, 2); place_at(s3, 880.0, sy, 64.0, 64.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 13;
+}
+
+fn stage_pause_survive(f int, mode int) {
+	var x f32 = 720.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1360.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Camp", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Wake", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Sleep", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Save", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_survive(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Trader", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Berries  4", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Bandage  6", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Axe  20", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Trade", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_survive(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Dawn", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Camp", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "Camp");
+	table_set(tb, 0, 0, "Days"); table_set(tb, 0, 1, "4"); table_set(tb, 0, 2, "12");
+	table_set(tb, 1, 0, "Food"); table_set(tb, 1, 1, "6"); table_set(tb, 1, 2, "20");
+	table_set(tb, 2, 0, "Wood"); table_set(tb, 2, 1, "30"); table_set(tb, 2, 2, "80");
+	table_set(tb, 3, 0, "Hunts"); table_set(tb, 3, 1, "2"); table_set(tb, 3, 2, "5");
+	table_set(tb, 4, 0, "Cold"); table_set(tb, 4, 1, "1"); table_set(tb, 4, 2, "0");
+	table_set(tb, 5, 0, "Built"); table_set(tb, 5, 1, "Fire"); table_set(tb, 5, 2, "Hut");
+	let again = button(f, "Continue", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_survive(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Wild", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Hunger", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.6, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Wolves", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_survive(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 240.0, y, 1440.0, 760.0); N[map].i3 = 13;
+	if mode == 1 || mode == 4 { place_at(map, 240.0, 200.0, 1440.0, 720.0); }
+	let a = button(f, "Camp", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Woods", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Shore", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_city(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var ty f32 = 900.0;
+	if mode == 1 { mx = 48.0; my = 760.0; ty = 900.0; }
+	else if mode == 2 { mx = 48.0; my = 400.0; ty = 900.0; }
+	else if mode == 3 { mx = 1600.0; my = 200.0; ty = 900.0; }
+	else if mode == 4 { mx = 48.0; my = 760.0; ty = 480.0; }
+	let cash = label(f, "Funds  4200", 0); place_at(cash, 48.0, 36.0, 320.0, 48.0);
+	let date = label(f, "May  12", 0); place_at(date, 760.0, 36.0, 400.0, 48.0); mark_anchor(date);
+	let pop = label(f, "People  820", 2); place_at(pop, 1500.0, 40.0, 320.0, 36.0);
+	let r = label(f, "Homes", 2); place_at(r, 48.0, 120.0, 140.0, 32.0);
+	let rb = health_bar(f, 0.7, 0); place_at(rb, 200.0, 124.0, 400.0, 20.0);
+	let c = label(f, "Shops", 2); place_at(c, 48.0, 168.0, 140.0, 32.0);
+	let cb = health_bar(f, 0.4, 2); place_at(cb, 200.0, 172.0, 400.0, 20.0);
+	let i = label(f, "Mills", 2); place_at(i, 48.0, 216.0, 140.0, 32.0);
+	let ib = health_bar(f, 0.25, 1); place_at(ib, 200.0, 220.0, 400.0, 20.0);
+	let a = button(f, "Road", 0); place_at(a, 480.0, ty, 200.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Zone", 2); place_at(b, 700.0, ty, 200.0, 56.0); set_preset(b, 2);
+	let d = button(f, "Clear", 5); place_at(d, 920.0, ty, 200.0, 56.0); set_preset(d, 2);
+	let e = button(f, "Query", 1); place_at(e, 1140.0, ty, 200.0, 56.0); set_preset(e, 2);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 14;
+}
+
+fn stage_pause_city(f int, mode int) {
+	var x f32 = 560.0;
+	var y f32 = 320.0;
+	if mode == 1 { x = 80.0; y = 160.0; }
+	else if mode == 2 { x = 1080.0; y = 160.0; }
+	else if mode == 3 { y = 640.0; }
+	else if mode == 4 { x = 200.0; y = 200.0; }
+	let head = label(f, "Budget", 0); place_at(head, 700.0, y - 80.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Taxes", 2); place_at(b, x + 384.0, y, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Loans", 2); place_at(c, x, y + 80.0, 360.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x + 384.0, y + 80.0, 360.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_city(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 200.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 960.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 360.0; }
+	let head = label(f, "Public works", 0); place_at(head, x, y, 480.0, 56.0);
+	let a = button(f, "Clinic  400", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "School  600", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Plant  800", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Fund", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_city(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Year  2", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Millford", 2); place_at(side, 80.0, 40.0, 240.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Now", "Last");
+	table_set(tb, 0, 0, "People"); table_set(tb, 0, 1, "820"); table_set(tb, 0, 2, "640");
+	table_set(tb, 1, 0, "Funds"); table_set(tb, 1, 1, "4200"); table_set(tb, 1, 2, "3100");
+	table_set(tb, 2, 0, "Homes"); table_set(tb, 2, 1, "70%"); table_set(tb, 2, 2, "50%");
+	table_set(tb, 3, 0, "Jobs"); table_set(tb, 3, 1, "40%"); table_set(tb, 3, 2, "30%");
+	table_set(tb, 4, 0, "Roads"); table_set(tb, 4, 1, "12"); table_set(tb, 4, 2, "8");
+	table_set(tb, 5, 0, "Happy"); table_set(tb, 5, 1, "62"); table_set(tb, 5, 2, "55");
+	let again = button(f, "Next year", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_city(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "City", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Disasters", 0, 2); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.5, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Traffic", 1, 0); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_city(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 240.0, y, 1440.0, 760.0); N[map].i3 = 14;
+	if mode == 1 || mode == 4 { place_at(map, 240.0, 200.0, 1440.0, 720.0); }
+	let a = button(f, "North", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Docks", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Hills", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_horror(f int, mode int) {
+	var mx f32 = 48.0;
+	var my f32 = 800.0;
+	var ix f32 = 1600.0;
+	if mode == 1 { mx = 1600.0; my = 800.0; }
+	else if mode == 2 { mx = 1600.0; my = 480.0; }
+	else if mode == 3 { mx = 48.0; my = 480.0; }
+	else if mode == 4 { mx = 48.0; my = 800.0; ix = 1480.0; }
+	let floor = label(f, "B2", 2); place_at(floor, 48.0, 36.0, 120.0, 36.0);
+	let pulse = label(f, "82", 0); place_at(pulse, 760.0, 36.0, 400.0, 64.0); mark_anchor(pulse);
+	let beat = label(f, "Pulse", 3); place_at(beat, 860.0, 108.0, 200.0, 28.0); mark_anchor(beat);
+	let san = label(f, "Mind", 2); place_at(san, 48.0, 160.0, 140.0, 32.0);
+	let sb = health_bar(f, 0.35, 1); place_at(sb, 200.0, 164.0, 360.0, 20.0);
+	let stam = label(f, "Breath", 2); place_at(stam, 48.0, 208.0, 140.0, 32.0);
+	let tb = health_bar(f, 0.7, 0); place_at(tb, 200.0, 212.0, 360.0, 20.0);
+	let noise = label(f, "Noise", 2); place_at(noise, 48.0, 256.0, 140.0, 32.0);
+	let nb = health_bar(f, 0.2, 5); place_at(nb, 200.0, 260.0, 360.0, 20.0);
+	let lamp = icon_button(f, 15, 0); place_at(lamp, ix, 120.0, 64.0, 64.0);
+	let ln = label(f, "Lamp", 1); place_at(ln, ix + 80.0, 132.0, 160.0, 40.0);
+	let hold = label(f, "Still", 2); place_at(hold, 760.0, 860.0, 400.0, 40.0); mark_anchor(hold);
+	let fear = label(f, "Near", 3); place_at(fear, 860.0, 912.0, 200.0, 32.0); mark_anchor(fear);
+	let map = minimap(f, 0); place_at(map, mx, my, 200.0, 160.0); N[map].i3 = 15;
+}
+
+fn stage_pause_horror(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Hide", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Breathe", 0); place_at(a, x, y, 360.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Note", 2); place_at(b, x, y + 80.0, 360.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Give up", 5); place_at(c, x, y + 160.0, 360.0, 64.0); set_preset(c, 2);
+}
+
+fn stage_shop_horror(f int, mode int) {
+	var x f32 = 280.0;
+	var y f32 = 240.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; }
+	else if mode == 4 { x = 480.0; y = 160.0; }
+	let head = label(f, "Cache", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Battery", 0); place_at(a, x, y, 360.0, 240.0); set_preset(a, 0);
+	let b = button(f, "Bandage", 2); place_at(b, x + 400.0, y, 360.0, 240.0); set_preset(b, 2);
+	let c = button(f, "Leave", 5); place_at(c, x + 800.0, y, 360.0, 240.0); set_preset(c, 2);
+}
+
+fn stage_results_horror(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Out", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Night", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "House");
+	table_set(tb, 0, 0, "Time"); table_set(tb, 0, 1, "18:02"); table_set(tb, 0, 2, "18:02");
+	table_set(tb, 1, 0, "Mind"); table_set(tb, 1, 1, "35"); table_set(tb, 1, 2, "0");
+	table_set(tb, 2, 0, "Hides"); table_set(tb, 2, 1, "6"); table_set(tb, 2, 2, "0");
+	table_set(tb, 3, 0, "Notes"); table_set(tb, 3, 1, "3"); table_set(tb, 3, 2, "5");
+	table_set(tb, 4, 0, "Seen"); table_set(tb, 4, 1, "2"); table_set(tb, 4, 2, "1");
+	table_set(tb, 5, 0, "Exit"); table_set(tb, 5, 1, "Cellar"); table_set(tb, 5, 2, "Door");
+	let again = button(f, "Again", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_horror(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Fear", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Heartbeat", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.2, 2); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Flicker", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_horror(f int, mode int) {
+	var y f32 = 120.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 220.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 160.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 220.0; }
+	let map = minimap(f, 0); place_at(map, 480.0, y, 960.0, 680.0); N[map].i3 = 15;
+	if mode == 1 || mode == 4 { place_at(map, 480.0, 220.0, 960.0, 680.0); }
+	let a = button(f, "Hall", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Cellar", 5); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Attic", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_space(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	if mode == 1 { mx = 1600.0; my = 48.0; }
+	else if mode == 2 { mx = 48.0; my = 760.0; }
+	else if mode == 3 { mx = 48.0; my = 400.0; }
+	else if mode == 4 { mx = 1600.0; my = 400.0; }
+	let ship = label(f, "Kite", 1); place_at(ship, 48.0, 36.0, 200.0, 40.0);
+	let head = label(f, "Vesper", 0); place_at(head, 760.0, 36.0, 400.0, 48.0); mark_anchor(head);
+	let spd = label(f, "187", 0); place_at(spd, 820.0, 860.0, 160.0, 64.0);
+	let unit = label(f, "m/s", 3); place_at(unit, 1000.0, 884.0, 120.0, 32.0);
+	let hull = label(f, "Hull", 2); place_at(hull, 48.0, 120.0, 120.0, 32.0);
+	let hb = health_bar(f, 0.72, 0); place_at(hb, 180.0, 124.0, 400.0, 20.0);
+	let sh = label(f, "Shield", 2); place_at(sh, 48.0, 168.0, 120.0, 32.0);
+	let sb = health_bar(f, 0.4, 1); place_at(sb, 180.0, 172.0, 400.0, 20.0);
+	let en = label(f, "Power", 2); place_at(en, 48.0, 216.0, 120.0, 32.0);
+	let eb = health_bar(f, 0.55, 2); place_at(eb, 180.0, 220.0, 400.0, 20.0);
+	let gun = label(f, "Lance", 1); place_at(gun, 48.0, 264.0, 160.0, 36.0);
+	let heat = label(f, "Heat  20", 3); place_at(heat, 220.0, 268.0, 200.0, 32.0);
+	let lock = label(f, "Lock", 2); place_at(lock, 760.0, 100.0, 400.0, 36.0); mark_anchor(lock);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 16;
+}
+
+fn stage_pause_space(f int, mode int) {
+	var y f32 = 880.0;
+	var x f32 = 200.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { x = 80.0; y = 400.0; }
+	else if mode == 3 { y = 480.0; x = 360.0; }
+	else if mode == 4 { y = 200.0; }
+	let head = label(f, "All stop", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 320.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Nav", 2); place_at(b, x + 344.0, y, 320.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Crew", 2); place_at(c, x + 688.0, y, 320.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Abandon", 5); place_at(d, x + 1032.0, y, 320.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_space(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Drydock", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Plating  80", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Cell  40", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Lens  60", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Fit", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_space(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Jump", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Kite", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Kite", "Foe");
+	table_set(tb, 0, 0, "Hull"); table_set(tb, 0, 1, "72%"); table_set(tb, 0, 2, "0%");
+	table_set(tb, 1, 0, "Kills"); table_set(tb, 1, 1, "3"); table_set(tb, 1, 2, "0");
+	table_set(tb, 2, 0, "Fuel"); table_set(tb, 2, 1, "40"); table_set(tb, 2, 2, "0");
+	table_set(tb, 3, 0, "Cargo"); table_set(tb, 3, 1, "Ore"); table_set(tb, 3, 2, "0");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "12:04"); table_set(tb, 4, 2, "12:04");
+	table_set(tb, 5, 0, "System"); table_set(tb, 5, 1, "Vesper"); table_set(tb, 5, 2, "Vesper");
+	let again = button(f, "Depart", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_space(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Helm", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Inertia", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.5, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Gravity", 0, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_space(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 280.0, y, 1360.0, 760.0); N[map].i3 = 16;
+	if mode == 1 || mode == 4 { place_at(map, 280.0, 200.0, 1360.0, 720.0); }
+	let a = button(f, "Vesper", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Belt", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Gate", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_fantasy(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	var qy f32 = 160.0;
+	if mode == 1 { mx = 48.0; my = 760.0; }
+	else if mode == 2 { mx = 1600.0; my = 760.0; qy = 400.0; }
+	else if mode == 3 { mx = 1600.0; my = 400.0; qy = 360.0; }
+	else if mode == 4 { mx = 48.0; my = 400.0; }
+	let who = label(f, "Elowen", 1); place_at(who, 48.0, 36.0, 240.0, 40.0);
+	let gold = label(f, "Gold  86", 2); place_at(gold, 1560.0, 40.0, 240.0, 36.0);
+	let quest = label(f, "The Gate", 0); place_at(quest, 760.0, 36.0, 400.0, 48.0); mark_anchor(quest);
+	let step = label(f, "Find the key", 2); place_at(step, 48.0, qy, 280.0, 32.0);
+	let hp = health_bar(f, 0.66, 0); place_at(hp, 48.0, qy + 40.0, 320.0, 20.0);
+	let mp = mana_bar(f, 0.4, 0); place_at(mp, 48.0, qy + 68.0, 320.0, 16.0);
+	let a = icon_button(f, 0, 2); place_at(a, 640.0, 920.0, 64.0, 64.0);
+	let b = icon_button(f, 15, 2); place_at(b, 720.0, 920.0, 64.0, 64.0);
+	let c = icon_button(f, 1, 2); place_at(c, 800.0, 920.0, 64.0, 64.0);
+	let d = icon_button(f, 4, 2); place_at(d, 880.0, 920.0, 64.0, 64.0);
+	let e = icon_button(f, 14, 0); place_at(e, 960.0, 920.0, 64.0, 64.0);
+	let lvl = label(f, "Lv  8", 2); place_at(lvl, 48.0, qy + 96.0, 160.0, 32.0);
+	let mark = label(f, "North", 3); place_at(mark, 760.0, 100.0, 400.0, 32.0); mark_anchor(mark);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 17;
+}
+
+fn stage_pause_fantasy(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Journal", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Quests", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Party", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_fantasy(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Spellbook", 0); place_at(head, x, y, 400.0, 56.0);
+	let a = button(f, "Spark  20", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Mend  30", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Ward  25", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Learn", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_fantasy(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Done", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Elowen", 2); place_at(side, 80.0, 40.0, 240.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Now", "Quest");
+	table_set(tb, 0, 0, "XP"); table_set(tb, 0, 1, "240"); table_set(tb, 0, 2, "The Gate");
+	table_set(tb, 1, 0, "Gold"); table_set(tb, 1, 1, "40"); table_set(tb, 1, 2, "86");
+	table_set(tb, 2, 0, "Kills"); table_set(tb, 2, 1, "8"); table_set(tb, 2, 2, "8");
+	table_set(tb, 3, 0, "Spells"); table_set(tb, 3, 1, "Spark"); table_set(tb, 3, 2, "Mend");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "16:20"); table_set(tb, 4, 2, "16:20");
+	table_set(tb, 5, 0, "Level"); table_set(tb, 5, 1, "8"); table_set(tb, 5, 2, "9");
+	let again = button(f, "Onward", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_fantasy(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Tale", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Tutor", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.4, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Compass", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_fantasy(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 240.0, y, 1440.0, 760.0); N[map].i3 = 17;
+	if mode == 1 || mode == 4 { place_at(map, 240.0, 200.0, 1440.0, 720.0); }
+	let a = button(f, "Gate", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Wood", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Keep", 5); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_cozy(f int, mode int) {
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	if mode == 1 { mx = 48.0; }
+	else if mode == 2 { my = 400.0; }
+	else if mode == 3 { mx = 48.0; my = 400.0; }
+	else if mode == 4 { mx = 1600.0; my = 200.0; }
+	let day = label(f, "Spring  3", 0); place_at(day, 760.0, 36.0, 400.0, 48.0); mark_anchor(day);
+	let who = label(f, "Rowan", 1); place_at(who, 48.0, 36.0, 200.0, 40.0);
+	let sky = label(f, "Clear", 2); place_at(sky, 1560.0, 40.0, 200.0, 36.0);
+	let en = label(f, "Energy", 2); place_at(en, 48.0, 120.0, 160.0, 32.0);
+	let eb = health_bar(f, 0.6, 2); place_at(eb, 220.0, 124.0, 360.0, 20.0);
+	let gold = label(f, "Gold  240", 2); place_at(gold, 48.0, 168.0, 220.0, 32.0);
+	let tool = label(f, "Hoe", 1); place_at(tool, 48.0, 220.0, 160.0, 36.0);
+	let clock = label(f, "8:00", 2); place_at(clock, 760.0, 100.0, 400.0, 36.0); mark_anchor(clock);
+	let a = icon_button(f, 52, 0); place_at(a, 700.0, 920.0, 64.0, 64.0);
+	let b = icon_button(f, 4, 2); place_at(b, 780.0, 920.0, 64.0, 64.0);
+	let c = icon_button(f, 43, 2); place_at(c, 860.0, 920.0, 64.0, 64.0);
+	let d = icon_button(f, 5, 2); place_at(d, 940.0, 920.0, 64.0, 64.0);
+	let crop = label(f, "Turnips", 2); place_at(crop, 220.0, 220.0, 200.0, 32.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 200.0); N[map].i3 = 18;
+}
+
+fn stage_pause_cozy(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 260.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Calendar", 0); place_at(head, 700.0, y - 72.0, 520.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Sleep", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Save", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Title", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_cozy(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "General store", 0); place_at(head, x, y, 480.0, 56.0);
+	let a = button(f, "Seeds  20", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Feed  10", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Can  40", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Buy", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_cozy(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Evening", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Rowan", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Today", "Total");
+	table_set(tb, 0, 0, "Gold"); table_set(tb, 0, 1, "80"); table_set(tb, 0, 2, "240");
+	table_set(tb, 1, 0, "Crops"); table_set(tb, 1, 1, "12"); table_set(tb, 1, 2, "40");
+	table_set(tb, 2, 0, "Energy"); table_set(tb, 2, 1, "20"); table_set(tb, 2, 2, "60");
+	table_set(tb, 3, 0, "Gifts"); table_set(tb, 3, 1, "1"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "Fish"); table_set(tb, 4, 1, "2"); table_set(tb, 4, 2, "6");
+	table_set(tb, 5, 0, "Day"); table_set(tb, 5, 1, "3"); table_set(tb, 5, 2, "3");
+	let again = button(f, "Sleep", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_cozy(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Farm", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Season", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.5, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Animals", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_cozy(f int, mode int) {
+	var y f32 = 80.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 120.0; }
+	else if mode == 3 { y = 48.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 360.0, y, 1200.0, 760.0); N[map].i3 = 18;
+	if mode == 1 || mode == 4 { place_at(map, 360.0, 200.0, 1200.0, 720.0); }
+	let a = button(f, "House", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Field", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Pond", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_rhythm(f int, mode int) {
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var ly f32 = 860.0;
+	if mode == 1 { mx = 1600.0; ly = 720.0; }
+	else if mode == 2 { my = 200.0; ly = 860.0; }
+	else if mode == 3 { mx = 1600.0; my = 400.0; ly = 900.0; }
+	else if mode == 4 { my = 480.0; ly = 800.0; }
+	let song = label(f, "Glass", 1); place_at(song, 48.0, 36.0, 200.0, 40.0);
+	let score = label(f, "24800", 0); place_at(score, 760.0, 36.0, 400.0, 56.0); mark_anchor(score);
+	let bpm = label(f, "BPM  120", 2); place_at(bpm, 1560.0, 40.0, 240.0, 36.0);
+	let judge = label(f, "Great", 0); place_at(judge, 760.0, 112.0, 400.0, 48.0); mark_anchor(judge);
+	let combo = label(f, "Combo  42", 2); place_at(combo, 48.0, 120.0, 240.0, 32.0);
+	let miss = label(f, "Miss  1", 3); place_at(miss, 48.0, 160.0, 200.0, 32.0);
+	let acc = health_bar(f, 0.92, 2); place_at(acc, 480.0, 180.0, 960.0, 16.0);
+	let mult = label(f, "x4", 1); place_at(mult, 1560.0, 120.0, 160.0, 40.0);
+	let sync = label(f, "Sync", 3); place_at(sync, 1560.0, 180.0, 160.0, 32.0);
+	let a = button(f, "L", 2); place_at(a, 560.0, ly, 160.0, 120.0); set_preset(a, 2);
+	let b = button(f, "D", 0); place_at(b, 760.0, ly, 160.0, 120.0); set_preset(b, 2);
+	let c = button(f, "K", 2); place_at(c, 960.0, ly, 160.0, 120.0); set_preset(c, 2);
+	let d = button(f, "R", 2); place_at(d, 1160.0, ly, 160.0, 120.0); set_preset(d, 2);
+	let map = minimap(f, 0); place_at(map, mx, my, 240.0, 160.0); N[map].i3 = 19;
+}
+
+fn stage_pause_rhythm(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Paused", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Retry", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Song", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_rhythm(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Setlist", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Glass  0", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Ember  0", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Tide  0", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Play", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_rhythm(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Rank A", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Glass", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Judge", "Count", "Score");
+	table_set(tb, 0, 0, "Perfect"); table_set(tb, 0, 1, "80"); table_set(tb, 0, 2, "16000");
+	table_set(tb, 1, 0, "Great"); table_set(tb, 1, 1, "40"); table_set(tb, 1, 2, "6000");
+	table_set(tb, 2, 0, "Good"); table_set(tb, 2, 1, "12"); table_set(tb, 2, 2, "1200");
+	table_set(tb, 3, 0, "Miss"); table_set(tb, 3, 1, "1"); table_set(tb, 3, 2, "0");
+	table_set(tb, 4, 0, "Combo"); table_set(tb, 4, 1, "42"); table_set(tb, 4, 2, "42");
+	table_set(tb, 5, 0, "Total"); table_set(tb, 5, 1, "133"); table_set(tb, 5, 2, "24800");
+	let again = button(f, "Retry", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_rhythm(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Offset", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = slider(f, 0.5, 0); place_at(a, x, y + 80.0, 480.0, 32.0);
+	let b = toggle(f, "Assist", 0, 2); place_at(b, x, y + 140.0, 480.0, 56.0);
+	let c = slider(f, 0.7, 2); place_at(c, x, y + 220.0, 480.0, 32.0);
+}
+
+fn stage_map_rhythm(f int, mode int) {
+	var y f32 = 160.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 240.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 200.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 240.0; }
+	let map = minimap(f, 0); place_at(map, 480.0, y, 960.0, 640.0); N[map].i3 = 19;
+	if mode == 1 || mode == 4 { place_at(map, 480.0, 240.0, 960.0, 640.0); }
+	let a = button(f, "Glass", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Ember", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Tide", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_puzzle(f int, mode int) {
+	var ty f32 = 360.0;
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	if mode == 1 { ty = 240.0; mx = 1600.0; }
+	else if mode == 2 { ty = 480.0; mx = 1600.0; my = 760.0; }
+	else if mode == 3 { ty = 300.0; mx = 1600.0; my = 760.0; }
+	else if mode == 4 { ty = 420.0; my = 200.0; }
+	let moves = label(f, "Moves  12", 0); place_at(moves, 760.0, 36.0, 400.0, 48.0); mark_anchor(moves);
+	let par = label(f, "Par  18", 2); place_at(par, 48.0, 40.0, 200.0, 36.0);
+	let time = label(f, "1:04", 1); place_at(time, 1560.0, 40.0, 200.0, 40.0);
+	let goal = label(f, "Match  3", 2); place_at(goal, 760.0, 100.0, 400.0, 36.0); mark_anchor(goal);
+	let hints = label(f, "Hints  2", 2); place_at(hints, 48.0, 100.0, 200.0, 32.0);
+	let best = label(f, "Best  9", 3); place_at(best, 1560.0, 100.0, 200.0, 32.0);
+	let a = button(f, "A", 0); place_at(a, 560.0, ty, 120.0, 120.0); set_preset(a, 2);
+	let b = button(f, "B", 2); place_at(b, 700.0, ty, 120.0, 120.0); set_preset(b, 2);
+	let c = button(f, "C", 2); place_at(c, 840.0, ty, 120.0, 120.0); set_preset(c, 0);
+	let d = button(f, "D", 2); place_at(d, 980.0, ty, 120.0, 120.0); set_preset(d, 2);
+	let e = button(f, "E", 2); place_at(e, 1120.0, ty, 120.0, 120.0); set_preset(e, 2);
+	let undo = button(f, "Undo", 5); place_at(undo, 840.0, ty + 140.0, 160.0, 56.0); set_preset(undo, 2);
+	let stars = label(f, "Stars  2", 2); place_at(stars, 48.0, 160.0, 200.0, 32.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 200.0, 160.0); N[map].i3 = 20;
+}
+
+fn stage_pause_puzzle(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 280.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Stuck?", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Reset", 5); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Hint", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_puzzle(f int, mode int) {
+	var x f32 = 240.0;
+	var y f32 = 240.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; }
+	else if mode == 4 { x = 400.0; y = 160.0; }
+	let head = label(f, "Hints", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Peek  10", 0); place_at(a, x, y, 360.0, 200.0); set_preset(a, 0);
+	let b = button(f, "Undo  5", 2); place_at(b, x + 400.0, y, 360.0, 200.0); set_preset(b, 2);
+	let c = button(f, "Skip  20", 5); place_at(c, x + 800.0, y, 360.0, 200.0); set_preset(c, 2);
+}
+
+fn stage_results_puzzle(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Solved", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Pack  1", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "Par");
+	table_set(tb, 0, 0, "Moves"); table_set(tb, 0, 1, "12"); table_set(tb, 0, 2, "18");
+	table_set(tb, 1, 0, "Time"); table_set(tb, 1, 1, "1:04"); table_set(tb, 1, 2, "2:00");
+	table_set(tb, 2, 0, "Hints"); table_set(tb, 2, 1, "1"); table_set(tb, 2, 2, "0");
+	table_set(tb, 3, 0, "Stars"); table_set(tb, 3, 1, "2"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "Undos"); table_set(tb, 4, 1, "3"); table_set(tb, 4, 2, "0");
+	table_set(tb, 5, 0, "Pack"); table_set(tb, 5, 1, "1"); table_set(tb, 5, 2, "1");
+	let again = button(f, "Next", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_puzzle(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Board", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Timer", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.4, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Color", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_puzzle(f int, mode int) {
+	var y f32 = 120.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 160.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 360.0, y, 1200.0, 720.0); N[map].i3 = 20;
+	if mode == 1 || mode == 4 { place_at(map, 360.0, 200.0, 1200.0, 700.0); }
+	let a = button(f, "Pack 1", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Pack 2", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Daily", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_novel(f int, mode int) {
+	var y f32 = 640.0;
+	var mx f32 = 48.0;
+	var my f32 = 200.0;
+	if mode == 1 { y = 200.0; mx = 48.0; my = 760.0; }
+	else if mode == 2 { y = 480.0; mx = 48.0; my = 800.0; }
+	else if mode == 3 { y = 720.0; mx = 48.0; my = 200.0; }
+	else if mode == 4 { y = 360.0; mx = 48.0; my = 760.0; }
+	let ch = label(f, "Chapter  2", 0); place_at(ch, 760.0, 36.0, 400.0, 48.0); mark_anchor(ch);
+	let place = label(f, "Station", 2); place_at(place, 48.0, 40.0, 200.0, 36.0);
+	let page = label(f, "Page  12", 2); place_at(page, 1560.0, 40.0, 240.0, 36.0);
+	let name = label(f, "Ivo", 1); place_at(name, 80.0, y, 240.0, 40.0);
+	let line = label(f, "The train is late again.", 2); place_at(line, 80.0, y + 48.0, 1200.0, 48.0);
+	let a = button(f, "Wait", 0); place_at(a, 80.0, y + 120.0, 360.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Call", 2); place_at(b, 460.0, y + 120.0, 360.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Leave", 5); place_at(c, 840.0, y + 120.0, 360.0, 56.0); set_preset(c, 2);
+	let trust = label(f, "Trust", 2); place_at(trust, 80.0, y + 196.0, 140.0, 32.0);
+	let tb = health_bar(f, 0.4, 0); place_at(tb, 240.0, y + 200.0, 320.0, 20.0);
+	let auto = button(f, "Auto", 2); place_at(auto, 1480.0, 860.0, 140.0, 48.0); set_preset(auto, 2);
+	let log = button(f, "Log", 2); place_at(log, 1640.0, 860.0, 140.0, 48.0); set_preset(log, 2);
+	let skip = button(f, "Skip", 5); place_at(skip, 1480.0, 920.0, 300.0, 48.0); set_preset(skip, 2);
+	let map = minimap(f, 0); place_at(map, mx, my, 200.0, 140.0); N[map].i3 = 21;
+}
+
+fn stage_pause_novel(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Story", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Save", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Load", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Title", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_novel(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Gallery", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Scene  1", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Scene  2", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Music", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "View", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_novel(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Ending", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Ivo", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "You", "Route");
+	table_set(tb, 0, 0, "Ending"); table_set(tb, 0, 1, "B"); table_set(tb, 0, 2, "Station");
+	table_set(tb, 1, 0, "Trust"); table_set(tb, 1, 1, "40"); table_set(tb, 1, 2, "80");
+	table_set(tb, 2, 0, "Choices"); table_set(tb, 2, 1, "12"); table_set(tb, 2, 2, "20");
+	table_set(tb, 3, 0, "Saves"); table_set(tb, 3, 1, "3"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "Time"); table_set(tb, 4, 1, "2:10"); table_set(tb, 4, 2, "4:00");
+	table_set(tb, 5, 0, "Seen"); table_set(tb, 5, 1, "8"); table_set(tb, 5, 2, "14");
+	let again = button(f, "Title", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_novel(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Text", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = slider(f, 0.6, 0); place_at(a, x, y + 80.0, 480.0, 32.0);
+	let b = toggle(f, "Auto", 1, 0); place_at(b, x, y + 140.0, 480.0, 56.0);
+	let c = toggle(f, "Voices", 0, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_novel(f int, mode int) {
+	var y f32 = 120.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 160.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 480.0, y, 960.0, 680.0); N[map].i3 = 21;
+	if mode == 1 || mode == 4 { place_at(map, 480.0, 200.0, 960.0, 680.0); }
+	let a = button(f, "Station", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Home", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "School", 2); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_idle(f int, mode int) {
+	var uy f32 = 200.0;
+	var mx f32 = 1600.0;
+	var my f32 = 760.0;
+	if mode == 1 { uy = 360.0; mx = 48.0; }
+	else if mode == 2 { uy = 160.0; my = 400.0; }
+	else if mode == 3 { uy = 280.0; mx = 48.0; my = 760.0; }
+	else if mode == 4 { uy = 200.0; my = 200.0; }
+	let motes = label(f, "1.2M", 0); place_at(motes, 760.0, 36.0, 400.0, 72.0); mark_anchor(motes);
+	let rate = label(f, "+12 /s", 1); place_at(rate, 760.0, 120.0, 400.0, 40.0); mark_anchor(rate);
+	let rank = label(f, "Rank  3", 2); place_at(rank, 48.0, 40.0, 200.0, 36.0);
+	let next = label(f, "Next  100", 2); place_at(next, 1560.0, 40.0, 240.0, 36.0);
+	let bar = health_bar(f, 0.4, 2); place_at(bar, 560.0, 180.0, 800.0, 20.0);
+	let a = button(f, "Oven  50", 0); place_at(a, 80.0, uy, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Mill  200", 2); place_at(b, 80.0, uy + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Press  800", 2); place_at(c, 80.0, uy + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Vault  2k", 1); place_at(d, 80.0, uy + 240.0, 400.0, 64.0); set_preset(d, 2);
+	let tap = button(f, "Gather", 0); place_at(tap, 760.0, 860.0, 400.0, 80.0); set_preset(tap, 0);
+	let owned = label(f, "Owned  6", 2); place_at(owned, 520.0, uy + 80.0, 200.0, 32.0);
+	let best = label(f, "Best  4.1M", 3); place_at(best, 520.0, uy + 120.0, 240.0, 32.0);
+	let gears = label(f, "Gears  2", 2); place_at(gears, 520.0, uy + 160.0, 200.0, 32.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 200.0, 160.0); N[map].i3 = 22;
+}
+
+fn stage_pause_idle(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 260.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Away", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Prestige", 1); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Stats", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_idle(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 180.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1000.0; }
+	else if mode == 3 { y = 480.0; }
+	else if mode == 4 { y = 80.0; x = 400.0; }
+	let head = label(f, "Upgrades", 0); place_at(head, x, y, 360.0, 56.0);
+	let a = button(f, "Gear  100", 0); place_at(a, x, y + 80.0, 480.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Boost  250", 2); place_at(b, x, y + 160.0, 480.0, 64.0); set_preset(b, 2);
+	let c = button(f, "Auto  500", 1); place_at(c, x, y + 240.0, 480.0, 64.0); set_preset(c, 2);
+	let buy = button(f, "Buy", 0); place_at(buy, x + 520.0, y + 160.0, 240.0, 64.0); set_preset(buy, 2);
+}
+
+fn stage_results_idle(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Prestige", 0); place_at(head, 720.0, 36.0, 480.0, 64.0); mark_anchor(head);
+	let side = label(f, "Run  3", 2); place_at(side, 80.0, 40.0, 200.0, 36.0);
+	let tb = board(f, x, y, "Stat", "Run", "All");
+	table_set(tb, 0, 0, "Motes"); table_set(tb, 0, 1, "1.2M"); table_set(tb, 0, 2, "9.4M");
+	table_set(tb, 1, 0, "Rate"); table_set(tb, 1, 1, "12"); table_set(tb, 1, 2, "40");
+	table_set(tb, 2, 0, "Time"); table_set(tb, 2, 1, "2:10"); table_set(tb, 2, 2, "8:00");
+	table_set(tb, 3, 0, "Buys"); table_set(tb, 3, 1, "6"); table_set(tb, 3, 2, "22");
+	table_set(tb, 4, 0, "Rank"); table_set(tb, 4, 1, "3"); table_set(tb, 4, 2, "5");
+	table_set(tb, 5, 0, "Gain"); table_set(tb, 5, 1, "+1"); table_set(tb, 5, 2, "+4");
+	let again = button(f, "Reset", 0); place_at(again, 80.0, 980.0, 240.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_idle(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Idle", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Numbers", 1, 0); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = slider(f, 0.8, 0); place_at(b, x, y + 160.0, 480.0, 32.0);
+	let c = toggle(f, "Offline", 1, 2); place_at(c, x, y + 216.0, 480.0, 56.0);
+}
+
+fn stage_map_idle(f int, mode int) {
+	var y f32 = 120.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 160.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 480.0, y, 960.0, 680.0); N[map].i3 = 22;
+	if mode == 1 || mode == 4 { place_at(map, 480.0, 200.0, 960.0, 680.0); }
+	let a = button(f, "Floor", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Mill", 2); place_at(b, 340.0, by, 240.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Vault", 1); place_at(c, 600.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn stage_hud_gacha(f int, mode int) {
+	var mx f32 = 48.0;
+	var my f32 = 760.0;
+	var py f32 = 760.0;
+	if mode == 1 { mx = 1600.0; py = 640.0; }
+	else if mode == 2 { mx = 1600.0; my = 200.0; py = 800.0; }
+	else if mode == 3 { mx = 1600.0; my = 760.0; py = 700.0; }
+	else if mode == 4 { my = 480.0; py = 860.0; }
+	let banner = label(f, "Dawn", 0); place_at(banner, 760.0, 36.0, 400.0, 56.0); mark_anchor(banner);
+	let pity = label(f, "Pity  12", 2); place_at(pity, 48.0, 40.0, 220.0, 36.0);
+	let stars = label(f, "Stars  1600", 1); place_at(stars, 1480.0, 40.0, 320.0, 40.0);
+	let who = label(f, "Lumen", 0); place_at(who, 760.0, 120.0, 400.0, 48.0); mark_anchor(who);
+	let rate = label(f, "Rate  0.6%", 3); place_at(rate, 760.0, 180.0, 400.0, 32.0); mark_anchor(rate);
+	let sh = label(f, "Shards", 2); place_at(sh, 480.0, 240.0, 160.0, 32.0);
+	let sb = health_bar(f, 0.3, 2); place_at(sb, 660.0, 244.0, 600.0, 20.0);
+	let one = button(f, "One  160", 2); place_at(one, 480.0, py, 400.0, 80.0); set_preset(one, 2);
+	let ten = button(f, "Ten  1600", 0); place_at(ten, 960.0, py, 400.0, 80.0); set_preset(ten, 0);
+	let guar = label(f, "Guarantee  78", 2); place_at(guar, 48.0, 120.0, 280.0, 32.0);
+	let owned = label(f, "Owned  4", 2); place_at(owned, 48.0, 160.0, 200.0, 32.0);
+	let dup = label(f, "Dupes  1", 3); place_at(dup, 48.0, 200.0, 200.0, 32.0);
+	let spark = label(f, "Spark  200", 2); place_at(spark, 1480.0, 120.0, 280.0, 32.0);
+	let map = minimap(f, 0); place_at(map, mx, my, 200.0, 160.0); N[map].i3 = 23;
+}
+
+fn stage_pause_gacha(f int, mode int) {
+	var x f32 = 760.0;
+	var y f32 = 240.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1400.0; }
+	else if mode == 3 { y = 560.0; }
+	else if mode == 4 { y = 80.0; x = 480.0; }
+	let head = label(f, "Banner", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Resume", 0); place_at(a, x, y, 400.0, 64.0); set_preset(a, 2);
+	let b = button(f, "Inventory", 2); place_at(b, x, y + 80.0, 400.0, 64.0); set_preset(b, 2);
+	let c = button(f, "History", 2); place_at(c, x, y + 160.0, 400.0, 64.0); set_preset(c, 2);
+	let d = button(f, "Quit", 5); place_at(d, x, y + 240.0, 400.0, 64.0); set_preset(d, 2);
+}
+
+fn stage_shop_gacha(f int, mode int) {
+	var x f32 = 200.0;
+	var y f32 = 200.0;
+	if mode == 1 { y = 80.0; }
+	else if mode == 2 { y = 480.0; }
+	else if mode == 3 { x = 80.0; }
+	else if mode == 4 { x = 360.0; y = 160.0; }
+	let head = label(f, "Banners", 0); place_at(head, 760.0, y - 72.0, 400.0, 56.0); mark_anchor(head);
+	let a = button(f, "Dawn", 0); place_at(a, x, y, 360.0, 280.0); set_preset(a, 0);
+	let b = button(f, "Standard", 2); place_at(b, x + 400.0, y, 360.0, 280.0); set_preset(b, 2);
+	let c = button(f, "Weapon", 1); place_at(c, x + 800.0, y, 360.0, 280.0); set_preset(c, 2);
+}
+
+fn stage_results_gacha(f int, mode int) {
+	var y f32 = 160.0;
+	var x f32 = 560.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1040.0; }
+	else if mode == 3 { y = 400.0; }
+	else if mode == 4 { x = 240.0; }
+	let head = label(f, "Results", 0); place_at(head, 760.0, 36.0, 400.0, 64.0); mark_anchor(head);
+	let side = label(f, "Ten pull", 2); place_at(side, 80.0, 40.0, 240.0, 36.0);
+	let tb = board(f, x, y, "Pull", "Name", "Rarity");
+	table_set(tb, 0, 0, "1"); table_set(tb, 0, 1, "Lumen"); table_set(tb, 0, 2, "5");
+	table_set(tb, 1, 0, "2"); table_set(tb, 1, 1, "Pebble"); table_set(tb, 1, 2, "3");
+	table_set(tb, 2, 0, "3"); table_set(tb, 2, 1, "Moth"); table_set(tb, 2, 2, "4");
+	table_set(tb, 3, 0, "4"); table_set(tb, 3, 1, "Shard"); table_set(tb, 3, 2, "3");
+	table_set(tb, 4, 0, "5"); table_set(tb, 4, 1, "Wisp"); table_set(tb, 4, 2, "3");
+	table_set(tb, 5, 0, "Pity"); table_set(tb, 5, 1, "12"); table_set(tb, 5, 2, "0");
+	let again = button(f, "Pull again", 0); place_at(again, 80.0, 980.0, 280.0, 64.0); set_preset(again, 2);
+}
+
+fn stage_settings_gacha(f int, mode int) {
+	var x f32 = 480.0;
+	var y f32 = 220.0;
+	if mode == 1 { x = 80.0; }
+	else if mode == 2 { x = 1080.0; }
+	else if mode == 3 { y = 520.0; }
+	else if mode == 4 { y = 80.0; }
+	let head = label(f, "Pulls", 0); place_at(head, x, y, 240.0, 56.0);
+	let a = toggle(f, "Skip", 0, 2); place_at(a, x, y + 80.0, 480.0, 56.0);
+	let b = toggle(f, "Spark", 1, 0); place_at(b, x, y + 152.0, 480.0, 56.0);
+	let c = slider(f, 0.5, 0); place_at(c, x, y + 232.0, 480.0, 32.0);
+}
+
+fn stage_map_gacha(f int, mode int) {
+	var y f32 = 120.0;
+	var by f32 = 920.0;
+	if mode == 1 { by = 80.0; y = 200.0; }
+	else if mode == 2 { y = 80.0; }
+	else if mode == 3 { y = 160.0; by = 880.0; }
+	else if mode == 4 { by = 80.0; y = 200.0; }
+	let map = minimap(f, 0); place_at(map, 480.0, y, 960.0, 680.0); N[map].i3 = 23;
+	if mode == 1 || mode == 4 { place_at(map, 480.0, 200.0, 960.0, 680.0); }
+	let a = button(f, "Dawn", 0); place_at(a, 80.0, by, 240.0, 56.0); set_preset(a, 2);
+	let b = button(f, "Standard", 2); place_at(b, 340.0, by, 280.0, 56.0); set_preset(b, 2);
+	let c = button(f, "Weapon", 1); place_at(c, 640.0, by, 240.0, 56.0); set_preset(c, 2);
+}
+
+fn build_stage(frame int, g int, screen int, mode int) int {
+	N[frame].i0 = g;
+	N[frame].i1 = screen;
+	N[frame].i2 = mode;
+	if screen == 0 { stage_title(frame, g, mode); }
+	else if screen == 1 {
+		if g == 4 { stage_pause_jrpg(frame, mode); }
+		else if g == 5 { stage_pause_souls(frame, mode); }
+		else if g == 1 { stage_pause_royale(frame, mode); }
+		else if g == 7 { stage_pause_racing(frame, mode); }
+		else if g == 8 { stage_pause_fighting(frame, mode); }
+		else if g == 12 { stage_pause_deck(frame, mode); }
+		else if g == 2 { stage_pause_moba(frame, mode); }
+		else if g == 3 { stage_pause_rts(frame, mode); }
+		else if g == 6 { stage_pause_mmo(frame, mode); }
+		else if g == 9 { stage_pause_sports(frame, mode); }
+		else if g == 10 { stage_pause_platform(frame, mode); }
+		else if g == 11 { stage_pause_rogue(frame, mode); }
+		else if g == 13 { stage_pause_survive(frame, mode); }
+		else if g == 14 { stage_pause_city(frame, mode); }
+		else if g == 15 { stage_pause_horror(frame, mode); }
+		else if g == 16 { stage_pause_space(frame, mode); }
+		else if g == 17 { stage_pause_fantasy(frame, mode); }
+		else if g == 18 { stage_pause_cozy(frame, mode); }
+		else if g == 19 { stage_pause_rhythm(frame, mode); }
+		else if g == 20 { stage_pause_puzzle(frame, mode); }
+		else if g == 21 { stage_pause_novel(frame, mode); }
+		else if g == 22 { stage_pause_idle(frame, mode); }
+		else if g == 23 { stage_pause_gacha(frame, mode); }
+		else { stage_pause(frame, g, mode); }
+	}
+	else if screen == 2 {
+		if g == 4 { stage_settings_jrpg(frame, mode); }
+		else if g == 5 { stage_settings_souls(frame, mode); }
+		else if g == 1 { stage_settings_royale(frame, mode); }
+		else if g == 7 { stage_settings_racing(frame, mode); }
+		else if g == 8 { stage_settings_fighting(frame, mode); }
+		else if g == 12 { stage_settings_deck(frame, mode); }
+		else if g == 2 { stage_settings_moba(frame, mode); }
+		else if g == 3 { stage_settings_rts(frame, mode); }
+		else if g == 6 { stage_settings_mmo(frame, mode); }
+		else if g == 9 { stage_settings_sports(frame, mode); }
+		else if g == 10 { stage_settings_platform(frame, mode); }
+		else if g == 11 { stage_settings_rogue(frame, mode); }
+		else if g == 13 { stage_settings_survive(frame, mode); }
+		else if g == 14 { stage_settings_city(frame, mode); }
+		else if g == 15 { stage_settings_horror(frame, mode); }
+		else if g == 16 { stage_settings_space(frame, mode); }
+		else if g == 17 { stage_settings_fantasy(frame, mode); }
+		else if g == 18 { stage_settings_cozy(frame, mode); }
+		else if g == 19 { stage_settings_rhythm(frame, mode); }
+		else if g == 20 { stage_settings_puzzle(frame, mode); }
+		else if g == 21 { stage_settings_novel(frame, mode); }
+		else if g == 22 { stage_settings_idle(frame, mode); }
+		else if g == 23 { stage_settings_gacha(frame, mode); }
+		else { stage_settings(frame, g, mode); }
+	}
+	else if screen == 3 {
+		if g == 2 { stage_hud_moba(frame, mode); }
+		else if g == 4 { stage_hud_jrpg(frame, mode); }
+		else if g == 5 { stage_hud_souls(frame, mode); }
+		else if g == 1 { stage_hud_royale(frame, mode); }
+		else if g == 7 { stage_hud_racing(frame, mode); }
+		else if g == 8 { stage_hud_fighting(frame, mode); }
+		else if g == 12 { stage_hud_deck(frame, mode); }
+		else if g == 3 { stage_hud_rts(frame, mode); }
+		else if g == 6 { stage_hud_mmo(frame, mode); }
+		else if g == 9 { stage_hud_sports(frame, mode); }
+		else if g == 10 { stage_hud_platform(frame, mode); }
+		else if g == 11 { stage_hud_rogue(frame, mode); }
+		else if g == 13 { stage_hud_survive(frame, mode); }
+		else if g == 14 { stage_hud_city(frame, mode); }
+		else if g == 15 { stage_hud_horror(frame, mode); }
+		else if g == 16 { stage_hud_space(frame, mode); }
+		else if g == 17 { stage_hud_fantasy(frame, mode); }
+		else if g == 18 { stage_hud_cozy(frame, mode); }
+		else if g == 19 { stage_hud_rhythm(frame, mode); }
+		else if g == 20 { stage_hud_puzzle(frame, mode); }
+		else if g == 21 { stage_hud_novel(frame, mode); }
+		else if g == 22 { stage_hud_idle(frame, mode); }
+		else if g == 23 { stage_hud_gacha(frame, mode); }
+		else { stage_hud_fps(frame, mode); }
+	}
+	else if screen == 4 {
+		if g == 4 { stage_shop_jrpg(frame, mode); }
+		else if g == 5 { stage_shop_souls(frame, mode); }
+		else if g == 1 { stage_shop_royale(frame, mode); }
+		else if g == 7 { stage_shop_racing(frame, mode); }
+		else if g == 8 { stage_shop_fighting(frame, mode); }
+		else if g == 12 { stage_shop_deck(frame, mode); }
+		else if g == 2 { stage_shop_moba(frame, mode); }
+		else if g == 3 { stage_shop_rts(frame, mode); }
+		else if g == 6 { stage_shop_mmo(frame, mode); }
+		else if g == 9 { stage_shop_sports(frame, mode); }
+		else if g == 10 { stage_shop_platform(frame, mode); }
+		else if g == 11 { stage_shop_rogue(frame, mode); }
+		else if g == 13 { stage_shop_survive(frame, mode); }
+		else if g == 14 { stage_shop_city(frame, mode); }
+		else if g == 15 { stage_shop_horror(frame, mode); }
+		else if g == 16 { stage_shop_space(frame, mode); }
+		else if g == 17 { stage_shop_fantasy(frame, mode); }
+		else if g == 18 { stage_shop_cozy(frame, mode); }
+		else if g == 19 { stage_shop_rhythm(frame, mode); }
+		else if g == 20 { stage_shop_puzzle(frame, mode); }
+		else if g == 21 { stage_shop_novel(frame, mode); }
+		else if g == 22 { stage_shop_idle(frame, mode); }
+		else if g == 23 { stage_shop_gacha(frame, mode); }
+		else { stage_shop_fps(frame, g, mode); }
+	}
+	else if screen == 5 {
+		if g == 4 { stage_map_jrpg(frame, mode); }
+		else if g == 5 { stage_map_souls(frame, mode); }
+		else if g == 1 { stage_map_royale(frame, mode); }
+		else if g == 7 { stage_map_racing(frame, mode); }
+		else if g == 8 { stage_map_fighting(frame, mode); }
+		else if g == 12 { stage_map_deck(frame, mode); }
+		else if g == 2 { stage_map_moba(frame, mode); }
+		else if g == 3 { stage_map_rts(frame, mode); }
+		else if g == 6 { stage_map_mmo(frame, mode); }
+		else if g == 9 { stage_map_sports(frame, mode); }
+		else if g == 10 { stage_map_platform(frame, mode); }
+		else if g == 11 { stage_map_rogue(frame, mode); }
+		else if g == 13 { stage_map_survive(frame, mode); }
+		else if g == 14 { stage_map_city(frame, mode); }
+		else if g == 15 { stage_map_horror(frame, mode); }
+		else if g == 16 { stage_map_space(frame, mode); }
+		else if g == 17 { stage_map_fantasy(frame, mode); }
+		else if g == 18 { stage_map_cozy(frame, mode); }
+		else if g == 19 { stage_map_rhythm(frame, mode); }
+		else if g == 20 { stage_map_puzzle(frame, mode); }
+		else if g == 21 { stage_map_novel(frame, mode); }
+		else if g == 22 { stage_map_idle(frame, mode); }
+		else if g == 23 { stage_map_gacha(frame, mode); }
+		else { stage_map_fps(frame, g, mode); }
+	}
+	else if g == 4 { stage_results_jrpg(frame, mode); }
+	else if g == 5 { stage_results_souls(frame, mode); }
+	else if g == 1 { stage_results_royale(frame, mode); }
+	else if g == 7 { stage_results_racing(frame, mode); }
+	else if g == 8 { stage_results_fighting(frame, mode); }
+	else if g == 12 { stage_results_deck(frame, mode); }
+	else if g == 2 { stage_results_moba(frame, mode); }
+	else if g == 3 { stage_results_rts(frame, mode); }
+	else if g == 6 { stage_results_mmo(frame, mode); }
+	else if g == 9 { stage_results_sports(frame, mode); }
+	else if g == 10 { stage_results_platform(frame, mode); }
+	else if g == 11 { stage_results_rogue(frame, mode); }
+	else if g == 13 { stage_results_survive(frame, mode); }
+	else if g == 14 { stage_results_city(frame, mode); }
+	else if g == 15 { stage_results_horror(frame, mode); }
+	else if g == 16 { stage_results_space(frame, mode); }
+	else if g == 17 { stage_results_fantasy(frame, mode); }
+	else if g == 18 { stage_results_cozy(frame, mode); }
+	else if g == 19 { stage_results_rhythm(frame, mode); }
+	else if g == 20 { stage_results_puzzle(frame, mode); }
+	else if g == 21 { stage_results_novel(frame, mode); }
+	else if g == 22 { stage_results_idle(frame, mode); }
+	else if g == 23 { stage_results_gacha(frame, mode); }
+	else { stage_results_fps(frame, g, mode); }
+	for i in N.len {
+		if N[i].preset >= 4 && N[i].preset <= 10 { set_preset(i, 3); }
+	}
+	frame
+}

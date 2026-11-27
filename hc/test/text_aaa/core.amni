@@ -1,0 +1,73 @@
+import text;
+fn cps(s const byte[:]) byte[>..] {
+	var xs int[>..] = [];
+	var i = 0;
+	while i < s.len {
+		let cp, n = text::utf8_next(s, i);
+		xs.push(cp);
+		i += n;
+	}
+	var o byte[>..] = [];
+	for c in xs { if o.len > 0 { o.push(32); } format(o, c); }
+	o
+}
+fn eq(got const byte[:], want const byte[:], name const byte[:]) int {
+	if got != want { print("FAIL ", name, " got [", got, "] want [", want, "]"); return 1; }
+	print("PASS ", name);
+	0
+}
+fn eqi(got int, want int, name const byte[:]) int {
+	if got != want { print("FAIL ", name, " got ", got, " want ", want); return 1; }
+	print("PASS ", name);
+	0
+}
+fn main() {
+	var fail = 0;
+	fail += eqi(text::cp_count("é"), 1, "cp é");
+	fail += eqi(text::grapheme_count("é"), 1, "g é");
+	fail += eqi(text::grapheme_count("e\xCC\x81"), 1, "g e+acute");
+	fail += eqi(text::grapheme_count("a\r\nb"), 3, "g crlf");
+	fail += eqi(text::display_width("ab"), 2, "w ab");
+	fail += eqi(text::display_width("あ"), 2, "w kana");
+	var e byte[>..] = [];
+	text::utf8_put(e, 0x65);
+	text::utf8_put(e, 0x0301);
+	let n = text::nfc(e[..]);
+	fail += eqi(n.len, 2, "nfc len");
+	fail += eqi(n[0] as int, 0xC3, "nfc b0");
+	fail += eqi(n[1] as int, 0xA9, "nfc b1");
+	let d = text::nfd("é");
+	fail += eq(cps(d[..]), "101 769", "nfd é");
+	var hang byte[>..] = [];
+	text::utf8_put(hang, 0xAC00);
+	let hd = text::nfd(hang[..]);
+	fail += eq(cps(hd[..]), "4352 4449", "nfd hangul");
+	let hc = text::nfc(hd[..]);
+	fail += eq(cps(hc[..]), "44032", "nfc hangul");
+	fail += eq(text::upper("straße")[..], "STRASSE", "upper sz");
+	var idot byte[>..] = [];
+	text::utf8_put(idot, 0x0130);
+	fail += eq(cps(text::lower(idot[..])[..]), "105 775", "lower I-dot");
+	var sig byte[>..] = [];
+	text::utf8_put(sig, 0x3A3);
+	text::utf8_put(sig, 0x3A3);
+	let low = text::lower(sig[..]);
+	fail += eq(cps(low[..]), "963 962", "final sigma");
+	fail += eq(text::title("hello WORLD")[..], "Hello World", "title");
+	var tw byte[>..] = [];
+	tw.push(32);
+	text::utf8_put(tw, 0x00A0);
+	tw.append("hi");
+	text::utf8_put(tw, 0x3000);
+	let trimmed = text::trim(tw[..]);
+	fail += eq(trimmed, "hi", "trim unicode");
+	fail += eq(text::pad_left("hi", 5, 0x2E)[..], "...hi", "pad left");
+	fail += eq(text::pad_right("hi", 5, 0x2E)[..], "hi...", "pad right");
+	fail += eq(text::pad_center("hi", 6, 0x2E)[..], "..hi..", "pad center");
+	fail += eq(text::replace("one two one", "one", "1")[..], "1 two 1", "replace");
+	var parts byte[>..][>..] = [];
+	let sp = text::split("a,b,,c", ',');
+	fail += eqi(sp.len, 4, "split len");
+	print("core fails ", fail);
+	if fail != 0 { abort("text core tests failed"); }
+}

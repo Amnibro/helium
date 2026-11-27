@@ -1,0 +1,161 @@
+// Unicode Bidirectional Algorithm, implicit rules (UAX #9 W1–W7, N1–N2, I1–I2)
+// and the L2 visual reorder. Explicit embeddings and bracket pairs are not applied.
+namespace text;
+import text.utf;
+
+let BD_L = 0; let BD_R = 1; let BD_AL = 2; let BD_EN = 3; let BD_ES = 4; let BD_ET = 5;
+let BD_AN = 6; let BD_CS = 7; let BD_NSM = 8; let BD_BN = 9; let BD_B = 10; let BD_S = 11;
+let BD_WS = 12; let BD_ON = 13;
+
+var BLEVEL int[>..] = [];
+
+fn bd_class(cp int) int {
+	if cp == 0x0A || cp == 0x0D || cp == 0x2029 { return BD_B; }
+	if cp == 0x09 || cp == 0x0B || cp == 0x0C || cp == 0x20 { return BD_WS; }
+	if ccc(cp) != 0 { return BD_NSM; }
+	if (cp >= 0x41 && cp <= 0x5A) || (cp >= 0x61 && cp <= 0x7A) { return BD_L; }
+	if cp >= 0x30 && cp <= 0x39 { return BD_EN; }
+	if cp == 0x2B || cp == 0x2D { return BD_ES; }
+	if cp == 0x2C || cp == 0x2E || cp == 0x2F || cp == 0x3A { return BD_CS; }
+	if cp == 0x23 || cp == 0x24 || cp == 0x25 || cp == 0xA3 || cp == 0xA5 || cp == 0x20AC { return BD_ET; }
+	if cp >= 0x5D0 && cp <= 0x5EA { return BD_R; }
+	if cp >= 0x5F0 && cp <= 0x5F2 { return BD_R; }
+	if (cp >= 0x621 && cp <= 0x64A) || (cp >= 0x671 && cp <= 0x6D3) { return BD_AL; }
+	if cp >= 0x660 && cp <= 0x669 { return BD_AN; }
+	if cp >= 0x6F0 && cp <= 0x6F9 { return BD_EN; }
+	if is_letter_cp(cp) { return BD_L; }
+	BD_ON
+}
+
+fn bd_strong(t int) bool { t == BD_L || t == BD_R || t == BD_AL }
+fn bd_neutral(t int) bool { t == BD_B || t == BD_S || t == BD_WS || t == BD_ON }
+fn bd_embed_type(level int) int { if level % 2 == 0 { BD_L } else { BD_R } }
+
+fn bd_prev_strong(ty int[:], i int) int {
+	var j = i - 1;
+	while j >= 0 {
+		if bd_strong(ty[j]) { return ty[j]; }
+		j -= 1;
+	}
+	-1
+}
+
+fn bidi_levels(s const byte[:]) int {
+	var cps int[>..] = [];
+	var ty int[>..] = [];
+	var i = 0;
+	while i < s.len {
+		let cp, n = utf8_next(s, i);
+		cps.push(cp);
+		ty.push(bd_class(cp));
+		i += n;
+	}
+	var base = 0;
+	for t in ty { if t == BD_L { base = 0; break; } if t == BD_R || t == BD_AL { base = 1; break; } }
+	let sor = bd_embed_type(base);
+	var prev = sor;
+	for k in ty.len {
+		if ty[k] == BD_NSM { ty[k] = prev; }
+		else if ty[k] != BD_BN { prev = ty[k]; }
+	}
+	for k in ty.len {
+		if ty[k] == BD_EN {
+			let p = bd_prev_strong(ty[..], k);
+			if p == BD_AL { ty[k] = BD_AN; }
+		}
+	}
+	for k in ty.len { if ty[k] == BD_AL { ty[k] = BD_R; } }
+	for k in ty.len {
+		if k == 0 || k + 1 >= ty.len { continue; }
+		if ty[k] == BD_ES && ty[k - 1] == BD_EN && ty[k + 1] == BD_EN { ty[k] = BD_EN; }
+		if ty[k] == BD_CS && ty[k - 1] == BD_EN && ty[k + 1] == BD_EN { ty[k] = BD_EN; }
+		if ty[k] == BD_CS && ty[k - 1] == BD_AN && ty[k + 1] == BD_AN { ty[k] = BD_AN; }
+	}
+	var k = 0;
+	while k < ty.len {
+		if ty[k] != BD_ET { k += 1; continue; }
+		var e = k;
+		while e < ty.len && ty[e] == BD_ET { e += 1; }
+		let left = if k > 0 { ty[k - 1] == BD_EN } else { false };
+		let right = if e < ty.len { ty[e] == BD_EN } else { false };
+		if left || right { for j in k..e { ty[j] = BD_EN; } }
+		k = e;
+	}
+	for j in ty.len { if ty[j] == BD_ES || ty[j] == BD_ET || ty[j] == BD_CS || ty[j] == BD_BN { ty[j] = BD_ON; } }
+	for j in ty.len {
+		if ty[j] == BD_EN {
+			let p = bd_prev_strong(ty[..], j);
+			if p == BD_L { ty[j] = BD_L; }
+		}
+	}
+	let eor = sor;
+	var n = 0;
+	while n < ty.len {
+		if !bd_neutral(ty[n]) { n += 1; continue; }
+		var e = n;
+		while e < ty.len && bd_neutral(ty[e]) { e += 1; }
+		var left = sor;
+		if n > 0 {
+			if ty[n - 1] == BD_L { left = BD_L; }
+			else if ty[n - 1] == BD_R || ty[n - 1] == BD_EN || ty[n - 1] == BD_AN { left = BD_R; }
+		}
+		var right = eor;
+		if e < ty.len {
+			if ty[e] == BD_L { right = BD_L; }
+			else if ty[e] == BD_R || ty[e] == BD_EN || ty[e] == BD_AN { right = BD_R; }
+		}
+		let set = if left == right { left } else { bd_embed_type(base) };
+		for j in n..e { ty[j] = set; }
+		n = e;
+	}
+	BLEVEL.clear();
+	for j in ty.len {
+		let t = ty[j];
+		var lv = base;
+		if base % 2 == 0 {
+			if t == BD_R { lv = base + 1; }
+			else if t == BD_AN || t == BD_EN { lv = base + 2; }
+		} else {
+			if t == BD_L || t == BD_AN || t == BD_EN { lv = base + 1; }
+		}
+		BLEVEL.push(lv);
+	}
+	base
+}
+
+fn bidi_visual(s const byte[:]) byte[>..] {
+	bidi_levels(s);
+	var cps int[>..] = [];
+	var i = 0;
+	while i < s.len { let cp, n = utf8_next(s, i); cps.push(cp); i += n; }
+	var order int[>..] = [];
+	for k in cps.len { order.push(k); }
+	var maxl = 0;
+	for lv in BLEVEL { if lv > maxl { maxl = lv; } }
+	var lev = maxl;
+	while lev >= 1 {
+		var a = 0;
+		while a < order.len {
+			if BLEVEL[order[a]] >= lev {
+				var b = a;
+				while b < order.len && BLEVEL[order[b]] >= lev { b += 1; }
+				var p = a;
+				var q = b - 1;
+				while p < q {
+					let t = order[p];
+					order[p] = order[q];
+					order[q] = t;
+					p += 1;
+					q -= 1;
+				}
+				a = b;
+			} else { a += 1; }
+		}
+		lev -= 1;
+	}
+	var out int[>..] = [];
+	for k in order.len { out.push(cps[order[k]]); }
+	var bytes byte[>..] = [];
+	for cp in out { utf8_put(bytes, cp); }
+	bytes
+}
